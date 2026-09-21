@@ -1,47 +1,59 @@
-# Thermyx alert relay
+# Thermyx Prototype 1 alert relay
 
-This optional HTTPS backend receives escalated risk events from the iOS app and sends SMS notifications to user-approved contacts through Twilio. It does not call 911. The app must be configured with the deployed `https://.../v1/alerts` URL and the shared backend token.
+This Node 18+ service is the shared-status bridge for a supervised Prototype 1
+evaluation. It accepts authenticated risk events from the wearer app, exposes
+the most recent event to a trusted-member app, and can send SMS through Twilio.
+It does not call emergency services and is not a medical or emergency-response
+service.
 
-Required environment variables:
+## Deployment
 
-```text
-THERMYX_TOKEN=long-random-secret
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
-TWILIO_FROM_NUMBER=+1...
-PORT=8787
-```
+1. Deploy `server.js` to a Node 18+ host that terminates TLS and provides a
+   public HTTPS URL. Do not expose the relay directly over HTTP outside a local
+   same-network demo.
+2. Set secrets in the host's secret manager or deployment dashboard — never in
+   the repository or an app build:
 
-Run with Node 18+:
+   ```text
+   THERMYX_TOKEN=<long random shared secret>
+   TWILIO_ACCOUNT_SID=<Twilio account SID>
+   TWILIO_AUTH_TOKEN=<Twilio auth token>
+   TWILIO_FROM_NUMBER=<Twilio number in E.164 format>
+   PORT=8787
+   ```
+
+   Twilio credentials are required only when SMS is enabled. The relay still
+   accepts and serves authenticated status events without recipients.
+3. Configure both apps with `https://<your-host>` and the same
+   `THERMYX_TOKEN` under **Safety → Advanced**. Use a unique token per
+   prototype environment and rotate it after any suspected disclosure.
+4. Exercise a supervised end-to-end test: send a test event, confirm the
+   trusted-member Watch screen updates, then confirm the intended test contact
+   receives one SMS.
+
+## API
+
+- `POST /v1/alerts` accepts a bearer-authenticated risk event and retains its
+  latest value by `deviceID` for the trusted-member view.
+- `GET /v1/status/:deviceID` returns that latest event. It requires the same
+  bearer token.
+
+Both endpoints require `Authorization: Bearer <THERMYX_TOKEN>`. The service
+holds status only in memory, so a restart clears all status. It has no durable
+audit trail, delivery retry queue, consent workflow, or rate limiting; those
+are required before any use beyond the supervised prototype.
+
+## Local two-phone demo
+
+Run the relay on a laptop connected to the same Wi-Fi as both phones:
 
 ```bash
+export THERMYX_TOKEN='local-demo-token'
+export PORT=8787
 node server.js
 ```
 
-Production requirements: HTTPS, authenticated deployment, consent and contact verification, rate limiting, audit logs, secrets storage, retry handling, and a privacy policy. Do not represent this relay as an emergency-response service.
-# Thermyx two-phone demo backend
-
-The backend is the shared bridge for the Congressional App demo:
-
-1. Start the server on a laptop connected to the same Wi-Fi as both phones.
-2. Set `THERMYX_TOKEN` to the same short demo token on the server and in both apps.
-3. Enter the laptop's local address and port, such as `http://192.168.1.20:8787`, in onboarding on both phones.
-4. Choose **User** on the phone connected to the Thermyx insole and **Trusted member** on the second phone.
-5. Keep the trusted-member phone on the Watch screen. It polls the shared status endpoint and updates when the user phone publishes a reading or risk event.
-
-The user phone publishes JSON events to `/v1/alerts`; the trusted phone reads the latest event from `/v1/status/:deviceID`. If Twilio variables are configured, the same risk event can also send SMS to trusted phone numbers.
-
-Required environment values:
-
-```text
-THERMYX_TOKEN=demo-token
-PORT=8787
-```
-
-Twilio variables are only needed for SMS delivery:
-
-```text
-TWILIO_ACCOUNT_SID=...
-TWILIO_AUTH_TOKEN=...
-TWILIO_FROM_NUMBER=...
-```
+Set the endpoint on both phones to `http://<laptop-LAN-IP>:8787`, choose
+**User** on the insole phone and **Trusted member** on the second phone, and
+use a disposable test token. Do not use personal contacts or production Twilio
+credentials for this path.

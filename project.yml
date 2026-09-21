@@ -2,17 +2,45 @@ name: ThermyxApp
 options:
   deploymentTarget:
     iOS: "17.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
 targets:
   ThermyxApp:
     type: application
     platform: iOS
     sources:
+      # Swift sources.
       - path: ThermyxApp
-    resources:
+        excludes:
+          - "Resources/**"
+          - "Assets.xcassets/**"
+          - "Info.plist"
+          - "ThermyxApp.entitlements"
+          - "BLE_PROTOCOL.md"
       - path: ThermyxApp/Assets.xcassets
+        buildPhase: resources
+      # Archivo / Archivo Narrow static instances, registered via UIAppFonts.
+      # Flattened into the bundle root so UIAppFonts can name them directly.
+      - path: ThermyxApp/Resources/Fonts
+        buildPhase: resources
+        excludes: ["OFL.txt"]
+        createIntermediateGroups: true
+      # Bundled Learning Center content and legal documents.
+      - path: ThermyxApp/Resources/Content
+        buildPhase: resources
+      # Onboarding walkthrough video.
+      - path: ThermyxApp/Resources/Media
+        buildPhase: resources
+      # Shipped for SIL OFL compliance.
+      - path: ThermyxApp/Resources/Fonts/OFL.txt
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thermyx.app
         INFOPLIST_FILE: ThermyxApp/Info.plist
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: ThermyxApp/ThermyxApp.entitlements
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

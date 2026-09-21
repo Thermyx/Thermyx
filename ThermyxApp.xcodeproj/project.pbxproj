@@ -7,41 +7,158 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		017CA6CDB82B6F2C5B85EA05 /* ThermyxFieldStyles.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE902A51374574D4FC4C6168 /* ThermyxFieldStyles.swift */; };
 		02A4767584E661E1B483528A /* TrustedMemberViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 806EF6D0EE937252EF515B17 /* TrustedMemberViewModel.swift */; };
+		08052E4D17D8AE18FFAA0E6E /* BilateralReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31E338D5ECF04C701AB8D577 /* BilateralReading.swift */; };
+		081B03A08FC30C7D9F2B5840 /* MovementAdvancedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8655261A8C4D62912D756DAF /* MovementAdvancedView.swift */; };
+		0C72D1117A82E50BAB81D7C2 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57769DB3FF3F1A4E4300A272 /* RootView.swift */; };
+		101263C040C0AAF63A0DB113 /* terms-of-service.md in Resources */ = {isa = PBXBuildFile; fileRef = 1FA80B7EF5B5B06343930FB5 /* terms-of-service.md */; };
+		17D33C276704F35F655B3CCC /* ThermyxTopScrim.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD14EDC0AE1D081768DBD61C /* ThermyxTopScrim.swift */; };
+		1BC239BE24EA00494277AC5B /* LegalSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5DDDA3A9F033D7235325A0F /* LegalSheet.swift */; };
+		1CAB44D2E287BA7984A303BE /* privacy-policy.md in Resources */ = {isa = PBXBuildFile; fileRef = 63E38F3E9D18BE478025E3B1 /* privacy-policy.md */; };
 		1E41435352409C810D9AA888 /* ThermyxBLEService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CA538DFA4600B68E099332A /* ThermyxBLEService.swift */; };
+		246784CD33B095288535E162 /* ThermyxHealthService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8096F50FFFB7C9AA9BA80B7 /* ThermyxHealthService.swift */; };
+		27ABF156B5DE8A80FEAE27CF /* MovementDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28E20EBC7417E9DF219ACCCB /* MovementDetailView.swift */; };
+		298C96CCABF74E81A778D573 /* Archivo-ExtraBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 2B4C0AC5EEFA574663914497 /* Archivo-ExtraBold.ttf */; };
+		2D99AAE4FF57094F02350FA9 /* BilateralDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = E69FC1F87481E2243EC5E9A6 /* BilateralDigest.swift */; };
 		2DB8DB3B580A74FDE3E59A38 /* ThermyxAlertCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01080BFDCEC28F25EBE44728 /* ThermyxAlertCoordinator.swift */; };
+		2E07C17B719889ECC74C7408 /* InsightsRangeBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35B46072913E8FF5FF01E836 /* InsightsRangeBar.swift */; };
+		3064B72E4775BC06AA70064B /* ThermyxTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5788DEF88023567E18B1DF4 /* ThermyxTheme.swift */; };
+		3447EC7179C24A00990F7267 /* ThermyxTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20665179E4F27E9C3014CE1 /* ThermyxTabBar.swift */; };
 		45D62C4F099664E4D7B930FA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 6D9425519B32F4E81A7780E5 /* Assets.xcassets */; };
+		470DD504707CE50F71088FEF /* BalanceDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D3CA2C0D41D4B395C85CC50 /* BalanceDetailView.swift */; };
 		490531F524977FA6372ACBD0 /* ThermyxSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D64403C90A2280F8ADB3102 /* ThermyxSettingsStore.swift */; };
-		55D883179F8EDF526F639108 /* BLE_PROTOCOL.md in Resources */ = {isa = PBXBuildFile; fileRef = E7469F5A61122AB8652C6F7C /* BLE_PROTOCOL.md */; };
+		4A114C8EECBC1D30FA2BA2F2 /* ThermyxPreviewHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04F1E587A2643E37F681DC30 /* ThermyxPreviewHarness.swift */; };
+		4FB89C6C65C4593A635AD128 /* InsightsPeriodStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = C11CC2368EB8396495B212D0 /* InsightsPeriodStyle.swift */; };
+		4FF6876A5E3F1FE18273B1E5 /* ThermyxHistorySample.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB3F38301B867B909AF2D344 /* ThermyxHistorySample.swift */; };
+		5051D5DE6A1FB0CF6AC51877 /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = 1D590D2AFFF533A8D2E0AAF7 /* README.md */; };
+		518B780A1B7B7485F8780BDC /* Archivo-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 59F9657D8DCBFA741B4CDDC8 /* Archivo-Regular.ttf */; };
+		52768D601CD849150C7DCF54 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD8F34BA6743BDD1F229E42E /* HomeView.swift */; };
+		54AFE920CD93E3DE25BF3476 /* ArchivoNarrow-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 8019C30652C157DA3D835E30 /* ArchivoNarrow-Bold.ttf */; };
+		570F469FA6B8ED844D398BCB /* OnboardingPair.swift in Sources */ = {isa = PBXBuildFile; fileRef = A249ADFEE9EB3BBC28FB8D97 /* OnboardingPair.swift */; };
+		595584FF35F9C0B24620CD79 /* FootLegend.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABC8F0C6116769C32BE85EA7 /* FootLegend.swift */; };
+		5AE426DD24472D095023CAB2 /* ThermalControlBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9E8BB209480AEC4BB128FD6 /* ThermalControlBar.swift */; };
+		5DD7D852B8915AABE6062D19 /* TrustedWatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9038BB5E6CBDE9E633C220D /* TrustedWatchView.swift */; };
+		65FE305D662DF752CC1E15CA /* ArchivoNarrow-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C87A45E8282A02186B2F8811 /* ArchivoNarrow-SemiBold.ttf */; };
+		80F7981F191E6C72135C4361 /* SoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6601DD7AA8486F0420DB87BF /* SoleView.swift */; };
+		8E5BB3B7D39EECB61D02629C /* ThermyxTimeSeriesChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = F38A780F725672E842FA3E8D /* ThermyxTimeSeriesChart.swift */; };
 		90BD33275A3C87E67E5B3ABA /* ThermyxViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C3F4513956836B6B953C499 /* ThermyxViewModel.swift */; };
+		941BF5B3423E715D7CAEF5BE /* learning-articles.json in Resources */ = {isa = PBXBuildFile; fileRef = 93CDA41199141637C9300511 /* learning-articles.json */; };
+		94A04FE830F95F73DD0EF02F /* LegalDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CE2B21D6B4EB1281DDE95F /* LegalDocument.swift */; };
+		95D418E4594EF41DBF67BB5E /* ThermyxTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D97F7B0B00E0BA0E1C17CFD /* ThermyxTypography.swift */; };
+		9AC65E10CE0659998220FE3C /* InsightsDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B8277A3B84CD2C059766BEC /* InsightsDigest.swift */; };
 		9C85ABCF15743AE04D22D0F1 /* ThermyxApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0981823669E5FAFFB1E60C0 /* ThermyxApp.swift */; };
 		9C91CEDE970449ABB8246193 /* ThermyxRisk.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D4E21B10E971DDDF2D359FD /* ThermyxRisk.swift */; };
-		AD84DD529A339B3FB4B8CDF1 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68E0DB5D2E2460C103FBA73E /* ContentView.swift */; };
+		9CA22D43624348136D00BDFF /* SoleGeometry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0E859FB39C506C5C95EA4A8 /* SoleGeometry.swift */; };
+		9CAEA919EC610FDD02DC3CBE /* ThermyxTemperatureScale.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57A3E843CECC8904F902A1B5 /* ThermyxTemperatureScale.swift */; };
+		A43B9AB1F65A65D8BD997C73 /* OFL.txt in Resources */ = {isa = PBXBuildFile; fileRef = 9598204B239815AA3D802124 /* OFL.txt */; };
+		A8AE5F0EFB9A4C0DF8AC34A7 /* DeviceProfileSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E603457AC2FBF14B90E1EF5 /* DeviceProfileSheet.swift */; };
+		ACE592F7902CD829F2254700 /* Archivo-SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = DC3D686F7CB0557A2BEBA9A1 /* Archivo-SemiBold.ttf */; };
+		B08AC20D4EFD8E04BFCE468C /* TrustedSampleData.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A318E790A67F2854BC014AD /* TrustedSampleData.swift */; };
+		B751D45DA0D41F357484634A /* ThermyxChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8873A31905E19D55674A81D2 /* ThermyxChrome.swift */; };
+		B9272460D1050FAB8E5DC368 /* LearningArticle.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4A5055ADE192C2C780E1496 /* LearningArticle.swift */; };
 		BEBB40EE38322A38F8CD33DF /* ThermyxAlertAPIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7FA5ADBE3D64842A5A62581 /* ThermyxAlertAPIClient.swift */; };
+		BFA5E71102905514BD7F3280 /* ZoneHeatMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52548D52CC8CD8A5797DF153 /* ZoneHeatMap.swift */; };
+		C104FAF0DAC51A44DF9C309B /* TrustedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F0C60B45A8790D7CFC0188D /* TrustedSettingsView.swift */; };
 		C48472AAD4DC6FC967D6D25D /* ThermyxRole.swift in Sources */ = {isa = PBXBuildFile; fileRef = 676797A2CFD915210A267565 /* ThermyxRole.swift */; };
-		CEBACEBA7A6788B18A6005DB /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C995047A3689BD7874FD62 /* OnboardingView.swift */; };
+		C5BC1B7318015348AAC5951F /* ThermyxHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52B36C8EB79F5A8A72412382 /* ThermyxHistoryStore.swift */; };
+		C9200A41009192AADE38F90A /* InsightsRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = C26EE0F6F7AB693E5C6EF7B4 /* InsightsRange.swift */; };
+		CD1A4B05B35228A091C4604B /* ArticleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3844EE1A7C268CD0CB9689B7 /* ArticleView.swift */; };
 		D51A796CEBE9AE52DBD383CF /* ThermyxReading.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20B1226385D30E8AE1D8B52 /* ThermyxReading.swift */; };
+		D52CC3EDF4EA274F366BFF81 /* onboarding-walkthrough.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = FB3EAA47E3EA581B4140AEA4 /* onboarding-walkthrough.mp4 */; };
+		D9EAD586DC1A32534763D302 /* Archivo-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 33876D67BE38061706735D67 /* Archivo-Bold.ttf */; };
+		DA9C2B9D0EF6E780A586CE39 /* TemperatureDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A8A0A54F51FE92FCC6321BE /* TemperatureDetailView.swift */; };
+		DDAF29DC86DAEBB5DD67309D /* OnboardingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = EBE75644689918A3ACB64A57 /* OnboardingFlow.swift */; };
+		E67A979048B289734388CBD9 /* LearningCenterView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 203154DBDD4F75A4C663B639 /* LearningCenterView.swift */; };
+		E8E003F53020F586ABE67C6D /* Archivo-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9283AC843210BC7313358B75 /* Archivo-Medium.ttf */; };
+		E9A07D498DF80EBDD90269C8 /* BilateralSoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 743A3616A98D2121AA4BA819 /* BilateralSoleView.swift */; };
+		EA622FE4A60ABE624C43A35C /* ThermyxCharts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5ABCC9B6EA9714E3D5A95FA3 /* ThermyxCharts.swift */; };
+		ECC5DB5217ED4F4543A64EF3 /* SafetyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF871FEB22F3C3B2373DE5C2 /* SafetyView.swift */; };
+		ED170FD93B319BC7E777E438 /* AuroraBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = 833C8E5A6E7799964C647DB1 /* AuroraBackground.swift */; };
+		EE4FB8C6C13461BBDD9CA6D6 /* AdvancedView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 641D91CFACEDCF539451901D /* AdvancedView.swift */; };
+		F0C729BE9CCBB0924D77B2C4 /* OnboardingDemoVideo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C2AC22838403153491AA766 /* OnboardingDemoVideo.swift */; };
+		F1965D7E909F581909241D74 /* TrustedInsightsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35882CFFBF500D87A8648942 /* TrustedInsightsView.swift */; };
 		F7ECF81ED9203C2C292A3ACC /* ThermyxContact.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7B0162055BBFC2D5F5015B /* ThermyxContact.swift */; };
+		FA4526A30B080AEDA77A934B /* TemperatureUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 406EC11158B14962DAD12FEF /* TemperatureUnit.swift */; };
+		FBDB595D3014FAEC48443CC4 /* InsightsHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC44DD95EDDAAD50BC4429CA /* InsightsHubView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		01080BFDCEC28F25EBE44728 /* ThermyxAlertCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxAlertCoordinator.swift; sourceTree = "<group>"; };
-		09C995047A3689BD7874FD62 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		04F1E587A2643E37F681DC30 /* ThermyxPreviewHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxPreviewHarness.swift; sourceTree = "<group>"; };
 		0F7B0162055BBFC2D5F5015B /* ThermyxContact.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxContact.swift; sourceTree = "<group>"; };
+		1D590D2AFFF533A8D2E0AAF7 /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		1FA80B7EF5B5B06343930FB5 /* terms-of-service.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "terms-of-service.md"; sourceTree = "<group>"; };
+		203154DBDD4F75A4C663B639 /* LearningCenterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningCenterView.swift; sourceTree = "<group>"; };
+		28E20EBC7417E9DF219ACCCB /* MovementDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovementDetailView.swift; sourceTree = "<group>"; };
+		2A8A0A54F51FE92FCC6321BE /* TemperatureDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemperatureDetailView.swift; sourceTree = "<group>"; };
+		2B4C0AC5EEFA574663914497 /* Archivo-ExtraBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-ExtraBold.ttf"; sourceTree = "<group>"; };
+		2D3CA2C0D41D4B395C85CC50 /* BalanceDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BalanceDetailView.swift; sourceTree = "<group>"; };
 		2D64403C90A2280F8ADB3102 /* ThermyxSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxSettingsStore.swift; sourceTree = "<group>"; };
+		31E338D5ECF04C701AB8D577 /* BilateralReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BilateralReading.swift; sourceTree = "<group>"; };
+		33876D67BE38061706735D67 /* Archivo-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Bold.ttf"; sourceTree = "<group>"; };
+		35882CFFBF500D87A8648942 /* TrustedInsightsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedInsightsView.swift; sourceTree = "<group>"; };
+		35B46072913E8FF5FF01E836 /* InsightsRangeBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsRangeBar.swift; sourceTree = "<group>"; };
+		3844EE1A7C268CD0CB9689B7 /* ArticleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArticleView.swift; sourceTree = "<group>"; };
+		3B8277A3B84CD2C059766BEC /* InsightsDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsDigest.swift; sourceTree = "<group>"; };
+		3E603457AC2FBF14B90E1EF5 /* DeviceProfileSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceProfileSheet.swift; sourceTree = "<group>"; };
+		406EC11158B14962DAD12FEF /* TemperatureUnit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemperatureUnit.swift; sourceTree = "<group>"; };
+		4D97F7B0B00E0BA0E1C17CFD /* ThermyxTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxTypography.swift; sourceTree = "<group>"; };
+		4F0C60B45A8790D7CFC0188D /* TrustedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedSettingsView.swift; sourceTree = "<group>"; };
+		52548D52CC8CD8A5797DF153 /* ZoneHeatMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoneHeatMap.swift; sourceTree = "<group>"; };
+		52B36C8EB79F5A8A72412382 /* ThermyxHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxHistoryStore.swift; sourceTree = "<group>"; };
+		57769DB3FF3F1A4E4300A272 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		57A3E843CECC8904F902A1B5 /* ThermyxTemperatureScale.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxTemperatureScale.swift; sourceTree = "<group>"; };
+		59F9657D8DCBFA741B4CDDC8 /* Archivo-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Regular.ttf"; sourceTree = "<group>"; };
+		5ABCC9B6EA9714E3D5A95FA3 /* ThermyxCharts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxCharts.swift; sourceTree = "<group>"; };
+		63E38F3E9D18BE478025E3B1 /* privacy-policy.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = "privacy-policy.md"; sourceTree = "<group>"; };
+		641D91CFACEDCF539451901D /* AdvancedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedView.swift; sourceTree = "<group>"; };
+		6601DD7AA8486F0420DB87BF /* SoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoleView.swift; sourceTree = "<group>"; };
 		676797A2CFD915210A267565 /* ThermyxRole.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxRole.swift; sourceTree = "<group>"; };
-		68E0DB5D2E2460C103FBA73E /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		6A318E790A67F2854BC014AD /* TrustedSampleData.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedSampleData.swift; sourceTree = "<group>"; };
+		6C2AC22838403153491AA766 /* OnboardingDemoVideo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingDemoVideo.swift; sourceTree = "<group>"; };
 		6C3F4513956836B6B953C499 /* ThermyxViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxViewModel.swift; sourceTree = "<group>"; };
 		6D4E21B10E971DDDF2D359FD /* ThermyxRisk.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxRisk.swift; sourceTree = "<group>"; };
 		6D9425519B32F4E81A7780E5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		743A3616A98D2121AA4BA819 /* BilateralSoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BilateralSoleView.swift; sourceTree = "<group>"; };
+		78CE2B21D6B4EB1281DDE95F /* LegalDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalDocument.swift; sourceTree = "<group>"; };
 		7CA538DFA4600B68E099332A /* ThermyxBLEService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxBLEService.swift; sourceTree = "<group>"; };
+		8019C30652C157DA3D835E30 /* ArchivoNarrow-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ArchivoNarrow-Bold.ttf"; sourceTree = "<group>"; };
 		806EF6D0EE937252EF515B17 /* TrustedMemberViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedMemberViewModel.swift; sourceTree = "<group>"; };
-		915F6D38E6EDA39633E35494 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		833C8E5A6E7799964C647DB1 /* AuroraBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuroraBackground.swift; sourceTree = "<group>"; };
+		8655261A8C4D62912D756DAF /* MovementAdvancedView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MovementAdvancedView.swift; sourceTree = "<group>"; };
+		8873A31905E19D55674A81D2 /* ThermyxChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxChrome.swift; sourceTree = "<group>"; };
+		9283AC843210BC7313358B75 /* Archivo-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-Medium.ttf"; sourceTree = "<group>"; };
+		93CDA41199141637C9300511 /* learning-articles.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "learning-articles.json"; sourceTree = "<group>"; };
+		9598204B239815AA3D802124 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
+		A249ADFEE9EB3BBC28FB8D97 /* OnboardingPair.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingPair.swift; sourceTree = "<group>"; };
+		A8096F50FFFB7C9AA9BA80B7 /* ThermyxHealthService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxHealthService.swift; sourceTree = "<group>"; };
+		A9038BB5E6CBDE9E633C220D /* TrustedWatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrustedWatchView.swift; sourceTree = "<group>"; };
+		ABC8F0C6116769C32BE85EA7 /* FootLegend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FootLegend.swift; sourceTree = "<group>"; };
+		AD8F34BA6743BDD1F229E42E /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		B4A5055ADE192C2C780E1496 /* LearningArticle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LearningArticle.swift; sourceTree = "<group>"; };
 		B7FA5ADBE3D64842A5A62581 /* ThermyxAlertAPIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxAlertAPIClient.swift; sourceTree = "<group>"; };
 		B8D64CE29AFB54B490E72D4D /* ThermyxApp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ThermyxApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C0E859FB39C506C5C95EA4A8 /* SoleGeometry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SoleGeometry.swift; sourceTree = "<group>"; };
+		C11CC2368EB8396495B212D0 /* InsightsPeriodStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsPeriodStyle.swift; sourceTree = "<group>"; };
+		C20665179E4F27E9C3014CE1 /* ThermyxTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxTabBar.swift; sourceTree = "<group>"; };
+		C26EE0F6F7AB693E5C6EF7B4 /* InsightsRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsRange.swift; sourceTree = "<group>"; };
+		C87A45E8282A02186B2F8811 /* ArchivoNarrow-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ArchivoNarrow-SemiBold.ttf"; sourceTree = "<group>"; };
+		CC44DD95EDDAAD50BC4429CA /* InsightsHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InsightsHubView.swift; sourceTree = "<group>"; };
 		D0981823669E5FAFFB1E60C0 /* ThermyxApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxApp.swift; sourceTree = "<group>"; };
 		D20B1226385D30E8AE1D8B52 /* ThermyxReading.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxReading.swift; sourceTree = "<group>"; };
-		E7469F5A61122AB8652C6F7C /* BLE_PROTOCOL.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = BLE_PROTOCOL.md; sourceTree = "<group>"; };
+		D9E8BB209480AEC4BB128FD6 /* ThermalControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalControlBar.swift; sourceTree = "<group>"; };
+		DB3F38301B867B909AF2D344 /* ThermyxHistorySample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxHistorySample.swift; sourceTree = "<group>"; };
+		DC3D686F7CB0557A2BEBA9A1 /* Archivo-SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Archivo-SemiBold.ttf"; sourceTree = "<group>"; };
+		DE902A51374574D4FC4C6168 /* ThermyxFieldStyles.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxFieldStyles.swift; sourceTree = "<group>"; };
+		DF871FEB22F3C3B2373DE5C2 /* SafetyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SafetyView.swift; sourceTree = "<group>"; };
+		E5788DEF88023567E18B1DF4 /* ThermyxTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxTheme.swift; sourceTree = "<group>"; };
+		E69FC1F87481E2243EC5E9A6 /* BilateralDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BilateralDigest.swift; sourceTree = "<group>"; };
+		EBE75644689918A3ACB64A57 /* OnboardingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFlow.swift; sourceTree = "<group>"; };
+		F38A780F725672E842FA3E8D /* ThermyxTimeSeriesChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxTimeSeriesChart.swift; sourceTree = "<group>"; };
+		F5DDDA3A9F033D7235325A0F /* LegalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalSheet.swift; sourceTree = "<group>"; };
+		FB3EAA47E3EA581B4140AEA4 /* onboarding-walkthrough.mp4 */ = {isa = PBXFileReference; path = "onboarding-walkthrough.mp4"; sourceTree = "<group>"; };
+		FD14EDC0AE1D081768DBD61C /* ThermyxTopScrim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxTopScrim.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -53,9 +170,30 @@
 			);
 			sourceTree = "<group>";
 		};
+		1E7AFDA29DA28D93C217E768 /* Media */ = {
+			isa = PBXGroup;
+			children = (
+				FB3EAA47E3EA581B4140AEA4 /* onboarding-walkthrough.mp4 */,
+				1D590D2AFFF533A8D2E0AAF7 /* README.md */,
+			);
+			path = Media;
+			sourceTree = "<group>";
+		};
+		225D43FE9F2C80F7FC8E9768 /* Content */ = {
+			isa = PBXGroup;
+			children = (
+				93CDA41199141637C9300511 /* learning-articles.json */,
+				63E38F3E9D18BE478025E3B1 /* privacy-policy.md */,
+				1FA80B7EF5B5B06343930FB5 /* terms-of-service.md */,
+			);
+			path = Content;
+			sourceTree = "<group>";
+		};
 		2AD2F0DCD9D0E3F479C2C145 /* ViewModels */ = {
 			isa = PBXGroup;
 			children = (
+				E69FC1F87481E2243EC5E9A6 /* BilateralDigest.swift */,
+				3B8277A3B84CD2C059766BEC /* InsightsDigest.swift */,
 				6C3F4513956836B6B953C499 /* ThermyxViewModel.swift */,
 				806EF6D0EE937252EF515B17 /* TrustedMemberViewModel.swift */,
 			);
@@ -70,15 +208,61 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		54F7D9072B16C28F30EE5F58 /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				33876D67BE38061706735D67 /* Archivo-Bold.ttf */,
+				2B4C0AC5EEFA574663914497 /* Archivo-ExtraBold.ttf */,
+				9283AC843210BC7313358B75 /* Archivo-Medium.ttf */,
+				59F9657D8DCBFA741B4CDDC8 /* Archivo-Regular.ttf */,
+				DC3D686F7CB0557A2BEBA9A1 /* Archivo-SemiBold.ttf */,
+				8019C30652C157DA3D835E30 /* ArchivoNarrow-Bold.ttf */,
+				C87A45E8282A02186B2F8811 /* ArchivoNarrow-SemiBold.ttf */,
+				9598204B239815AA3D802124 /* OFL.txt */,
+			);
+			path = Fonts;
+			sourceTree = "<group>";
+		};
+		6F89EAA439D170F9ECE948CE /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				EDA23A58FBE3456233A92956 /* Components */,
+				C0E859FB39C506C5C95EA4A8 /* SoleGeometry.swift */,
+				04F1E587A2643E37F681DC30 /* ThermyxPreviewHarness.swift */,
+				57A3E843CECC8904F902A1B5 /* ThermyxTemperatureScale.swift */,
+				E5788DEF88023567E18B1DF4 /* ThermyxTheme.swift */,
+				4D97F7B0B00E0BA0E1C17CFD /* ThermyxTypography.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
 		8172580AC610E376FDC2460A /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				31E338D5ECF04C701AB8D577 /* BilateralReading.swift */,
+				C11CC2368EB8396495B212D0 /* InsightsPeriodStyle.swift */,
+				C26EE0F6F7AB693E5C6EF7B4 /* InsightsRange.swift */,
+				B4A5055ADE192C2C780E1496 /* LearningArticle.swift */,
+				78CE2B21D6B4EB1281DDE95F /* LegalDocument.swift */,
+				406EC11158B14962DAD12FEF /* TemperatureUnit.swift */,
 				0F7B0162055BBFC2D5F5015B /* ThermyxContact.swift */,
+				DB3F38301B867B909AF2D344 /* ThermyxHistorySample.swift */,
 				D20B1226385D30E8AE1D8B52 /* ThermyxReading.swift */,
 				6D4E21B10E971DDDF2D359FD /* ThermyxRisk.swift */,
 				676797A2CFD915210A267565 /* ThermyxRole.swift */,
+				6A318E790A67F2854BC014AD /* TrustedSampleData.swift */,
 			);
 			path = Models;
+			sourceTree = "<group>";
+		};
+		8298B66E38E772CD41F2F2B1 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				225D43FE9F2C80F7FC8E9768 /* Content */,
+				54F7D9072B16C28F30EE5F58 /* Fonts */,
+				1E7AFDA29DA28D93C217E768 /* Media */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		8616A4957FA34896E56C60E3 /* Services */ = {
@@ -87,6 +271,8 @@
 				B7FA5ADBE3D64842A5A62581 /* ThermyxAlertAPIClient.swift */,
 				01080BFDCEC28F25EBE44728 /* ThermyxAlertCoordinator.swift */,
 				7CA538DFA4600B68E099332A /* ThermyxBLEService.swift */,
+				A8096F50FFFB7C9AA9BA80B7 /* ThermyxHealthService.swift */,
+				52B36C8EB79F5A8A72412382 /* ThermyxHistoryStore.swift */,
 				2D64403C90A2280F8ADB3102 /* ThermyxSettingsStore.swift */,
 			);
 			path = Services;
@@ -95,25 +281,86 @@
 		86AB2FEEDCEDFA60B184BC1C /* Views */ = {
 			isa = PBXGroup;
 			children = (
-				68E0DB5D2E2460C103FBA73E /* ContentView.swift */,
-				09C995047A3689BD7874FD62 /* OnboardingView.swift */,
+				E7A6C66E4EF2D879300CF0D7 /* Onboarding */,
+				E9A64992FE13046663299E0C /* Trusted */,
+				B1A2A94A3E212D2F1E08CEC4 /* User */,
+				57769DB3FF3F1A4E4300A272 /* RootView.swift */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		B1A2A94A3E212D2F1E08CEC4 /* User */ = {
+			isa = PBXGroup;
+			children = (
+				641D91CFACEDCF539451901D /* AdvancedView.swift */,
+				3844EE1A7C268CD0CB9689B7 /* ArticleView.swift */,
+				2D3CA2C0D41D4B395C85CC50 /* BalanceDetailView.swift */,
+				743A3616A98D2121AA4BA819 /* BilateralSoleView.swift */,
+				3E603457AC2FBF14B90E1EF5 /* DeviceProfileSheet.swift */,
+				AD8F34BA6743BDD1F229E42E /* HomeView.swift */,
+				CC44DD95EDDAAD50BC4429CA /* InsightsHubView.swift */,
+				203154DBDD4F75A4C663B639 /* LearningCenterView.swift */,
+				F5DDDA3A9F033D7235325A0F /* LegalSheet.swift */,
+				8655261A8C4D62912D756DAF /* MovementAdvancedView.swift */,
+				28E20EBC7417E9DF219ACCCB /* MovementDetailView.swift */,
+				DF871FEB22F3C3B2373DE5C2 /* SafetyView.swift */,
+				6601DD7AA8486F0420DB87BF /* SoleView.swift */,
+				2A8A0A54F51FE92FCC6321BE /* TemperatureDetailView.swift */,
+			);
+			path = User;
 			sourceTree = "<group>";
 		};
 		DCE2114BD1A7CB70839DC555 /* ThermyxApp */ = {
 			isa = PBXGroup;
 			children = (
-				6D9425519B32F4E81A7780E5 /* Assets.xcassets */,
-				E7469F5A61122AB8652C6F7C /* BLE_PROTOCOL.md */,
-				915F6D38E6EDA39633E35494 /* Info.plist */,
-				D0981823669E5FAFFB1E60C0 /* ThermyxApp.swift */,
+				6F89EAA439D170F9ECE948CE /* DesignSystem */,
 				8172580AC610E376FDC2460A /* Models */,
+				8298B66E38E772CD41F2F2B1 /* Resources */,
 				8616A4957FA34896E56C60E3 /* Services */,
 				2AD2F0DCD9D0E3F479C2C145 /* ViewModels */,
 				86AB2FEEDCEDFA60B184BC1C /* Views */,
+				6D9425519B32F4E81A7780E5 /* Assets.xcassets */,
+				D0981823669E5FAFFB1E60C0 /* ThermyxApp.swift */,
 			);
 			path = ThermyxApp;
+			sourceTree = "<group>";
+		};
+		E7A6C66E4EF2D879300CF0D7 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				833C8E5A6E7799964C647DB1 /* AuroraBackground.swift */,
+				6C2AC22838403153491AA766 /* OnboardingDemoVideo.swift */,
+				EBE75644689918A3ACB64A57 /* OnboardingFlow.swift */,
+				A249ADFEE9EB3BBC28FB8D97 /* OnboardingPair.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
+		E9A64992FE13046663299E0C /* Trusted */ = {
+			isa = PBXGroup;
+			children = (
+				35882CFFBF500D87A8648942 /* TrustedInsightsView.swift */,
+				4F0C60B45A8790D7CFC0188D /* TrustedSettingsView.swift */,
+				A9038BB5E6CBDE9E633C220D /* TrustedWatchView.swift */,
+			);
+			path = Trusted;
+			sourceTree = "<group>";
+		};
+		EDA23A58FBE3456233A92956 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				ABC8F0C6116769C32BE85EA7 /* FootLegend.swift */,
+				35B46072913E8FF5FF01E836 /* InsightsRangeBar.swift */,
+				D9E8BB209480AEC4BB128FD6 /* ThermalControlBar.swift */,
+				5ABCC9B6EA9714E3D5A95FA3 /* ThermyxCharts.swift */,
+				8873A31905E19D55674A81D2 /* ThermyxChrome.swift */,
+				DE902A51374574D4FC4C6168 /* ThermyxFieldStyles.swift */,
+				C20665179E4F27E9C3014CE1 /* ThermyxTabBar.swift */,
+				F38A780F725672E842FA3E8D /* ThermyxTimeSeriesChart.swift */,
+				FD14EDC0AE1D081768DBD61C /* ThermyxTopScrim.swift */,
+				52548D52CC8CD8A5797DF153 /* ZoneHeatMap.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -146,6 +393,9 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					556EA8B52135F627F617D0EB = {
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = 15FAF5DC4B2CC9785F4F685D /* Build configuration list for PBXProject "ThermyxApp" */;
@@ -172,8 +422,20 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D9EAD586DC1A32534763D302 /* Archivo-Bold.ttf in Resources */,
+				298C96CCABF74E81A778D573 /* Archivo-ExtraBold.ttf in Resources */,
+				E8E003F53020F586ABE67C6D /* Archivo-Medium.ttf in Resources */,
+				518B780A1B7B7485F8780BDC /* Archivo-Regular.ttf in Resources */,
+				ACE592F7902CD829F2254700 /* Archivo-SemiBold.ttf in Resources */,
+				54AFE920CD93E3DE25BF3476 /* ArchivoNarrow-Bold.ttf in Resources */,
+				65FE305D662DF752CC1E15CA /* ArchivoNarrow-SemiBold.ttf in Resources */,
 				45D62C4F099664E4D7B930FA /* Assets.xcassets in Resources */,
-				55D883179F8EDF526F639108 /* BLE_PROTOCOL.md in Resources */,
+				A43B9AB1F65A65D8BD997C73 /* OFL.txt in Resources */,
+				5051D5DE6A1FB0CF6AC51877 /* README.md in Resources */,
+				941BF5B3423E715D7CAEF5BE /* learning-articles.json in Resources */,
+				D52CC3EDF4EA274F366BFF81 /* onboarding-walkthrough.mp4 in Resources */,
+				1CAB44D2E287BA7984A303BE /* privacy-policy.md in Resources */,
+				101263C040C0AAF63A0DB113 /* terms-of-service.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -184,19 +446,66 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AD84DD529A339B3FB4B8CDF1 /* ContentView.swift in Sources */,
-				CEBACEBA7A6788B18A6005DB /* OnboardingView.swift in Sources */,
+				EE4FB8C6C13461BBDD9CA6D6 /* AdvancedView.swift in Sources */,
+				CD1A4B05B35228A091C4604B /* ArticleView.swift in Sources */,
+				ED170FD93B319BC7E777E438 /* AuroraBackground.swift in Sources */,
+				470DD504707CE50F71088FEF /* BalanceDetailView.swift in Sources */,
+				2D99AAE4FF57094F02350FA9 /* BilateralDigest.swift in Sources */,
+				08052E4D17D8AE18FFAA0E6E /* BilateralReading.swift in Sources */,
+				E9A07D498DF80EBDD90269C8 /* BilateralSoleView.swift in Sources */,
+				A8AE5F0EFB9A4C0DF8AC34A7 /* DeviceProfileSheet.swift in Sources */,
+				595584FF35F9C0B24620CD79 /* FootLegend.swift in Sources */,
+				52768D601CD849150C7DCF54 /* HomeView.swift in Sources */,
+				9AC65E10CE0659998220FE3C /* InsightsDigest.swift in Sources */,
+				FBDB595D3014FAEC48443CC4 /* InsightsHubView.swift in Sources */,
+				4FB89C6C65C4593A635AD128 /* InsightsPeriodStyle.swift in Sources */,
+				C9200A41009192AADE38F90A /* InsightsRange.swift in Sources */,
+				2E07C17B719889ECC74C7408 /* InsightsRangeBar.swift in Sources */,
+				B9272460D1050FAB8E5DC368 /* LearningArticle.swift in Sources */,
+				E67A979048B289734388CBD9 /* LearningCenterView.swift in Sources */,
+				94A04FE830F95F73DD0EF02F /* LegalDocument.swift in Sources */,
+				1BC239BE24EA00494277AC5B /* LegalSheet.swift in Sources */,
+				081B03A08FC30C7D9F2B5840 /* MovementAdvancedView.swift in Sources */,
+				27ABF156B5DE8A80FEAE27CF /* MovementDetailView.swift in Sources */,
+				F0C729BE9CCBB0924D77B2C4 /* OnboardingDemoVideo.swift in Sources */,
+				DDAF29DC86DAEBB5DD67309D /* OnboardingFlow.swift in Sources */,
+				570F469FA6B8ED844D398BCB /* OnboardingPair.swift in Sources */,
+				0C72D1117A82E50BAB81D7C2 /* RootView.swift in Sources */,
+				ECC5DB5217ED4F4543A64EF3 /* SafetyView.swift in Sources */,
+				9CA22D43624348136D00BDFF /* SoleGeometry.swift in Sources */,
+				80F7981F191E6C72135C4361 /* SoleView.swift in Sources */,
+				DA9C2B9D0EF6E780A586CE39 /* TemperatureDetailView.swift in Sources */,
+				FA4526A30B080AEDA77A934B /* TemperatureUnit.swift in Sources */,
+				5AE426DD24472D095023CAB2 /* ThermalControlBar.swift in Sources */,
 				BEBB40EE38322A38F8CD33DF /* ThermyxAlertAPIClient.swift in Sources */,
 				2DB8DB3B580A74FDE3E59A38 /* ThermyxAlertCoordinator.swift in Sources */,
 				9C85ABCF15743AE04D22D0F1 /* ThermyxApp.swift in Sources */,
 				1E41435352409C810D9AA888 /* ThermyxBLEService.swift in Sources */,
+				EA622FE4A60ABE624C43A35C /* ThermyxCharts.swift in Sources */,
+				B751D45DA0D41F357484634A /* ThermyxChrome.swift in Sources */,
 				F7ECF81ED9203C2C292A3ACC /* ThermyxContact.swift in Sources */,
+				017CA6CDB82B6F2C5B85EA05 /* ThermyxFieldStyles.swift in Sources */,
+				246784CD33B095288535E162 /* ThermyxHealthService.swift in Sources */,
+				4FF6876A5E3F1FE18273B1E5 /* ThermyxHistorySample.swift in Sources */,
+				C5BC1B7318015348AAC5951F /* ThermyxHistoryStore.swift in Sources */,
+				4A114C8EECBC1D30FA2BA2F2 /* ThermyxPreviewHarness.swift in Sources */,
 				D51A796CEBE9AE52DBD383CF /* ThermyxReading.swift in Sources */,
 				9C91CEDE970449ABB8246193 /* ThermyxRisk.swift in Sources */,
 				C48472AAD4DC6FC967D6D25D /* ThermyxRole.swift in Sources */,
 				490531F524977FA6372ACBD0 /* ThermyxSettingsStore.swift in Sources */,
+				3447EC7179C24A00990F7267 /* ThermyxTabBar.swift in Sources */,
+				9CAEA919EC610FDD02DC3CBE /* ThermyxTemperatureScale.swift in Sources */,
+				3064B72E4775BC06AA70064B /* ThermyxTheme.swift in Sources */,
+				8E5BB3B7D39EECB61D02629C /* ThermyxTimeSeriesChart.swift in Sources */,
+				17D33C276704F35F655B3CCC /* ThermyxTopScrim.swift in Sources */,
+				95D418E4594EF41DBF67BB5E /* ThermyxTypography.swift in Sources */,
 				90BD33275A3C87E67E5B3ABA /* ThermyxViewModel.swift in Sources */,
+				F1965D7E909F581909241D74 /* TrustedInsightsView.swift in Sources */,
 				02A4767584E661E1B483528A /* TrustedMemberViewModel.swift in Sources */,
+				B08AC20D4EFD8E04BFCE468C /* TrustedSampleData.swift in Sources */,
+				C104FAF0DAC51A44DF9C309B /* TrustedSettingsView.swift in Sources */,
+				5DD7D852B8915AABE6062D19 /* TrustedWatchView.swift in Sources */,
+				BFA5E71102905514BD7F3280 /* ZoneHeatMap.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -207,7 +516,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ThermyxApp/ThermyxApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = ThermyxApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -280,7 +591,9 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ThermyxApp/ThermyxApp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = ThermyxApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

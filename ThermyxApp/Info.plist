@@ -18,9 +18,46 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Thermyx uses Bluetooth to connect to your smart insole.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>Thermyx reads your step count, walking steadiness, and workouts so it can show heat exposure alongside what you were actually doing.</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Thermyx saves your sessions to Health as workouts so heat exposure and time on your feet appear with the rest of your health data. It never writes a body temperature — the insole measures contact temperature, not core temperature.</string>
+
+	<key>UIAppFonts</key>
+	<array>
+		<string>Archivo-Regular.ttf</string>
+		<string>Archivo-Medium.ttf</string>
+		<string>Archivo-SemiBold.ttf</string>
+		<string>Archivo-Bold.ttf</string>
+		<string>Archivo-ExtraBold.ttf</string>
+		<string>ArchivoNarrow-SemiBold.ttf</string>
+		<string>ArchivoNarrow-Bold.ttf</string>
+	</array>
+
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 </dict>
 </plist>

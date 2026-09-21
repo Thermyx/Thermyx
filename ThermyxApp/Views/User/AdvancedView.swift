@@ -1,0 +1,436 @@
+import SwiftUI
+
+/// Everything that used to be a top-level Device tab: connection, target
+/// temperature, backend, role, and data controls.
+struct AdvancedView: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var roles: ThermyxRoleStore
+    @ObservedObject var settings: ThermyxSettingsStore
+    @ObservedObject var health: ThermyxHealthService
+
+    @State private var showingPairing = false
+    @State private var showingRoleConfirmation = false
+    @State private var showingDeleteConfirmation = false
+    @State private var legalDocument: LegalDocument.Kind?
+
+    private var unit: TemperatureUnit { settings.temperatureUnit }
+
+    var body: some View {
+        ThermyxDetailScreen(title: "Advanced") {
+            connectionSection
+            targetTemperature
+            backendSection
+            healthSection
+            sensorLayout
+            dataSection
+            legalRow
+        }
+        .sheet(item: $legalDocument) { kind in
+            LegalSheet(selection: kind)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingPairing) {
+            DeviceProfileSheet(roles: roles, settings: settings)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog("Change role?", isPresented: $showingRoleConfirmation, titleVisibility: .visible) {
+            Button("Change role", role: .destructive) { roles.reset() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You'll go back through onboarding. Your contacts and history stay on this phone.")
+        }
+        .confirmationDialog("Delete all history?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete history", role: .destructive) {
+                viewModel.history.deleteAll()
+                Task { await viewModel.history.save() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Every retained reading and event is removed from this phone. This cannot be undone.")
+        }
+    }
+
+    // MARK: - Connection
+    //
+    // One card per insole. They connect, drop, and reconnect independently,
+    // so they are reported independently — a single combined status would
+    // hide which foot is actually missing.
+
+    private var connectionSection: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Insoles")
+            ForEach(Foot.allCases) { foot in
+                connectionCard(foot)
+            }
+        }
+    }
+
+    private func connectionCard(_ foot: Foot) -> some View {
+        let isOn = viewModel.isConnected(foot)
+        return ThermyxCard(padding: Thermyx.Space.xxl, border: isOn ? Thermyx.Tint.liveBorder : Thermyx.Ink.hairline) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+                HStack(spacing: Thermyx.Space.s) {
+                    Circle()
+                        .fill(isOn ? Thermyx.Ink.ice : Thermyx.Ink.amber)
+                        .frame(width: 9, height: 9)
+                    Text(isOn ? "\(foot.label) · connected" : "\(foot.label) · not connected")
+                        .narrowLabel(ThermyxFont.statusPillLarge, tracking: ThermyxTracking.sectionLabel,
+                                     color: isOn ? Thermyx.Ink.ice : Thermyx.Ink.amber)
+                    Spacer(minLength: Thermyx.Space.xs)
+                    if let rssi = viewModel.ble.rssi[foot] {
+                        Text("\(rssi) dBm")
+                            .narrowLabel(ThermyxFont.statusPill, tracking: 1.4, color: Thermyx.Ink.textSupporting)
+                            .monospacedDigit()
+                    }
+                }
+
+                HStack(spacing: Thermyx.Space.l) {
+                    SoleView(foot: foot, reading: viewModel.reading[foot], unit: unit)
+                        .frame(height: 56)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(viewModel.ble.names[foot] ?? "No device")
+                            .font(ThermyxFont.rowTitle)
+                            .foregroundStyle(isOn ? Thermyx.Ink.textPrimary : Thermyx.Ink.textFaint)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Text("XIAO nRF52840 · BLE telemetry")
+                            .font(ThermyxFont.caption)
+                            .foregroundStyle(Thermyx.Ink.textSupporting)
+                    }
+                    Spacer(minLength: 0)
+                }
+
+                HStack(spacing: Thermyx.Space.xs) {
+                    subCell("Battery", viewModel.reading[foot]?.batteryPercent.map { "\($0)%" })
+                    subCell("Packet rate", viewModel.ble.packetRateHz(foot).map { String(format: "%.1f Hz", $0) })
+                }
+
+                Button(isOn ? "Disconnect \(foot.label.lowercased())" : "Pair \(foot.label.lowercased())") {
+                    if isOn { viewModel.disconnect(foot) } else { viewModel.scanFor(foot); showingPairing = true }
+                }
+                .buttonStyle(ThermyxSecondaryButtonStyle())
+            }
+        }
+    }
+
+    private func subCell(_ label: String, _ value: String?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .narrowLabel(ThermyxFont.axisLabel, tracking: 1.4, color: Thermyx.Ink.textSupporting)
+            Text(value ?? "—")
+                .font(ThermyxFont.metricNumeralCompact)
+                .monospacedDigit()
+                .foregroundStyle(value == nil ? Thermyx.Ink.textFaint : Thermyx.Ink.textPrimary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Thermyx.Space.m)
+        .padding(.vertical, Thermyx.Space.s)
+        .frame(minHeight: Thermyx.minimumTapTarget)
+        .background(Thermyx.Tint.neutralFill, in: RoundedRectangle(cornerRadius: Thermyx.Radius.button, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: - Target temperature
+
+    private var targetTemperature: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Target temperature")
+
+            ThermyxCard(padding: Thermyx.Space.xxl, radius: Thermyx.Radius.list) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+                    HStack(alignment: .firstTextBaseline, spacing: Thermyx.Space.xs) {
+                        Text(TemperatureFormat.degrees(settings.targetTemperatureC, in: unit))
+                            .font(ThermyxFont.statNumeral)
+                            .tracking(ThermyxTracking.statNumeral)
+                            .monospacedDigit()
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                        Text("Hold at")
+                            .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.textSupporting)
+                    }
+
+                    ThermalTargetSlider(value: $settings.targetTemperatureC, range: ThermyxSettingsStore.targetRange)
+
+                    HStack {
+                        Text("Cool \(TemperatureFormat.degrees(ThermyxSettingsStore.targetRange.lowerBound, in: unit, decimals: 0))")
+                            .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
+                        Spacer()
+                        Text("Warm \(TemperatureFormat.degrees(ThermyxSettingsStore.targetRange.upperBound, in: unit, decimals: 0))")
+                            .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Backend
+
+    private var backendSection: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Shared backend")
+
+            ThermyxGroupedCard {
+                ThermyxEditableRow(label: "Endpoint", placeholder: "https://…", text: $settings.backendURL, keyboard: .URL)
+                ThermyxDivider()
+                ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
+                ThermyxDivider()
+                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-right-01", text: $settings.deviceID)
+            }
+
+            Text("The backend only receives escalated risk events and forwards approved SMS to your trusted circle. Readings stay on this phone.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - Health
+
+    private var healthSection: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Apple Health")
+
+            ThermyxGroupedCard {
+                Toggle(isOn: $settings.healthKitEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Connect Health")
+                            .font(ThermyxFont.body)
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                        Text(healthStatusDetail)
+                            .font(ThermyxFont.captionSmall)
+                            .foregroundStyle(Thermyx.Ink.textSupporting)
+                    }
+                }
+                .tint(Thermyx.Ink.signal)
+                .padding(.horizontal, Thermyx.Space.xl)
+                .padding(.vertical, Thermyx.Space.m)
+                .frame(minHeight: Thermyx.minimumTapTarget)
+                .disabled(!health.isAvailable)
+            }
+
+            Text("Thermyx reads steps, walking steadiness, and workouts, and writes sessions as workouts. It never writes a body temperature — the insole measures contact temperature, not core temperature.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .task(id: settings.healthKitEnabled) {
+            guard settings.healthKitEnabled else { return }
+            await health.requestAuthorization()
+        }
+    }
+
+    private var healthStatusDetail: String {
+        guard health.isAvailable else { return "Not available on this device" }
+        switch health.availability {
+        case .authorized: return "Connected"
+        case .denied: return "Denied — change this in the Health app"
+        case .notDetermined: return "Not connected"
+        case .notEntitled: return "Build isn't signed for HealthKit"
+        case .unavailable: return "Not available on this device"
+        }
+    }
+
+    // MARK: - Data and role
+
+    private var dataSection: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Data and role")
+
+            ThermyxGroupedCard {
+                ThermyxValueRow(
+                    label: "Retained readings",
+                    value: "\(viewModel.history.minuteSamples.count + viewModel.history.hourSamples.count)",
+                    monospaced: true
+                )
+                ThermyxDivider()
+                ThermyxValueRow(
+                    label: "Sole size",
+                    value: settings.soleSize?.label ?? "Not set"
+                )
+                ThermyxDivider()
+                ThermyxValueRow(label: "Pairing code", value: roles.pairingCode, valueFont: ThermyxFont.rowTitle, valueTracking: 2)
+                ThermyxDivider()
+                ThermyxValueRow(label: "Role", value: roles.role?.rawValue ?? "—")
+            }
+
+            Button("Delete all history") { showingDeleteConfirmation = true }
+                .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
+
+            Button("Change role") { showingRoleConfirmation = true }
+                .buttonStyle(ThermyxSecondaryButtonStyle())
+        }
+    }
+
+    // MARK: - Sensor layout
+    //
+    // A reference, not a readout. It shows where the eight pressure sensors
+    // sit on the sole so the layout can be checked against the hardware — and
+    // so the coordinate system everything else is drawn in is visible rather
+    // than theoretical. No values are shown, because the current firmware
+    // reports one aggregate balance channel, not eight.
+
+    private var sensorLayout: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Sensor layout")
+
+            ThermyxCard {
+                VStack(alignment: .leading, spacing: Thermyx.Space.m) {
+                    HStack(alignment: .center, spacing: Thermyx.Space.xl) {
+                        ForEach(Foot.allCases) { foot in
+                            VStack(spacing: 6) {
+                                SoleView(foot: foot, reading: viewModel.reading[foot], unit: unit, showsSensorSites: true)
+                                    .frame(height: 190)
+                                Text(foot.label)
+                                    .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                    }
+
+                    Text(layoutNote)
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+
+    private var layoutNote: String {
+        let base = "Eight pressure sites per insole: medial and lateral heel, medial and lateral midfoot, the first, third and fifth metatarsal heads, and the hallux."
+        guard let size = settings.soleSize else {
+            return base + " Set a sole size to see the spacing in millimetres."
+        }
+        // Heel to first metatarsal head, the span the wiring run has to cover.
+        let span = size.millimetres(0.72 - 0.13)
+        return base + String(format: " At %@, the heel-to-first-metatarsal span is %.0f mm.", size.label, span)
+    }
+
+    // MARK: - Legal
+
+    private var legalRow: some View {
+        VStack(spacing: Thermyx.Space.m) {
+            Button { legalDocument = .privacy } label: {
+                ThermyxNavigationRow(
+                    title: "Privacy & terms",
+                    detail: "How Thermyx handles your data",
+                    systemImage: "doc.text.fill",
+                    iconTint: Thermyx.Ink.textSupporting,
+                    iconFill: Thermyx.Tint.neutralFill
+                )
+            }
+            .buttonStyle(.plain)
+
+            Text("Thermyx is an investigational heat-risk warning aid. It does not measure core body temperature and does not diagnose heat illness.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.top, Thermyx.Space.xs)
+    }
+}
+
+/// The gradient target-temperature track with a ringed knob.
+struct ThermalTargetSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+
+    private var fraction: Double {
+        (value - range.lowerBound) / (range.upperBound - range.lowerBound)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            let knob: CGFloat = 22
+            let travel = max(0, proxy.size.width - knob)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: Thermyx.Ink.signal, location: 0),
+                                .init(color: Thermyx.Ink.ice, location: 0.4),
+                                .init(color: Thermyx.Ink.amber, location: 0.72),
+                                .init(color: Thermyx.Ink.ember, location: 1)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(height: 8)
+
+                Circle()
+                    .fill(Thermyx.Ink.textPrimary)
+                    .frame(width: knob, height: knob)
+                    .overlay { Circle().strokeBorder(Thermyx.Ink.midnight, lineWidth: 3) }
+                    .offset(x: travel * fraction)
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(.rect)
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { gesture in
+                        let position = min(max(0, gesture.location.x - knob / 2), travel)
+                        let newFraction = travel > 0 ? position / travel : 0
+                        value = (range.lowerBound + newFraction * (range.upperBound - range.lowerBound))
+                            .rounded(toNearest: 0.5)
+                    }
+            )
+        }
+        .frame(height: Thermyx.minimumTapTarget)
+        .accessibilityElement()
+        .accessibilityLabel("Target temperature")
+        .accessibilityValue(String(format: "%.1f degrees Celsius", value))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: value = min(range.upperBound, value + 0.5)
+            case .decrement: value = max(range.lowerBound, value - 0.5)
+            @unknown default: break
+            }
+        }
+    }
+}
+
+/// A label with an inline editable value, used in the backend card.
+struct ThermyxEditableRow: View {
+    let label: String
+    var placeholder: String = ""
+    @Binding var text: String
+    var isSecure: Bool = false
+    var keyboard: UIKeyboardType = .default
+
+    var body: some View {
+        HStack(spacing: Thermyx.Space.m) {
+            Text(label)
+                .font(ThermyxFont.body)
+                .foregroundStyle(Thermyx.Ink.textSupporting)
+                .frame(width: 96, alignment: .leading)
+
+            Group {
+                if isSecure {
+                    SecureField(placeholder, text: $text)
+                } else {
+                    TextField(placeholder, text: $text)
+                }
+            }
+            .font(ThermyxFont.body)
+            .foregroundStyle(Thermyx.Ink.textPrimary)
+            .multilineTextAlignment(.trailing)
+            .keyboardType(keyboard)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+        }
+        .padding(.horizontal, Thermyx.Space.xl)
+        .padding(.vertical, Thermyx.Space.s)
+        .frame(minHeight: Thermyx.minimumTapTarget)
+    }
+}
+
+private extension Double {
+    func rounded(toNearest step: Double) -> Double {
+        (self / step).rounded() * step
+    }
+}

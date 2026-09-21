@@ -1,0 +1,132 @@
+{
+  "articles": [
+    {
+      "id": "feet-first",
+      "category": "heat",
+      "title": "Why your feet tell you about heat strain first",
+      "deck": "Extremities shed heat before core temperature moves. What that means for when you should stop.",
+      "readMinutes": 5,
+      "featured": true,
+      "status": "placeholder",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "OUTLINE — needs writing. Explain the physiology of heat dissipation through glabrous skin on the soles, why peripheral blood flow rises before core temperature climbs, and what that means for the timing of a warning. Cite a peer-reviewed thermoregulation source for the mechanism."
+        },
+        {
+          "kind": "pullStat",
+          "text": "PULL-STAT — needs a real figure and its source. The mock used a placeholder number; do not ship one that has not been checked against the original publication."
+        },
+        {
+          "kind": "body",
+          "text": "OUTLINE — needs writing. Describe what Thermyx actually measures: contact temperature at the insole, sampled continuously, and why watching a trend across zones separates a hot boot from a hot body. Be explicit that this is not a core-temperature measurement."
+        },
+        {
+          "kind": "action",
+          "text": "OUTLINE — needs writing. Give the user one concrete, checkable action tied to what the app shows them."
+        }
+      ],
+      "sources": "SOURCES — needs real citations before this ships."
+    },
+    {
+      "id": "comfort-band",
+      "category": "heat",
+      "title": "Reading your comfort band",
+      "deck": "What the shaded range on your temperature chart means, and what falling outside it does and does not tell you.",
+      "readMinutes": 3,
+      "featured": false,
+      "status": "placeholder",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "OUTLINE — needs writing. Define the comfort band as a personal baseline rather than a clinical threshold, explain how it is established from the user's own sessions, and state plainly what crossing it does not prove."
+        },
+        {
+          "kind": "action",
+          "text": "OUTLINE — needs writing. What the user should do the first time they see a sustained excursion."
+        }
+      ],
+      "sources": "SOURCES — needs real citations before this ships."
+    },
+    {
+      "id": "cold-feet",
+      "category": "cold",
+      "title": "Cold feet, poor circulation, and warming safely",
+      "deck": "Warming a cold foot too fast carries its own risks. How to use the heating mode without creating a burn.",
+      "readMinutes": 4,
+      "featured": false,
+      "status": "placeholder",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "OUTLINE — needs writing. Cover gradual rewarming, why reduced sensation raises burn risk, and who should talk to a clinician before using heating at all. Cite a cold-injury or frostbite management guideline."
+        },
+        {
+          "kind": "action",
+          "text": "OUTLINE — needs writing. The practical rule for using Heat mode: how long, how warm, and when to stop."
+        }
+      ],
+      "sources": "SOURCES — needs real citations before this ships."
+    },
+    {
+      "id": "fatigue-gait",
+      "category": "feet",
+      "title": "Fatigue shows up in your gait before you feel it",
+      "deck": "Stability, cadence, and load shift as a shift wears on. What Thermyx can and cannot read from that.",
+      "readMinutes": 4,
+      "featured": false,
+      "status": "placeholder",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "OUTLINE — needs writing. Describe the measurable gait changes associated with fatigue and the limits of inferring them from a single insole. Be explicit that fall-risk prediction is a research direction, not a capability this app claims."
+        },
+        {
+          "kind": "action",
+          "text": "OUTLINE — needs writing. What a drop below baseline should prompt the user to do."
+        }
+      ],
+      "sources": "SOURCES — needs real citations before this ships."
+    },
+    {
+      "id": "hydration",
+      "category": "heat",
+      "title": "Hydration, shade, and the 20-minute rule",
+      "deck": "The countermeasures that actually move the needle when a warning fires.",
+      "readMinutes": 5,
+      "featured": false,
+      "status": "placeholder",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "OUTLINE — needs writing. Summarise established occupational heat countermeasures — work/rest cycling, shade, fluid replacement — and attribute each to an occupational-health guideline rather than to Thermyx."
+        },
+        {
+          "kind": "action",
+          "text": "OUTLINE — needs writing. The short version the user can act on mid-shift."
+        }
+      ],
+      "sources": "SOURCES — needs real citations before this ships."
+    },
+    {
+      "id": "what-thermyx-is-not",
+      "category": "feet",
+      "title": "What Thermyx is not",
+      "deck": "An investigational warning aid, not a diagnosis. The limits, stated plainly.",
+      "readMinutes": 3,
+      "featured": false,
+      "status": "placeholder",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "OUTLINE — needs writing. State that Thermyx does not measure core body temperature, does not diagnose heat illness, and is not a substitute for medical care. List the symptoms that should send someone to emergency services regardless of what the app shows."
+        },
+        {
+          "kind": "action",
+          "text": "OUTLINE — needs writing. When to stop trusting the app and call for help."
+        }
+      ],
+      "sources": "SOURCES — needs real citations before this ships."
+    }
+  ]
+}
