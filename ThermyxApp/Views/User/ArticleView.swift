@@ -37,7 +37,7 @@ struct ArticleView: View {
         ThermyxCard(padding: Thermyx.Space.l, radius: Thermyx.Radius.compact, fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
             VStack(alignment: .leading, spacing: 6) {
                 SectionLabel("Draft", color: Thermyx.Ink.amber)
-                Text("The headline and structure are final. The copy below is an outline — it needs to be written and cited before this ships. No figures have been filled in, deliberately.")
+                Text("Written, but not yet checked: every source and figure below must be checked against the original publication before this ships.")
                     .font(ThermyxFont.caption)
                     .foregroundStyle(Thermyx.Ink.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)

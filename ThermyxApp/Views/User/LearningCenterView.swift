@@ -57,7 +57,7 @@ struct LearningCenterView: View {
         ThermyxCard(padding: Thermyx.Space.l, radius: Thermyx.Radius.compact, fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel("Draft library", color: Thermyx.Ink.amber)
-                Text("Every headline here is final. The copy underneath is an outline — it still needs to be written and cited.")
+                Text("These articles are written but their sources have not been checked yet. Each one is marked as a draft until it is.")
                     .font(ThermyxFont.caption)
                     .foregroundStyle(Thermyx.Ink.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -208,7 +208,7 @@ struct DraftBadge: View {
     var compact: Bool = false
 
     var body: some View {
-        Text(compact ? "Draft" : "Draft · needs writing")
+        Text(compact ? "Draft" : "Draft · sources unchecked")
             .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.amber)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)

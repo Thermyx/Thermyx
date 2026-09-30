@@ -224,12 +224,14 @@ app changes.
 **3. History and charts** populate themselves. The Day range needs about three
 minutes of wear; Week and Month accumulate from there.
 
-**4. Learning Center copy.** `Resources/Content/learning-articles.json` ships
-six real headlines with outline bodies, each marked `"status": "placeholder"`.
-Write and cite each one, then change its status to `"published"`. The draft
-banner and badges disappear on their own once nothing is a placeholder. **No
-statistics have been filled in anywhere — do not ship a figure that has not
-been checked against its original publication.**
+**4. Learning Center copy.** `Resources/Content/learning-articles.json` has all
+six articles written, with their sources named at the end of each, but still
+marked `"status": "placeholder"`: the sources could not be opened when they were
+written, so nobody has yet checked each figure against its original
+publication. Check them (the Charkoudian skin-blood-flow figure, the NIOSH
+water guidance, the WMS frostbite rewarming range, and the CDC symptom lists),
+then change each status to `"published"`. The draft banner and badges
+disappear on their own once nothing is a placeholder.
 
 **5. Insole artwork** — see *Sole geometry* below.
 

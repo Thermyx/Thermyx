@@ -11,22 +11,22 @@
       "sections": [
         {
           "kind": "body",
-          "text": "OUTLINE — needs writing. Explain the physiology of heat dissipation through glabrous skin on the soles, why peripheral blood flow rises before core temperature climbs, and what that means for the timing of a warning. Cite a peer-reviewed thermoregulation source for the mechanism."
+          "text": "When your body gets hot, it moves heat to the skin by sending more blood there. The palms and soles are especially good at this. Their hairless (glabrous) skin contains arteriovenous anastomoses: direct shunts between small arteries and veins that can open wide and carry a lot of warm blood close to the surface. That is why your feet can warm noticeably as your body works to shed heat."
         },
         {
           "kind": "pullStat",
-          "text": "PULL-STAT — needs a real figure and its source. The mock used a placeholder number; do not ship one that has not been checked against the original publication."
+          "text": "In severe heat stress, blood flow to the skin can rise to 6–8 litres a minute — a large share of everything the heart pumps (Charkoudian, 2003)."
         },
         {
           "kind": "body",
-          "text": "OUTLINE — needs writing. Describe what Thermyx actually measures: contact temperature at the insole, sampled continuously, and why watching a trend across zones separates a hot boot from a hot body. Be explicit that this is not a core-temperature measurement."
+          "text": "Thermyx measures foot-contact temperature at the insole, once a second, on each foot. It does not measure core body temperature, and a warm foot on its own does not mean you are overheating: a hot boot, hot ground, or a long walk all warm the foot too. What helps is the pattern. A foot that keeps climbing while the air around you is hot and your steps get less steady is a stronger signal than any one number, which is why Thermyx combines foot temperature, air temperature, and steadiness before it raises the risk level."
         },
         {
           "kind": "action",
-          "text": "OUTLINE — needs writing. Give the user one concrete, checkable action tied to what the app shows them."
+          "text": "When Home shows Caution or higher and your foot temperature is still rising, take a break in the shade, drink water, and switch the insoles to Cool. Check again in ten minutes: the trend should level off or fall."
         }
       ],
-      "sources": "SOURCES — needs real citations before this ships."
+      "sources": "Sources: Charkoudian N. Skin blood flow in adult human thermoregulation: how it works, when it does not, and why. Mayo Clinic Proceedings. 2003;78(5):603–612. doi:10.4065/78.5.603."
     },
     {
       "id": "comfort-band",
@@ -39,14 +39,18 @@
       "sections": [
         {
           "kind": "body",
-          "text": "OUTLINE — needs writing. Define the comfort band as a personal baseline rather than a clinical threshold, explain how it is established from the user's own sessions, and state plainly what crossing it does not prove."
+          "text": "The shaded range on your temperature charts is the comfort band: 30–34 °C (86–93 °F) of foot-contact temperature. Readings are coloured by where they fall: below 30 °C is Cool, 30–34 °C is Comfort, 34–37 °C is Warm, and 37 °C and above is Hot. The heat-exposure ring on Insights shows how much of your wear time was spent above the band."
+        },
+        {
+          "kind": "body",
+          "text": "The band is a fixed range chosen for the prototype, not a personal baseline and not a medical threshold. Feet vary: yours may sit warm or cool for perfectly ordinary reasons like your socks, your shoes, or the ground. Time above the band tells you your feet spent time warm. It does not tell you that you are ill, and time inside it does not prove you are safe. The risk level on Home, which also looks at air temperature and steadiness, is the better guide in the moment."
         },
         {
           "kind": "action",
-          "text": "OUTLINE — needs writing. What the user should do the first time they see a sustained excursion."
+          "text": "The first time you see a long stretch above the band, look at what you were doing then: the air temperature, your shoes, and whether you were resting or working. If the risk level was also raised, plan more shade and water breaks for that kind of day."
         }
       ],
-      "sources": "SOURCES — needs real citations before this ships."
+      "sources": "Sources: the band edges are set in the app (ThermyxTemperatureScale). No outside claim is made about what the band means for health."
     },
     {
       "id": "cold-feet",
@@ -59,14 +63,18 @@
       "sections": [
         {
           "kind": "body",
-          "text": "OUTLINE — needs writing. Cover gradual rewarming, why reduced sensation raises burn risk, and who should talk to a clinician before using heating at all. Cite a cold-injury or frostbite management guideline."
+          "text": "Cold feet need warming gently. Numb or very cold skin cannot feel heat properly, so it is easy to burn it with a heat source that would feel fine on warm skin. Frostbite guidance warns against rewarming with dry heat such as fires, heaters, or heating pads for this reason, and recommends warm water at 37–39 °C when rewarming is needed (Wilderness Medical Society). If a foot is white, waxy, hard, or has lost feeling, that is a medical problem: get care rather than warming it with the insole."
+        },
+        {
+          "kind": "body",
+          "text": "Some people should talk to a clinician before using any heat on their feet, including anyone with diabetes, peripheral neuropathy, or poor circulation, because they may not feel a burn happening. Thermyx limits heating in two places: the app turns heating off and raises the risk level if foot contact reaches 40 °C, and the insole firmware refuses to heat at that limit on its own."
         },
         {
           "kind": "action",
-          "text": "OUTLINE — needs writing. The practical rule for using Heat mode: how long, how warm, and when to stop."
+          "text": "Use Auto with a modest target (30–32 °C) rather than Heat when your feet are cold, and check your feet after the first 20 minutes. Stop heating if your feet feel numb, tingle strongly, or look red or blistered."
         }
       ],
-      "sources": "SOURCES — needs real citations before this ships."
+      "sources": "Sources: McIntosh SE, et al. Wilderness Medical Society Clinical Practice Guidelines for the Prevention and Treatment of Frostbite: 2024 Update. Wilderness & Environmental Medicine. 2024. doi:10.1177/10806032231222359."
     },
     {
       "id": "fatigue-gait",
@@ -79,14 +87,18 @@
       "sections": [
         {
           "kind": "body",
-          "text": "OUTLINE — needs writing. Describe the measurable gait changes associated with fatigue and the limits of inferring them from a single insole. Be explicit that fall-risk prediction is a research direction, not a capability this app claims."
+          "text": "As muscles tire, walking changes. Research on induced fatigue has found changes such as shorter, slower, or more variable steps, although results differ between studies and people (a 2019 systematic review in PLOS ONE, in older adults). Thermyx watches three related things from the insole: steadiness (how regular your step timing is), cadence (steps per minute), and how much of your weight goes through the front of your foot. With two insoles it can also see when you start favouring one side."
+        },
+        {
+          "kind": "body",
+          "text": "These are clues, not a diagnosis. Steadiness changes with the ground, your shoes, carrying a load, or simply slowing down. Thermyx does not predict falls; that is a research question, not something this app claims to do. A drop in steadiness raises the risk level only as one signal among several."
         },
         {
           "kind": "action",
-          "text": "OUTLINE — needs writing. What a drop below baseline should prompt the user to do."
+          "text": "If Home shows your steadiness below your usual level, slow down and take a break. If you are also hot, treat it as a heat warning: shade, water, and Cool. If one foot keeps taking more load, check your shoes and anything that hurts."
         }
       ],
-      "sources": "SOURCES — needs real citations before this ships."
+      "sources": "Sources: Effects of experimentally induced fatigue on healthy older adults' gait: a systematic review. PLOS ONE. 2019;14(12):e0226939."
     },
     {
       "id": "hydration",
@@ -99,14 +111,22 @@
       "sections": [
         {
           "kind": "body",
-          "text": "OUTLINE — needs writing. Summarise established occupational heat countermeasures — work/rest cycling, shade, fluid replacement — and attribute each to an occupational-health guideline rather than to Thermyx."
+          "text": "Occupational heat guidance comes down to three things: water, rest, and shade. NIOSH recommends that workers in the heat drink about one cup (8 oz) of water every 15–20 minutes, even before they feel thirsty, and warns against drinking much more than that over a shift. It also recommends regular rest breaks in a cool or shaded area, and building up gradually over the first days of hot work (acclimatization), because most heat deaths happen in the first days on the job. OSHA's heat campaign uses the same three words: Water. Rest. Shade."
+        },
+        {
+          "kind": "pullStat",
+          "text": "About one cup of water every 15–20 minutes when working in the heat (NIOSH)."
+        },
+        {
+          "kind": "body",
+          "text": "Thermyx's cooling can make your feet more comfortable, but it does not replace these steps. Cooling the soles removes only a small amount of heat compared with what your body produces when working hard."
         },
         {
           "kind": "action",
-          "text": "OUTLINE — needs writing. The short version the user can act on mid-shift."
+          "text": "When a warning fires: stop, get into shade, drink a cup of water, and switch the insoles to Cool. Rest until the risk level drops, then keep drinking a cup every 15–20 minutes."
         }
       ],
-      "sources": "SOURCES — needs real citations before this ships."
+      "sources": "Sources: NIOSH. Criteria for a Recommended Standard: Occupational Exposure to Heat and Hot Environments (DHHS/NIOSH Publication 2016-106); NIOSH Heat Stress recommendations (cdc.gov/niosh/heat-stress); OSHA Heat Illness Prevention campaign."
     },
     {
       "id": "what-thermyx-is-not",
@@ -119,14 +139,18 @@
       "sections": [
         {
           "kind": "body",
-          "text": "OUTLINE — needs writing. State that Thermyx does not measure core body temperature, does not diagnose heat illness, and is not a substitute for medical care. List the symptoms that should send someone to emergency services regardless of what the app shows."
+          "text": "Thermyx is an investigational heat-risk warning aid. It does not measure core body temperature, it does not diagnose heat illness or any other condition, and it is not a medical device or a substitute for medical care. It can be wrong, it can lose connection, and it can miss things."
+        },
+        {
+          "kind": "body",
+          "text": "Call 911 for anyone who shows signs of heat stroke, whatever the app shows: confusion or slurred speech, fainting or unresponsiveness, seizures, hot skin with heavy sweating or hot dry skin, or a very high body temperature. While you wait, move them somewhere cool, remove extra clothing, and cool them with cold water or ice on the skin. Heat exhaustion (heavy sweating, headache, nausea, dizziness, weakness, thirst) also needs you to stop, cool down, and drink water, and to get medical help if it gets worse or lasts more than an hour (CDC/NIOSH)."
         },
         {
           "kind": "action",
-          "text": "OUTLINE — needs writing. When to stop trusting the app and call for help."
+          "text": "Trust how you and the people around you feel over what the app says. If someone is confused, faints, or has a seizure in the heat, call 911 first and look at the app later."
         }
       ],
-      "sources": "SOURCES — needs real citations before this ships."
+      "sources": "Sources: CDC/NIOSH, Heat-related Illnesses (cdc.gov/niosh/heat-stress/about/illnesses.html)."
     }
   ]
 }
