@@ -101,8 +101,8 @@ struct InsightsHubView: View {
                         .foregroundStyle(Thermyx.Ink.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: Thermyx.Space.s) {
-                        ChartLegendChip(color: Thermyx.Ink.ember, label: "Hot \(digest.heatExposureSeconds.map(DurationFormat.short) ?? "—")")
-                        ChartLegendChip(color: Thermyx.Ink.signal, label: "Comfort \(digest.comfortSeconds.map(DurationFormat.short) ?? "—")")
+                        ChartLegendChip(color: Thermyx.Ink.ember, label: "Hot \(digest.heatExposureSeconds.map(DurationFormat.long) ?? "—")")
+                        ChartLegendChip(color: Thermyx.Ink.signal, label: "Comfort \(digest.comfortSeconds.map(DurationFormat.long) ?? "—")")
                     }
                 }
             }
@@ -158,9 +158,9 @@ struct InsightsHubView: View {
                         ],
                         range: settings.insightsRange,
                         height: 96,
-                        format: { String(format: "%+.1f°", $0) },
+                        format: GapFormat.degrees,
                         showsExtremes: false,
-                        averageLabel: "Mean gap",
+                        averageLabel: "Average",
                         highTint: Thermyx.Ink.amber,
                         lowTint: Thermyx.Ink.amber
                     )
@@ -184,9 +184,9 @@ struct InsightsHubView: View {
 
     private func balanceSummary(_ digest: BilateralDigest) -> String {
         if let hotter = digest.consistentlyHotterFoot {
-            return "Positive is the left foot running warmer. The \(hotter.label.lowercased()) foot has been consistently warmer this period."
+            return "Above the line, the left foot is warmer; below it, the right. The \(hotter.label.lowercased()) foot has been consistently warmer this period."
         }
-        return "Positive is the left foot running warmer. Neither foot has been consistently warmer."
+        return "Above the line, the left foot is warmer; below it, the right. Neither foot has been consistently warmer."
     }
 
     // MARK: - Foot vs ambient

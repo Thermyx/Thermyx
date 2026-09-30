@@ -353,9 +353,11 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             timestamp: .now,
             footTemperatureC: plausible(centidegrees(3)),
             ambientTemperatureC: plausible(centidegrees(5)),
-            pressureBalance: Double(uint16(9)) / 10000.0,
-            gaitStability: Double(uint16(7)) / 10000.0,
-            batteryPercent: Int(bytes[2]),
+            // 0xFFFF / 0xFF mean "not measured" (e.g. no steps yet, no load,
+            // no battery sense fitted) and are shown as missing.
+            pressureBalance: uint16(9) == UInt16.max ? nil : min(1, Double(uint16(9)) / 10000.0),
+            gaitStability: uint16(7) == UInt16.max ? nil : min(1, Double(uint16(7)) / 10000.0),
+            batteryPercent: bytes[2] <= 100 ? Int(bytes[2]) : nil,
             thermalMode: mode,
             zones: zones,
             cadenceStepsPerMinute: cadence,
@@ -660,6 +662,9 @@ final class ThermyxInsoleSimulator: ObservableObject {
     @Published var ambientC: Double = 27
     /// Simulates a tiring wearer: gait stability falls and load shifts to one foot.
     @Published var fatigued = false
+    /// Simulates a failed Peltier and fan: the insole can neither cool nor
+    /// heat, and heat builds up in the shoe. Used to demonstrate Critical.
+    @Published var coolingFault = false
 
     private struct Insole {
         var contactC: Double
@@ -775,7 +780,7 @@ final class ThermyxInsoleSimulator: ObservableObject {
             let natural = naturalContact(foot)
 
             // What the firmware does with the command it was given.
-            switch insole.commanded {
+            switch coolingFault ? .off : insole.commanded {
             case .ventilation:
                 // Auto: regulate towards the target with a little hysteresis.
                 let target = autoTargetC(foot)
@@ -791,12 +796,13 @@ final class ThermyxInsoleSimulator: ObservableObject {
                 insole.active = insole.commanded
             }
 
-            let (target, rate): (Double, Double) = switch insole.active {
+            var (target, rate): (Double, Double) = switch insole.active {
             case .heating: (42, 0.035)
             case .cooling: (natural - 8, 0.035)
             case .ventilation: (natural - 1.2, 0.02)
             case .off: (natural, 0.015)
             }
+            if coolingFault { (target, rate) = (natural + 2, 0.04) }
             insole.contactC += (target - insole.contactC) * rate + Double.random(in: -0.04...0.04)
 
             let gaitTarget = fatigued ? 0.73 : 0.91

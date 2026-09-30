@@ -33,7 +33,7 @@ struct InsightsRangeBar: View {
                     HStack(spacing: 6) {
                         Image(systemName: isStandard ? "checkmark.square.fill" : "square")
                             .font(.system(size: 15, weight: .semibold))
-                        Text("Standard")
+                        Text("Calendar")
                             .narrowLabel(
                                 ThermyxFont.statusPill,
                                 tracking: ThermyxTracking.axisLabel,
@@ -56,7 +56,7 @@ struct InsightsRangeBar: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Standard periods")
+                .accessibilityLabel("Calendar periods")
                 .accessibilityValue(isStandard ? "On" : "Off")
                 .accessibilityHint(isStandard
                     ? "Currently aligned to the calendar. Double tap for a rolling window."

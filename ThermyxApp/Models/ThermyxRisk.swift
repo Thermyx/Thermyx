@@ -181,3 +181,43 @@ enum ThermyxRiskEngine {
         return ThermyxRiskAssessment(level: level, reasons: reasons, foot: worst.foot)
     }
 }
+
+/// On-device next-step suggestions, shown on Home when the wearer turns them
+/// on. Plain rules over the live readings — nothing leaves the phone and no
+/// model is involved — so each suggestion can be traced to the signal that
+/// prompted it.
+enum ThermyxSuggestion {
+    static func nextStep(for assessment: ThermyxRiskAssessment, reading: BilateralReading) -> String? {
+        let level = assessment.level
+        guard level != .unavailable else { return nil }
+        let hottest = reading.present.compactMap(\.footTemperatureC).max()
+        let ambient = reading.present.compactMap(\.ambientTemperatureC).max()
+        let steadiness = reading.present.compactMap(\.gaitStability).min()
+
+        if let hottest, hottest >= ThermyxRiskEngine.burnLimitC {
+            return "Your insole reached its heat limit. Step out of the shoes for a few minutes and let your feet cool."
+        }
+        if level == .critical {
+            return "Stop now, get to shade or air conditioning, drink water, and call for help if you feel dizzy or confused."
+        }
+        if level == .high {
+            return "Stop and rest in the shade, drink water, and switch the insoles to Cool."
+        }
+        if let steadiness, steadiness < 0.8 {
+            return "Your steps are less steady than usual. Slow down and take a break."
+        }
+        if let ambient, ambient >= 35 {
+            return "It's hot. Take regular shade and water breaks, and keep the insoles on Cool or Auto."
+        }
+        if let favoured = reading.favouredFoot, assessment.reasons.contains(where: { $0.hasPrefix("Load is") }) {
+            return "You're favouring your \(favoured.label.lowercased()) foot. If something hurts, rest and check your shoe fit."
+        }
+        if let hotter = reading.hotterFoot, assessment.reasons.contains(where: { $0.contains("warmer than the other") }) {
+            return "Your \(hotter.label.lowercased()) foot is running warmer. Check both insoles are seated flat and your shoes fit the same."
+        }
+        if let hottest, let ambient, hottest < 28, ambient < 18 {
+            return "Your feet are cold. Warm them gradually with Auto or Heat."
+        }
+        return nil
+    }
+}

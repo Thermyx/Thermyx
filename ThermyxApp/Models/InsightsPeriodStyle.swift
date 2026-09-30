@@ -14,7 +14,7 @@ enum InsightsPeriodStyle: String, CaseIterable, Identifiable, Codable {
     case rolling
 
     var id: String { rawValue }
-    var label: String { self == .standard ? "Standard" : "Rolling" }
+    var label: String { self == .standard ? "Calendar" : "Rolling" }
 }
 
 extension InsightsRange {

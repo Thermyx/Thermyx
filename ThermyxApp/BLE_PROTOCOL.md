@@ -21,12 +21,12 @@ either. All multi-byte fields are little-endian.
 |---|---|
 | 0 | Protocol version: `1` |
 | 1 | Mode: `0` off, `1` heating, `2` cooling, `3` ventilation |
-| 2 | Battery percentage: `0–100` |
+| 2 | Battery percentage: `0–100`; `0xFF` = not measured |
 | 3–4 | Foot temperature in °C × 100, signed int16 |
 | 5–6 | Ambient temperature in °C × 100, signed int16 |
-| 7–8 | Gait stability × 10000, unsigned uint16 |
-| 9–10 | Pressure balance × 10000, unsigned uint16 |
-| 11 | Reserved flags byte; send `0` initially |
+| 7–8 | Gait stability × 10000, unsigned uint16; `0xFFFF` = not measured |
+| 9–10 | Pressure balance (forefoot share of load) × 10000, unsigned uint16; `0xFFFF` = not measured |
+| 11 | Flags: bits 0–1 say which foot (see [Which foot an insole is on](#which-foot-an-insole-is-on)); bits 2–7 reserved, send `0` |
 
 ### Version 2 — 18 bytes
 
@@ -41,8 +41,13 @@ Bytes 0–11 are unchanged, except that byte 0 carries `2` and bytes 3–4 are t
 | 14–15 | Arch temperature in °C × 100, signed int16 |
 | 16–17 | Heel temperature in °C × 100, signed int16 |
 
+Foot and ambient temperatures outside −20…80 °C are treated as missing, so a
+disconnected sensor can send `INT16_MIN` (`0x8000`) and the app shows a dash
+rather than a number.
+
 Three-zone sensing is a **hardware goal, not a launch dependency.** A v1 insole
-with the two thermistors in the current prototype is fully supported: the app
+with the two temperature sensors in the current prototype (one contact, one
+ambient) is fully supported: the app
 receives no zones, collapses the Home zone readouts to the single foot average,
 and hides the zone heat map on Insights entirely. If the third and fourth
 thermistors land later, the firmware switches to v2 and the zone map lights up
@@ -54,15 +59,25 @@ absent, rather than drawing a heat map off a broken channel.
 
 ## Commands
 
-Commands are two bytes: `[1, mode]`, using the same mode values above. The
-firmware should acknowledge writes and continue sending telemetry at a defined
-interval, such as 1 Hz.
+Commands are written with response to the command characteristic. The firmware
+should keep sending telemetry at a defined interval, such as 1 Hz.
+
+| Bytes | Command |
+|---|---|
+| `[1, mode]` | Set the mode, using the mode values above. `3` (ventilation) is the app's **Auto**: the firmware regulates towards the target temperature and reports the mode it is actually running. |
+| `[2, lo, hi]` | Set Auto's target foot temperature: int16 °C × 100, little-endian. The app sends 26–38 °C; firmware should clamp to that range. Sent on connect and whenever the wearer moves the Advanced slider. Firmware that predates this command can ignore it. |
 
 The app's control bar sends `cooling` for Cool, `ventilation` for Auto, and
 `heating` for Heat. **The app will not send `heating` while its risk engine is
 at High Risk or Critical** — it locks the Heat control out and commands cooling
 instead. Firmware must still enforce its own independent cutoffs; the app-side
 lockout is a second layer, not the primary safety mechanism.
+
+The reference firmware (`firmware/thermyx_insole`) enforces: no heating at or
+above **40 °C** foot contact (the app's burn-protection limit, which also
+raises High risk on its own), no cooling at or below 15 °C, no heating or
+cooling without a foot temperature, and no heating while no phone is
+connected.
 
 ## Honest output
 
@@ -75,8 +90,10 @@ testing them together.
 ### Version 3 — 22 bytes
 
 Version 3 is version 2 with two IMU-derived movement channels appended. These
-need **no new hardware** — the XIAO nRF52840 Sense already carries the IMU — so
-a v2 insole can move to v3 with a firmware update alone.
+come from the GY-521 (MPU-6050) motion sensor already on the prototype's I2C
+bus, so a v2 insole can move to v3 with a firmware update alone. A v1-sensor
+insole can still send v3: it fills the zone fields with an out-of-range value
+and the app ignores them.
 
 | Byte(s) | Meaning |
 |---|---|

@@ -81,7 +81,19 @@
 		F7ECF81ED9203C2C292A3ACC /* ThermyxContact.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F7B0162055BBFC2D5F5015B /* ThermyxContact.swift */; };
 		FA4526A30B080AEDA77A934B /* TemperatureUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 406EC11158B14962DAD12FEF /* TemperatureUnit.swift */; };
 		FBDB595D3014FAEC48443CC4 /* InsightsHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC44DD95EDDAAD50BC4429CA /* InsightsHubView.swift */; };
+		C9936D8F2F0E27287FF57089 /* FormattingAndModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBAEF8A007F498DD5842387 /* FormattingAndModelTests.swift */; };
+		1260EC7EB22CECA34A50BFA0 /* RiskEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		CF8FFE5B67057111F5201064 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = CFF912C1B73C3B666D3A5C37 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 556EA8B52135F627F617D0EB;
+			remoteInfo = ThermyxApp;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		01080BFDCEC28F25EBE44728 /* ThermyxAlertCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxAlertCoordinator.swift; sourceTree = "<group>"; };
@@ -159,13 +171,27 @@
 		F5DDDA3A9F033D7235325A0F /* LegalSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalSheet.swift; sourceTree = "<group>"; };
 		FB3EAA47E3EA581B4140AEA4 /* onboarding-walkthrough.mp4 */ = {isa = PBXFileReference; path = "onboarding-walkthrough.mp4"; sourceTree = "<group>"; };
 		FD14EDC0AE1D081768DBD61C /* ThermyxTopScrim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxTopScrim.swift; sourceTree = "<group>"; };
+		2BBAEF8A007F498DD5842387 /* FormattingAndModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingAndModelTests.swift; sourceTree = "<group>"; };
+		39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiskEngineTests.swift; sourceTree = "<group>"; };
+		090F7973F01B07CCA9C10E54 /* ThermyxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ThermyxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		6249206CFDA962001C349320 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		0CD2C62DB7168FA14A220458 = {
 			isa = PBXGroup;
 			children = (
 				DCE2114BD1A7CB70839DC555 /* ThermyxApp */,
+				4CCD5FF63852A14DC7E90B12 /* ThermyxAppTests */,
 				3C08F1C92CE8B9ED12BC19CB /* Products */,
 			);
 			sourceTree = "<group>";
@@ -203,6 +229,7 @@
 		3C08F1C92CE8B9ED12BC19CB /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				090F7973F01B07CCA9C10E54 /* ThermyxAppTests.xctest */,
 				B8D64CE29AFB54B490E72D4D /* ThermyxApp.app */,
 			);
 			name = Products;
@@ -363,6 +390,15 @@
 			path = Components;
 			sourceTree = "<group>";
 		};
+		4CCD5FF63852A14DC7E90B12 /* ThermyxAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				2BBAEF8A007F498DD5842387 /* FormattingAndModelTests.swift */,
+				39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */,
+			);
+			path = ThermyxAppTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -384,6 +420,25 @@
 			productReference = B8D64CE29AFB54B490E72D4D /* ThermyxApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		2FDDB4580BE068991AFF463C /* ThermyxAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 94C9A60AB1B8941B058D0E0E /* Build configuration list for PBXNativeTarget "ThermyxAppTests" */;
+			buildPhases = (
+				3D1B7DD83E6AEDFDC6AF2CAB /* Sources */,
+				6249206CFDA962001C349320 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D9961623B347DD8EA51BBC0A /* PBXTargetDependency */,
+			);
+			name = ThermyxAppTests;
+			packageProductDependencies = (
+			);
+			productName = ThermyxAppTests;
+			productReference = 090F7973F01B07CCA9C10E54 /* ThermyxAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -395,6 +450,10 @@
 				TargetAttributes = {
 					556EA8B52135F627F617D0EB = {
 						ProvisioningStyle = Automatic;
+					};
+					2FDDB4580BE068991AFF463C = {
+						ProvisioningStyle = Automatic;
+						TestTargetID = 556EA8B52135F627F617D0EB;
 					};
 				};
 			};
@@ -413,6 +472,7 @@
 			projectRoot = "";
 			targets = (
 				556EA8B52135F627F617D0EB /* ThermyxApp */,
+				2FDDB4580BE068991AFF463C /* ThermyxAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -509,7 +569,24 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3D1B7DD83E6AEDFDC6AF2CAB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C9936D8F2F0E27287FF57089 /* FormattingAndModelTests.swift in Sources */,
+				1260EC7EB22CECA34A50BFA0 /* RiskEngineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D9961623B347DD8EA51BBC0A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 556EA8B52135F627F617D0EB /* ThermyxApp */;
+			targetProxy = CF8FFE5B67057111F5201064 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		07A4B16E392249E33B9CDC21 /* Debug */ = {
@@ -669,6 +746,44 @@
 			};
 			name = Debug;
 		};
+		E500D57FD9C9FA57C4D0C3F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.thermyx.app.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ThermyxApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ThermyxApp";
+			};
+			name = Debug;
+		};
+		C5633454450D64675F98B3DF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.thermyx.app.tests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ThermyxApp.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/ThermyxApp";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -686,6 +801,15 @@
 			buildConfigurations = (
 				07A4B16E392249E33B9CDC21 /* Debug */,
 				73CB9787592DE21AA66A3EDC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		94C9A60AB1B8941B058D0E0E /* Build configuration list for PBXNativeTarget "ThermyxAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E500D57FD9C9FA57C4D0C3F2 /* Debug */,
+				C5633454450D64675F98B3DF /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

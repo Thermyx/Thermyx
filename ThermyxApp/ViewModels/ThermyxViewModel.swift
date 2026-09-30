@@ -228,7 +228,7 @@ final class ThermyxViewModel: ObservableObject {
                 lastLockoutCommand = .now
                 if thermalSetting != .cool {
                     thermalSetting = .cool
-                    showNotice("Heat turned off: risk is \(pairAssessment.level.rawValue). Switched to Cool.")
+                    showNotice("Heat turned off at \(pairAssessment.level.rawValue). Switched to Cool.")
                 }
                 ble.send(command: .cooling)
             }

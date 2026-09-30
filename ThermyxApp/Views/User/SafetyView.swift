@@ -584,8 +584,9 @@ struct CriticalAlertView: View {
 
     private var countdownText: String {
         if circleNotified { return canTextCircle ? "Your trusted circle has been texted." : "No trusted contacts could be texted. Call for help if you need it." }
-        return canTextCircle
-            ? "Texting your trusted circle in \(remaining) s unless you tap I'm OK."
+        if canTextCircle { return "Texting your trusted circle in \(remaining) s unless you tap I'm OK." }
+        return settings.contacts.contains(where: \.enabled)
+            ? "Tap I'm OK if you're safe. Set up the shared backend under Safety → Advanced so your trusted circle is texted next time."
             : "Tap I'm OK if you're safe. Add trusted contacts on the Safety tab so someone is told next time."
     }
 

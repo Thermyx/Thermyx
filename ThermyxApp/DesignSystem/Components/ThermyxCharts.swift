@@ -112,14 +112,14 @@ struct HeatExposureDonut: View {
                     .font(.custom(ThermyxFont.Family.extraBold, size: 27, relativeTo: .title2))
                     .monospacedDigit()
                     .foregroundStyle(fraction == nil ? Thermyx.Ink.textFaint : Thermyx.Ink.textPrimary)
-                Text("of shift")
+                Text("of wear time")
                     .narrowLabel(ThermyxFont.axisLabel, tracking: 1.4, color: Thermyx.Ink.textSupporting)
             }
         }
         .frame(width: diameter, height: diameter)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Heat exposure")
-        .accessibilityValue(fraction.map { "\(Int(($0 * 100).rounded())) percent of the shift above your comfort band" } ?? "No reading")
+        .accessibilityValue(fraction.map { "\(Int(($0 * 100).rounded())) percent of wear time above your comfort band" } ?? "No reading")
     }
 }
 
@@ -155,7 +155,7 @@ struct TimeInZoneBar: View {
                 ForEach(ThermyxTemperatureScale.Band.allCases) { band in
                     let value = seconds[band] ?? 0
                     if value > 0 {
-                        ChartLegendChip(color: band.color, label: "\(band.label) \(DurationFormat.short(value))")
+                        ChartLegendChip(color: band.color, label: "\(band.label) \(DurationFormat.long(value))")
                     }
                 }
             }
@@ -238,6 +238,20 @@ struct LabeledProgressBar: View {
 }
 
 // MARK: - Formatting
+
+/// Left/right gaps are stored as left minus right. Readers should not have to
+/// decode a sign, so the label names the foot instead.
+enum GapFormat {
+    static func degrees(_ value: Double) -> String {
+        if abs(value) < 0.05 { return "Even" }
+        return String(format: "%@ +%.1f°", value > 0 ? "Left" : "Right", abs(value))
+    }
+
+    static func points(_ value: Double) -> String {
+        if abs(value) < 0.5 { return "Even" }
+        return String(format: "%@ +%.0f pts", value > 0 ? "Left" : "Right", abs(value))
+    }
+}
 
 enum DurationFormat {
     /// `4:52` for hours and minutes, `18m` below an hour.

@@ -285,7 +285,7 @@ struct TrustedWatchView: View {
             )
             if let index = pair?.asymmetryIndex {
                 MetricTile(
-                    label: "L / R difference",
+                    label: "L–R gap",
                     value: "\(Int((index * 100).rounded()))%",
                     tint: index > 0.5 ? Thermyx.Ink.amber : Thermyx.Ink.textPrimary,
                     numeralFont: ThermyxFont.zoneNumeral

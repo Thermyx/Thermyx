@@ -28,6 +28,13 @@
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Thermyx saves your sessions to Health as workouts so heat exposure and time on your feet appear with the rest of your health data. It never writes a body temperature — the insole measures contact temperature, not core temperature.</string>
 
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Lets a local demo relay (http://<laptop IP>:8787) work. Internet
+		     hosts still require HTTPS. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>

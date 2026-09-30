@@ -17,9 +17,8 @@ final class ThermyxSettingsStore: ObservableObject {
 
     /// Profile
     @Published var soleSize: SoleSize? { didSet { save() } }
-    /// Opt-in for future on-device suggestions. Nothing acts on this yet — it
-    /// is stored so the preference exists before the feature does, and the UI
-    /// says as much rather than implying a capability that is not there.
+    /// Opt-in for the on-device next-step suggestions shown on Home
+    /// (`ThermyxSuggestion`). Off by default.
     @Published var aiSuggestionsEnabled: Bool { didSet { save() } }
     /// The hold-at temperature commanded from the Advanced screen, in °C.
     @Published var targetTemperatureC: Double { didSet { save() } }

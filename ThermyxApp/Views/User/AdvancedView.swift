@@ -311,13 +311,13 @@ struct AdvancedView: View {
     }
 
     private var layoutNote: String {
-        let base = "Eight pressure sites per insole: medial and lateral heel, medial and lateral midfoot, the first, third and fifth metatarsal heads, and the hallux."
+        let base = "Three pressure sensors per insole (heel, arch, and forefoot) and two temperature sensors."
         guard let size = settings.soleSize else {
             return base + " Set a sole size to see the spacing in millimetres."
         }
-        // Heel to first metatarsal head, the span the wiring run has to cover.
-        let span = size.millimetres(0.72 - 0.13)
-        return base + String(format: " At %@, the heel-to-first-metatarsal span is %.0f mm.", size.label, span)
+        // Heel sensor to forefoot sensor, the span the wiring run has to cover.
+        let span = size.millimetres(SoleGeometry.SensorSite.forefoot.position.y - SoleGeometry.SensorSite.heel.position.y)
+        return base + String(format: " At %@, the heel-to-forefoot sensor span is %.0f mm.", size.label, span)
     }
 
     // MARK: - Legal
@@ -485,7 +485,19 @@ private struct SimulatedConditionsCard: View {
                     }
                     .tint(Thermyx.Ink.amber)
 
-                    Text("Hot air + Heat raises the risk level; add a tiring wearer to reach Critical.")
+                    Toggle(isOn: $simulator.coolingFault) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Insole fault")
+                                .font(ThermyxFont.rowTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text("The Peltier and fan stop working and heat builds up in the shoe.")
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textMuted)
+                        }
+                    }
+                    .tint(Thermyx.Ink.amber)
+
+                    Text("Hot air is Caution; add a tiring wearer for High; add an insole fault for Critical. The foot hitting 40° while heating is High on its own.")
                         .font(ThermyxFont.caption)
                         .foregroundStyle(Thermyx.Ink.textMuted)
                         .fixedSize(horizontal: false, vertical: true)
