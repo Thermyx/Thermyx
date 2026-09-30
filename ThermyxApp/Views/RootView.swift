@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 /// Chooses onboarding, the user experience, or the watcher experience.
 struct AppRootView: View {
@@ -34,6 +35,10 @@ struct UserRoot: View {
 
     @StateObject private var alerts = ThermyxAlertCoordinator()
     @StateObject private var health = ThermyxHealthService()
+    @State private var showingCritical = false
+    /// After "I'm OK", the takeover stays quiet for a while unless the level
+    /// drops and climbs back to Critical.
+    @State private var criticalSnoozedUntil: Date?
     #if DEBUG
     @StateObject private var tour = ThermyxPreviewHarness.Tour.shared
     #endif
@@ -83,9 +88,11 @@ struct UserRoot: View {
             #if DEBUG
             if !ThermyxPreviewHarness.isActive || ThermyxPreviewHarness.isSimulated {
                 await alerts.requestPermission()
+                alerts.location.requestPermission()
             }
             #else
             await alerts.requestPermission()
+            alerts.location.requestPermission()
             #endif
             health.refreshAuthorizationState()
             if settings.healthKitEnabled, health.availability == .authorized {
@@ -93,7 +100,21 @@ struct UserRoot: View {
             }
         }
         .onReceive(viewModel.$reading) { reading in
-            alerts.evaluate(ThermyxRiskEngine.assess(reading), reading: reading, settings: settings)
+            let assessment = viewModel.assessment
+            alerts.evaluate(assessment, reading: reading, settings: settings)
+            if assessment.level == .critical {
+                let snoozed = criticalSnoozedUntil.map { Date.now < $0 } ?? false
+                if !snoozed, !showingCritical { showingCritical = true }
+            } else if assessment.level.severity < ThermyxRiskLevel.high.severity {
+                criticalSnoozedUntil = nil
+            }
+        }
+        .fullScreenCover(isPresented: $showingCritical) {
+            CriticalAlertView(alerts: alerts, settings: settings) {
+                criticalSnoozedUntil = Date.now.addingTimeInterval(10 * 60)
+                showingCritical = false
+            }
+            .environmentObject(viewModel)
         }
     }
 }
@@ -143,6 +164,7 @@ struct TrustedMemberRoot: View {
             #if DEBUG
             if ThermyxPreviewHarness.showsSampleShift { member.isShowingSample = true }
             #endif
+            _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
             member.start(settings: settings, deviceID: settings.deviceID)
         }
         .onDisappear { member.stop() }

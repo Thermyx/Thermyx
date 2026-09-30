@@ -12,6 +12,10 @@ final class ThermyxViewModel: ObservableObject {
     /// pair: a wearer asking for cooling means both feet.
     @Published private(set) var thermalSetting: ThermalSetting = .auto
     @Published var commandError: String?
+    /// A short explanation shown on the control bar when the app changes the
+    /// thermal mode on the wearer's behalf (the heat lockout), so a choice
+    /// never silently flips.
+    @Published private(set) var controlNotice: String?
     /// The foot whose detail the user is looking at, where a screen shows one
     /// at a time. Defaults to whichever is connected.
     @Published var focusedFoot: Foot = .left
@@ -22,9 +26,17 @@ final class ThermyxViewModel: ObservableObject {
     weak var healthService: ThermyxHealthService?
 
     private var cancellables: Set<AnyCancellable> = []
+    private var knownConnected: Set<Foot> = []
     private var sessionStart: [Foot: Date] = [:]
     private var heatExposureSeconds: [Foot: TimeInterval] = [:]
     private var lastRecordedAt: [Foot: Date] = [:]
+    /// When each left/right gap started, so only sustained gaps count.
+    private var temperatureGapSince: Date?
+    private var loadGapSince: Date?
+    /// The pair's session, written to Health once when the last foot ends.
+    private var pairSession: (start: Date, end: Date, exposure: TimeInterval)?
+    private var lastLockoutCommand: Date?
+    private var noticeTask: Task<Void, Never>?
 
     init() {
         ble.$readings
@@ -41,6 +53,7 @@ final class ThermyxViewModel: ObservableObject {
                     self.endSession(for: foot)
                 }
                 self.reading = next
+                self.trackAsymmetry(next)
                 for entry in next.present { self.ingest(entry) }
                 self.syncFocus()
             }
@@ -51,6 +64,11 @@ final class ThermyxViewModel: ObservableObject {
             .sink { [weak self] connected in
                 guard let self else { return }
                 if !connected.isEmpty { self.isScanning = false }
+                // A newly connected insole gets the saved hold temperature.
+                for foot in connected where !self.knownConnected.contains(foot) {
+                    self.ble.send(targetTemperatureC: Self.savedTargetC, to: foot)
+                }
+                self.knownConnected = connected
                 self.syncFocus()
             }
             .store(in: &cancellables)
@@ -59,7 +77,23 @@ final class ThermyxViewModel: ObservableObject {
     // MARK: - Derived state
 
     /// The pair's risk, including the left/right signals.
-    var assessment: ThermyxRiskAssessment { ThermyxRiskEngine.assess(reading) }
+    var assessment: ThermyxRiskAssessment {
+        ThermyxRiskEngine.assess(
+            reading,
+            sustainedTemperatureGap: isSustained(temperatureGapSince),
+            sustainedLoadGap: isSustained(loadGapSince)
+        )
+    }
+
+    private func isSustained(_ since: Date?) -> Bool {
+        guard let since else { return false }
+        return Date.now.timeIntervalSince(since) >= ThermyxRiskEngine.sustainedAsymmetrySeconds
+    }
+
+    private func trackAsymmetry(_ pair: BilateralReading) {
+        if pair.hotterFoot == nil { temperatureGapSince = nil } else if temperatureGapSince == nil { temperatureGapSince = .now }
+        if pair.favouredFoot == nil { loadGapSince = nil } else if loadGapSince == nil { loadGapSince = .now }
+    }
 
     func assessment(for foot: Foot) -> ThermyxRiskAssessment {
         guard let entry = reading[foot] else { return .unavailable }
@@ -93,6 +127,11 @@ final class ThermyxViewModel: ObservableObject {
             return "Heat locked · \(reading.thermalMode?.statusLabel ?? "mixed")"
         }
         guard let mode = reading.thermalMode else { return "Feet differ" }
+        // Cool and Heat are explicit requests; when the insole reports
+        // something else, say both rather than implying it obeyed.
+        if thermalSetting != .auto, mode != thermalSetting.command {
+            return "\(thermalSetting.label) sent · insole \(mode.shortStatus)"
+        }
         return mode.statusLabel
     }
 
@@ -145,7 +184,28 @@ final class ThermyxViewModel: ObservableObject {
             return
         }
         thermalSetting = setting
+        commandError = nil
         ble.send(command: setting.command)
+    }
+
+    /// Sends a new hold temperature to every connected insole.
+    func setTargetTemperature(_ celsius: Double) {
+        ble.send(targetTemperatureC: celsius)
+    }
+
+    private static var savedTargetC: Double {
+        let stored = UserDefaults.standard.double(forKey: "thermyx.targetTemperatureC")
+        return stored == 0 ? 31 : stored
+    }
+
+    private func showNotice(_ text: String) {
+        controlNotice = text
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(8))
+            guard !Task.isCancelled else { return }
+            self?.controlNotice = nil
+        }
     }
 
     func setMode(_ mode: ThermalMode, foot: Foot? = nil) {
@@ -156,13 +216,22 @@ final class ThermyxViewModel: ObservableObject {
 
     private func ingest(_ entry: ThermyxReading) {
         let foot = entry.foot
-        let pairAssessment = ThermyxRiskEngine.assess(reading)
+        let pairAssessment = assessment
 
-        // Safety override: if the pair escalates while Heat is selected, pull
-        // both feet back to cooling rather than waiting for the user.
-        if pairAssessment.level.locksOutHeating, thermalSetting == .heat {
-            thermalSetting = .cool
-            ble.send(command: .cooling)
+        // Safety override: if the pair escalates while Heat is selected — or
+        // while any insole reports that it is heating, which Auto can do on
+        // its own — pull both feet to cooling rather than waiting.
+        let deviceHeating = reading.present.contains { $0.thermalMode == .heating }
+        if pairAssessment.level.locksOutHeating, thermalSetting == .heat || deviceHeating {
+            let recentlySent = lastLockoutCommand.map { Date.now.timeIntervalSince($0) < 5 } ?? false
+            if !recentlySent {
+                lastLockoutCommand = .now
+                if thermalSetting != .cool {
+                    thermalSetting = .cool
+                    showNotice("Heat turned off: risk is \(pairAssessment.level.rawValue). Switched to Cool.")
+                }
+                ble.send(command: .cooling)
+            }
         }
 
         if sessionStart[foot] == nil { sessionStart[foot] = entry.timestamp }
@@ -180,28 +249,31 @@ final class ThermyxViewModel: ObservableObject {
         lastRecordedAt[foot] = nil
     }
 
-    /// Hands a finished session to Apple Health, then clears it. A session
-    /// shorter than a minute is dropped rather than written — a stray
-    /// reconnect should not litter Health with empty workouts.
+    /// Folds a foot's finished session into the pair's session and hands it
+    /// to Apple Health once no foot is still recording, so one walk is one
+    /// workout however many insoles were worn. Sessions shorter than a minute
+    /// are dropped — a stray reconnect should not litter Health.
     func endSession(for foot: Foot) {
-        guard let start = sessionStart[foot],
-              let end = lastRecordedAt[foot],
-              end.timeIntervalSince(start) >= 60
-        else {
-            clearSession(foot)
-            return
+        if let start = sessionStart[foot], let end = lastRecordedAt[foot], end > start {
+            let exposure = heatExposureSeconds[foot] ?? 0
+            if let current = pairSession {
+                pairSession = (min(current.start, start), max(current.end, end), max(current.exposure, exposure))
+            } else {
+                pairSession = (start, end, exposure)
+            }
         }
-        let exposure = heatExposureSeconds[foot] ?? 0
-        let peak = history.events(for: .day, style: .rolling, foot: foot)
-            .compactMap(\.riskLevel)
-            .max(by: { $0.severity < $1.severity })
         clearSession(foot)
 
+        // Another foot is still recording: wait for it.
+        guard sessionStart.values.isEmpty, let session = pairSession else { return }
+        pairSession = nil
+        guard session.end.timeIntervalSince(session.start) >= 60 else { return }
+
+        let peak = history.events(for: .day, style: .rolling, foot: nil)
+            .compactMap(\.riskLevel)
+            .max(by: { $0.severity < $1.severity })
         guard let healthService else { return }
-        // Only one foot's session is written, so two insoles do not produce
-        // two overlapping workouts for the same walk.
-        guard foot == .left || !ble.isConnected(.left) else { return }
-        Task { await healthService.saveSession(start: start, end: end, heatExposureSeconds: exposure, peakRisk: peak) }
+        Task { await healthService.saveSession(start: session.start, end: session.end, heatExposureSeconds: session.exposure, peakRisk: peak) }
     }
 
     func endAllSessions() {

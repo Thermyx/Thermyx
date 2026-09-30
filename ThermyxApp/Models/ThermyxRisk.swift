@@ -106,28 +106,61 @@ struct ThermyxRiskAssessment: Equatable {
 
 enum ThermyxRiskEngine {
 
+    /// Foot-contact temperature at which the insole must stop heating. Skin in
+    /// prolonged contact with anything much above this can burn, and the
+    /// Peltier's own rating is far higher, so the limit is set by the skin.
+    static let burnLimitC = 40.0
+
+    /// How long a left/right gap must hold before it raises Caution on its own.
+    /// Shorter gaps are ordinary walking noise.
+    static let sustainedAsymmetrySeconds: TimeInterval = 120
+
     /// Assesses one foot on its own signals.
+    ///
+    /// Works with whatever the insole reports: a missing channel removes that
+    /// channel's reason, it does not blank the whole assessment. Only a
+    /// reading with no foot, ambient, or gait value at all is "waiting".
     static func assess(_ reading: ThermyxReading) -> ThermyxRiskAssessment {
-        guard reading.footTemperatureC != nil, reading.ambientTemperatureC != nil, reading.gaitStability != nil else { return .unavailable }
+        let foot = reading.footTemperatureC
+        let ambient = reading.ambientTemperatureC
+        let gait = reading.gaitStability
+        guard foot != nil || ambient != nil || gait != nil else { return .unavailable }
+
         var reasons: [String] = []
-        if let gait = reading.gaitStability, gait < 0.8 { reasons.append("Movement stability is below baseline.") }
-        if let ambient = reading.ambientTemperatureC, ambient >= 35 { reasons.append("Ambient temperature is elevated.") }
-        if let foot = reading.footTemperatureC, foot >= 38 { reasons.append("Foot-contact temperature is elevated.") }
-        let level: ThermyxRiskLevel = reasons.count >= 3 ? .critical : reasons.count == 2 ? .high : reasons.isEmpty ? .normal : .caution
+        if let gait, gait < 0.8 { reasons.append("Movement stability is below baseline.") }
+        if let ambient, ambient >= 35 { reasons.append("Ambient temperature is elevated.") }
+        if let foot, foot >= 38 { reasons.append("Foot-contact temperature is elevated.") }
+        var level: ThermyxRiskLevel = reasons.count >= 3 ? .critical : reasons.count == 2 ? .high : reasons.isEmpty ? .normal : .caution
+
+        // Burn protection stands on its own: a foot at the limit is High
+        // whatever the other signals say, which also locks out heating.
+        let hottest = ([foot] + [reading.zones?.forefootC, reading.zones?.archC, reading.zones?.heelC])
+            .compactMap { $0 }
+            .max()
+        if let hottest, hottest >= burnLimitC {
+            reasons.insert("Foot contact has reached the burn-protection limit. Heating is off.", at: 0)
+            if level.severity < ThermyxRiskLevel.high.severity { level = .high }
+        }
         return ThermyxRiskAssessment(level: level, reasons: reasons, foot: reading.foot)
     }
 
     /// Assesses the pair.
     ///
     /// The result is the worse of the two feet, plus signals that only exist
-    /// because there are two: a sustained temperature gap or a lopsided load
+    /// because there are two: a *sustained* temperature gap or a lopsided load
     /// raises caution on its own, because favouring one foot is both a fit
     /// problem and a fatigue signal, and it is invisible to a single insole.
+    /// The caller says whether each gap has held for
+    /// `sustainedAsymmetrySeconds`; momentary gaps are ignored.
     ///
     /// Asymmetry never escalates past caution by itself. It says "look at
     /// this", not "stop" — a difference between feet is not the same kind of
     /// evidence as a foot that is simply too hot.
-    static func assess(_ bilateral: BilateralReading) -> ThermyxRiskAssessment {
+    static func assess(
+        _ bilateral: BilateralReading,
+        sustainedTemperatureGap: Bool = true,
+        sustainedLoadGap: Bool = true
+    ) -> ThermyxRiskAssessment {
         let perFoot = bilateral.present.map(assess).filter { $0.level != .unavailable }
         guard let worst = perFoot.max(by: { $0.level.severity < $1.level.severity }) else {
             return .unavailable
@@ -136,11 +169,11 @@ enum ThermyxRiskEngine {
         var reasons = worst.reasons
         var level = worst.level
 
-        if let hotter = bilateral.hotterFoot, let delta = bilateral.temperatureAsymmetryC {
-            reasons.append("\(hotter.label) foot is running \(String(format: "%.1f", abs(delta)))° warmer than the other.")
+        if sustainedTemperatureGap, let hotter = bilateral.hotterFoot, let delta = bilateral.temperatureAsymmetryC {
+            reasons.append("\(hotter.label) foot is running \(String(format: "%.1f", abs(delta))) °C warmer than the other.")
             if level == .normal { level = .caution }
         }
-        if let favoured = bilateral.favouredFoot, let load = bilateral.loadAsymmetry {
+        if sustainedLoadGap, let favoured = bilateral.favouredFoot, let load = bilateral.loadAsymmetry {
             reasons.append("Load is \(Int(abs(load) * 100)) points heavier on the \(favoured.label.lowercased()) foot.")
             if level == .normal { level = .caution }
         }

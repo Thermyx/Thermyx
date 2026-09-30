@@ -21,11 +21,17 @@
 
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Thermyx uses Bluetooth to connect to your smart insole.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Thermyx includes your location only in alerts and SOS texts sent to the trusted contacts you choose, so they can find you.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Thermyx reads your step count, walking steadiness, and workouts so it can show heat exposure alongside what you were actually doing.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Thermyx saves your sessions to Health as workouts so heat exposure and time on your feet appear with the rest of your health data. It never writes a body temperature — the insole measures contact temperature, not core temperature.</string>
 
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Archivo-Regular.ttf</string>
@@ -46,7 +52,7 @@
 	<string>Dark</string>
 	<key>UIRequiredDeviceCapabilities</key>
 	<array>
-		<string>armv7</string>
+		<string>arm64</string>
 	</array>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>

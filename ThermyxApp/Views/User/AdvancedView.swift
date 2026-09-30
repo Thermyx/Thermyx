@@ -100,7 +100,7 @@ struct AdvancedView: View {
                             .foregroundStyle(isOn ? Thermyx.Ink.textPrimary : Thermyx.Ink.textFaint)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                        Text("XIAO nRF52840 · BLE telemetry")
+                        Text("XIAO ESP32-C3 · BLE telemetry")
                             .font(ThermyxFont.caption)
                             .foregroundStyle(Thermyx.Ink.textSupporting)
                     }
@@ -156,6 +156,14 @@ struct AdvancedView: View {
                     }
 
                     ThermalTargetSlider(value: $settings.targetTemperatureC, range: ThermyxSettingsStore.targetRange)
+                        .onChange(of: settings.targetTemperatureC) { _, celsius in
+                            viewModel.setTargetTemperature(celsius)
+                        }
+
+                    Text("Auto holds your feet at this temperature. It is sent to connected insoles as you change it, and heating always stops at the \(TemperatureFormat.degrees(ThermyxRiskEngine.burnLimitC, in: unit, decimals: 0)) burn-protection limit.")
+                        .font(ThermyxFont.caption)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     HStack {
                         Text("Cool \(TemperatureFormat.degrees(ThermyxSettingsStore.targetRange.lowerBound, in: unit, decimals: 0))")
@@ -180,7 +188,7 @@ struct AdvancedView: View {
                 ThermyxDivider()
                 ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
                 ThermyxDivider()
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-right-01", text: $settings.deviceID)
+                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
             }
 
             Text("The backend only receives escalated risk events and forwards approved SMS to your trusted circle. Readings stay on this phone.")

@@ -127,7 +127,7 @@ struct DeviceProfileSheet: View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
             SectionLabel("Device")
             ThermyxGroupedCard {
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-right-01", text: $settings.deviceID)
+                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
                 ThermyxDivider()
                 ThermyxValueRow(label: "Pairing code", value: roles.pairingCode, valueFont: ThermyxFont.rowTitle, valueTracking: 2)
             }

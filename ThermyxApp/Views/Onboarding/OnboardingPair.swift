@@ -214,7 +214,7 @@ struct OnboardingPair: View {
                     ThermyxDivider()
                     ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
                     ThermyxDivider()
-                    ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-right-01", text: $settings.deviceID)
+                    ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
                 }
                 .transition(.opacity)
             }

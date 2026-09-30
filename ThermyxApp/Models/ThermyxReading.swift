@@ -128,6 +128,16 @@ enum ThermalMode: String {
         case .off: return "Idle"
         }
     }
+
+    /// Lower-case form for "Cool sent · insole ventilating".
+    var shortStatus: String {
+        switch self {
+        case .heating: return "heating"
+        case .cooling: return "cooling"
+        case .ventilation: return "ventilating"
+        case .off: return "idle"
+        }
+    }
 }
 
 /// What the user selected on the control bar. The device reports back a

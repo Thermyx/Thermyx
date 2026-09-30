@@ -53,6 +53,16 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     private var pendingFoot: [UUID: Foot] = [:]
     fileprivate var packetTimestamps: [Foot: [Date]] = [:]
     private var rssiTimer: Timer?
+    private var watchdogTimer: Timer?
+    /// Peripherals the user asked to disconnect. Anything else that drops is
+    /// reconnected automatically.
+    private var userDisconnects: Set<UUID> = []
+
+    /// Seconds without a packet before a foot's reading is treated as stale
+    /// and cleared, rather than left on screen looking live.
+    nonisolated static let staleAfter: TimeInterval = 5
+    private static let knownInsolesKey = "thermyx.knownInsoles"
+    private static let restoreIdentifier = "com.thermyx.app.central"
 
     #if DEBUG
     /// Development-only simulated pair. Non-nil only when the app is launched
@@ -62,6 +72,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        startWatchdog()
         #if DEBUG
         if ThermyxPreviewHarness.isSimulated {
             state = .poweredOn
@@ -69,7 +80,67 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             return
         }
         #endif
-        central = CBCentralManager(delegate: self, queue: nil)
+        // The restore identifier lets iOS relaunch the app in the background
+        // and hand back its insole connections (needs the bluetooth-central
+        // background mode in Info.plist).
+        central = CBCentralManager(
+            delegate: self,
+            queue: nil,
+            options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier]
+        )
+    }
+
+    // MARK: - Stale-data watchdog
+
+    private func startWatchdog() {
+        watchdogTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.checkForStaleFeet() }
+        }
+    }
+
+    /// A connected insole that stops sending keeps its link up, so a
+    /// disconnect never fires. Clear its reading after `staleAfter` seconds
+    /// so the screens fall back to their empty state instead of freezing.
+    private func checkForStaleFeet() {
+        for foot in connected {
+            guard readings[foot] != nil,
+                  let last = packetTimestamps[foot]?.last,
+                  Date.now.timeIntervalSince(last) > Self.staleAfter
+            else { continue }
+            readings[foot] = nil
+            errorMessage = "\(foot.label) insole stopped sending data. Readings will return when it does."
+        }
+    }
+
+    // MARK: - Remembered insoles
+
+    private var knownInsoles: [Foot: UUID] {
+        get {
+            let stored = UserDefaults.standard.dictionary(forKey: Self.knownInsolesKey) as? [String: String] ?? [:]
+            var result: [Foot: UUID] = [:]
+            for (key, value) in stored {
+                if let foot = Foot(rawValue: key), let id = UUID(uuidString: value) { result[foot] = id }
+            }
+            return result
+        }
+        set {
+            let encoded = Dictionary(uniqueKeysWithValues: newValue.map { ($0.key.rawValue, $0.value.uuidString) })
+            UserDefaults.standard.set(encoded, forKey: Self.knownInsolesKey)
+        }
+    }
+
+    /// Reconnects the insoles paired in an earlier session. iOS holds the
+    /// request open, so each connects as soon as it is switched on in range.
+    fileprivate func reconnectKnownInsoles() {
+        let known = knownInsoles.filter { !connected.contains($0.key) }
+        guard !known.isEmpty else { return }
+        let found = central.retrievePeripherals(withIdentifiers: Array(known.values))
+        for peripheral in found {
+            guard let foot = known.first(where: { $0.value == peripheral.identifier })?.key else { continue }
+            peripherals[peripheral.identifier] = peripheral
+            pendingFoot[peripheral.identifier] = foot
+            central.connect(peripheral, options: nil)
+        }
     }
 
     // MARK: Queries
@@ -138,6 +209,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         if let simulator { simulator.disconnect(foot); return }
         #endif
         guard let peripheral = links[foot] else { return }
+        userDisconnects.insert(peripheral.identifier)
+        var known = knownInsoles
+        known[foot] = nil
+        knownInsoles = known
         central.cancelPeripheralConnection(peripheral)
     }
 
@@ -176,6 +251,29 @@ final class ThermyxBLEService: NSObject, ObservableObject {
                   characteristic.properties.contains(.write)
             else { continue }
             peripheral.writeValue(Data([1, commandByte]), for: characteristic, type: .withResponse)
+        }
+    }
+
+    /// Sends the hold temperature used by Auto: `[2, int16 °C × 100]`,
+    /// little-endian (see BLE_PROTOCOL.md). Firmware that predates the
+    /// command ignores it.
+    func send(targetTemperatureC celsius: Double, to foot: Foot? = nil) {
+        let targets: [Foot] = foot.map { [$0] } ?? Array(connected)
+        #if DEBUG
+        if let simulator {
+            for target in targets { simulator.setTarget(celsius, for: target) }
+            return
+        }
+        #endif
+        let centi = Int16(clamping: Int((celsius * 100).rounded()))
+        let raw = UInt16(bitPattern: centi)
+        let packet = Data([2, UInt8(raw & 0xFF), UInt8(raw >> 8)])
+        for target in targets {
+            guard let characteristic = commandCharacteristics[target],
+                  let peripheral = links[target],
+                  characteristic.properties.contains(.write)
+            else { continue }
+            peripheral.writeValue(packet, for: characteristic, type: .withResponse)
         }
     }
 
@@ -246,11 +344,15 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         default: .off
         }
 
+        // A disconnected or shorted thermistor reads far outside anything a
+        // foot or the air can be. Treat it as missing, never as a reading.
+        func plausible(_ celsius: Double) -> Double? { (-20...80).contains(celsius) ? celsius : nil }
+
         readings[foot] = ThermyxReading(
             foot: foot,
             timestamp: .now,
-            footTemperatureC: centidegrees(3),
-            ambientTemperatureC: centidegrees(5),
+            footTemperatureC: plausible(centidegrees(3)),
+            ambientTemperatureC: plausible(centidegrees(5)),
             pressureBalance: Double(uint16(9)) / 10000.0,
             gaitStability: Double(uint16(7)) / 10000.0,
             batteryPercent: Int(bytes[2]),
@@ -277,6 +379,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         connected.insert(foot)
         names[foot] = peripheral.name ?? "Thermyx \(foot.label)"
         pendingFoot[peripheralID] = nil
+        userDisconnects.remove(peripheralID)
+        var known = knownInsoles
+        known[foot] = peripheralID
+        knownInsoles = known
     }
 
     fileprivate func tearDown(_ peripheralID: UUID) {
@@ -296,7 +402,31 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 
 extension ThermyxBLEService: CBCentralManagerDelegate {
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        Task { @MainActor in self.state = central.state }
+        let newState = central.state
+        Task { @MainActor in
+            self.state = newState
+            if newState == .poweredOn { self.reconnectKnownInsoles() }
+        }
+    }
+
+    /// iOS relaunched the app in the background and is handing back the
+    /// connections it kept alive. Re-adopt them so monitoring carries on.
+    nonisolated func centralManager(_ central: CBCentralManager, willRestoreState dict: [String: Any]) {
+        let restored = dict[CBCentralManagerRestoredStatePeripheralsKey] as? [CBPeripheral] ?? []
+        Task { @MainActor in
+            let known = self.knownInsoles
+            for peripheral in restored {
+                self.peripherals[peripheral.identifier] = peripheral
+                if let foot = known.first(where: { $0.value == peripheral.identifier })?.key {
+                    self.pendingFoot[peripheral.identifier] = foot
+                }
+                peripheral.delegate = self
+                if peripheral.state == .connected {
+                    peripheral.discoverServices([Self.serviceUUID])
+                    self.startRSSIPolling()
+                }
+            }
+        }
     }
 
     nonisolated func centralManager(
@@ -359,9 +489,21 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
     ) {
         let identifier = peripheral.identifier
         Task { @MainActor in
+            let foot = self.footFor(identifier) ?? self.pendingFoot[identifier]
             self.tearDown(identifier)
             if self.connected.isEmpty { self.stopRSSIPolling() }
-            if let error { self.errorMessage = error.localizedDescription }
+            if self.userDisconnects.remove(identifier) != nil {
+                if let error { self.errorMessage = error.localizedDescription }
+                return
+            }
+            // Dropped, not disconnected by the user: ask iOS to reconnect. The
+            // request stays open, so it completes when the insole is back in
+            // range, without the wearer re-pairing mid-shift.
+            if let foot {
+                self.pendingFoot[identifier] = foot
+                self.errorMessage = "\(foot.label) insole dropped out. Reconnecting…"
+            }
+            self.central.connect(peripheral, options: nil)
         }
     }
 }
@@ -431,6 +573,18 @@ extension ThermyxBLEService: CBPeripheralDelegate {
         guard let data = characteristic.value else { return }
         let identifier = peripheral.identifier
         Task { @MainActor in self.decodeTelemetry(data, from: identifier) }
+    }
+
+    /// Commands are written with response, so a refusal is reported rather
+    /// than the app assuming the insole obeyed.
+    nonisolated func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        guard let error else { return }
+        let identifier = peripheral.identifier
+        let message = error.localizedDescription
+        Task { @MainActor in
+            let label = self.footFor(identifier)?.label ?? "An"
+            self.errorMessage = "\(label) insole didn't accept the command: \(message)"
+        }
     }
 }
 
@@ -594,6 +748,14 @@ final class ThermyxInsoleSimulator: ObservableObject {
         insoles[foot]?.commanded = mode
     }
 
+    /// The simulated firmware's hold temperature for Auto, as sent by the
+    /// target-temperature command.
+    private var targets: [Foot: Double] = [:]
+
+    func setTarget(_ celsius: Double, for foot: Foot) {
+        targets[foot] = celsius
+    }
+
     // MARK: Physics
 
     /// Where the foot settles with the insole passive: warmer air, warmer foot.
@@ -601,10 +763,9 @@ final class ThermyxInsoleSimulator: ObservableObject {
         30.5 + (ambientC - 22) * 0.4 + (fatigued ? 0.6 : 0) + (foot == .right ? 0.35 : 0)
     }
 
-    /// Hold temperature for Auto, from the slider on the Advanced screen.
-    private var autoTargetC: Double {
-        let stored = UserDefaults.standard.double(forKey: "thermyx.targetTemperatureC")
-        return stored == 0 ? 31 : stored
+    /// Hold temperature for Auto: what the app last sent, else the default.
+    private func autoTargetC(_ foot: Foot) -> Double {
+        targets[foot] ?? 31
     }
 
     private func step() {
@@ -617,15 +778,15 @@ final class ThermyxInsoleSimulator: ObservableObject {
             switch insole.commanded {
             case .ventilation:
                 // Auto: regulate towards the target with a little hysteresis.
-                let target = autoTargetC
+                let target = autoTargetC(foot)
                 if insole.contactC > target + 0.6 { insole.active = .cooling }
                 else if insole.contactC < target - 0.6 { insole.active = .heating }
                 else if abs(insole.contactC - target) < 0.2 { insole.active = .ventilation }
             case .heating:
-                // Firmware over-temperature cutoff: drops out of heating at
-                // 41 °C and resumes below 39.5 °C.
-                if insole.contactC >= 41 { insole.active = .ventilation }
-                else if insole.contactC < 39.5 { insole.active = .heating }
+                // Firmware burn-protection cutoff: drops out of heating at
+                // the 40 °C limit and resumes below 38.5 °C.
+                if insole.contactC >= ThermyxRiskEngine.burnLimitC { insole.active = .ventilation }
+                else if insole.contactC < 38.5 { insole.active = .heating }
             case .cooling, .off:
                 insole.active = insole.commanded
             }

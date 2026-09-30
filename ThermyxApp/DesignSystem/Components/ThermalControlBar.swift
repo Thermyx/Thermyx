@@ -36,6 +36,18 @@ struct ThermalControlBar: View {
                     segment(for: setting)
                 }
             }
+
+            // Why the mode changed without the wearer asking (the heat
+            // lockout), or why a request was refused.
+            if let notice = viewModel.controlNotice ?? viewModel.commandError {
+                Text(notice)
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.amber)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+                    .accessibilityAddTraits(.updatesFrequently)
+            }
         }
         .padding(.horizontal, Thermyx.Space.screen)
         .padding(.top, Thermyx.Space.l)

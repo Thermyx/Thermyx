@@ -17,6 +17,8 @@ struct SafetyView: View {
     }()
     @State private var showingAddContact = false
     @State private var showingSOSConfirmation = false
+    @State private var showingCannotCall = false
+    @State private var okSentAt: Date?
     @State private var legalDocument: LegalDocument.Kind? = {
         #if DEBUG
         return ThermyxPreviewHarness.opensLegalSheet ? .privacy : nil
@@ -31,6 +33,7 @@ struct SafetyView: View {
         NavigationStack(path: $path) {
             ThermyxScreen(title: "Safety") {
                 sosCard
+                imOKRow
                 escalationLadder
                 trustedCircle
                 advancedRow
@@ -62,9 +65,51 @@ struct SafetyView: View {
             Button("Call 911", role: .destructive) { placeEmergencyCall() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(enabledContacts.isEmpty
-                 ? "This dials 911. No trusted contacts are enabled, so nobody else will be notified."
-                 : "This dials 911 and notifies \(enabledContacts.count) trusted contact\(enabledContacts.count == 1 ? "" : "s").")
+            Text(!canTextCircle
+                 ? "This dials 911. No trusted contacts can be texted, so nobody else will be notified."
+                 : "This dials 911 and texts \(enabledContacts.count) trusted contact\(enabledContacts.count == 1 ? "" : "s").")
+        }
+        .alert("This device can't place calls", isPresented: $showingCannotCall) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(canTextCircle
+                 ? "Dial 911 from a phone. Your trusted circle was still texted."
+                 : "Dial 911 from a phone.")
+        }
+    }
+
+    /// Texting needs both an enabled contact and the shared relay.
+    private var canTextCircle: Bool {
+        !enabledContacts.isEmpty && !settings.backendURL.isEmpty
+    }
+
+    private var sosSubtitle: String {
+        if enabledContacts.isEmpty { return "Add a trusted contact to also text them" }
+        if settings.backendURL.isEmpty { return "Set up the shared backend under Advanced to also text your trusted circle" }
+        return alerts.location.isAuthorized
+            ? "Also texts your trusted circle your location"
+            : "Also texts your trusted circle (location is off)"
+    }
+
+    // MARK: - I'm OK
+
+    private var imOKRow: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            Button {
+                alerts.sendImOK(level: level, reading: viewModel.reading, settings: settings)
+                okSentAt = .now
+            } label: {
+                Label("Tell my trusted circle I'm OK", systemImage: "hand.thumbsup.fill")
+            }
+            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
+            .disabled(!canTextCircle)
+            .opacity(canTextCircle ? 1 : 0.5)
+
+            if let okSentAt {
+                Text("Sent at \(okSentAt.formatted(date: .omitted, time: .shortened)).")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+            }
         }
     }
 
@@ -95,9 +140,7 @@ struct SafetyView: View {
                         .font(ThermyxFont.cardTitle)
                         .tracking(-0.3)
                         .foregroundStyle(.white)
-                    Text(enabledContacts.isEmpty
-                         ? "Add a trusted contact to also share your location"
-                         : "Also texts your trusted circle your location")
+                    Text(sosSubtitle)
                         .font(ThermyxFont.caption)
                         .foregroundStyle(.white.opacity(0.92))
                         .multilineTextAlignment(.leading)
@@ -123,9 +166,7 @@ struct SafetyView: View {
             settings: settings,
             reason: "Manual SOS from the Safety screen."
         )
-        if let url = URL(string: "tel://911"), UIApplication.shared.canOpenURL(url) {
-            UIApplication.shared.open(url)
-        }
+        if !EmergencyCall.dial() { showingCannotCall = true }
     }
 
     // MARK: - Escalation ladder
@@ -437,4 +478,121 @@ struct AddContactSheet: View {
 
 enum SafetyDestination: Hashable {
     case advanced
+}
+
+// MARK: - Emergency call
+
+enum EmergencyCall {
+    /// Opens the dialer on 911. Returns false on a device that cannot place
+    /// calls (the simulator, most iPads, a phone with no service), so the
+    /// caller can say so instead of failing silently.
+    @MainActor
+    @discardableResult
+    static func dial() -> Bool {
+        guard let url = URL(string: "tel://911"), UIApplication.shared.canOpenURL(url) else { return false }
+        UIApplication.shared.open(url)
+        return true
+    }
+}
+
+// MARK: - Critical alert
+
+/// Full-screen takeover when the risk reaches Critical. One tap calls 911,
+/// one tap says "I'm OK". If nobody answers within the countdown, the
+/// trusted circle is texted automatically.
+struct CriticalAlertView: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var alerts: ThermyxAlertCoordinator
+    @ObservedObject var settings: ThermyxSettingsStore
+    let onDismiss: () -> Void
+
+    static let countdownSeconds = 60
+
+    @State private var remaining = CriticalAlertView.countdownSeconds
+    @State private var circleNotified = false
+    @State private var showingCannotCall = false
+
+    private var assessment: ThermyxRiskAssessment { viewModel.assessment }
+    private var canTextCircle: Bool {
+        settings.contacts.contains(where: \.enabled) && !settings.backendURL.isEmpty
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.xl) {
+            Spacer(minLength: 0)
+
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 56, weight: .bold))
+                .foregroundStyle(.white)
+
+            Text(assessment.level == .critical ? "Stop and get help now" : "Risk has dropped to \(assessment.level.rawValue)")
+                .font(ThermyxFont.onboardingHeadline)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(assessment.reasons.isEmpty ? ThermyxRiskLevel.critical.explanation : assessment.reasons.joined(separator: " "))
+                .font(ThermyxFont.bodyLarge)
+                .foregroundStyle(.white.opacity(0.92))
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(countdownText)
+                .font(ThermyxFont.rowTitle)
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            VStack(spacing: Thermyx.Space.s) {
+                Button {
+                    notifyCircle(reason: "The wearer pressed Call 911 from the Critical alert.")
+                    if !EmergencyCall.dial() { showingCannotCall = true }
+                } label: {
+                    Label("Call 911", systemImage: "phone.fill")
+                }
+                .buttonStyle(ThermyxPrimaryButtonStyle(fill: .white, foreground: Thermyx.Ink.onEmber))
+
+                Button {
+                    alerts.sendImOK(level: assessment.level, reading: viewModel.reading, settings: settings)
+                    onDismiss()
+                } label: {
+                    Text("I'm OK")
+                }
+                .buttonStyle(ThermyxSecondaryButtonStyle(tint: .white, border: .white.opacity(0.7)))
+            }
+        }
+        .padding(.horizontal, Thermyx.Space.wide)
+        .padding(.vertical, Thermyx.Space.xxl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .background(Thermyx.Ink.alarmGradient.ignoresSafeArea())
+        .task {
+            UINotificationFeedbackGenerator().notificationOccurred(.error)
+            while remaining > 0 && !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                remaining -= 1
+            }
+            if !Task.isCancelled && !circleNotified {
+                notifyCircle(reason: "No response to a Critical alert for \(Self.countdownSeconds) seconds.")
+            }
+        }
+        .alert("This device can't place calls", isPresented: $showingCannotCall) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Dial 911 from a phone.")
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    private var countdownText: String {
+        if circleNotified { return canTextCircle ? "Your trusted circle has been texted." : "No trusted contacts could be texted. Call for help if you need it." }
+        return canTextCircle
+            ? "Texting your trusted circle in \(remaining) s unless you tap I'm OK."
+            : "Tap I'm OK if you're safe. Add trusted contacts on the Safety tab so someone is told next time."
+    }
+
+    private func notifyCircle(reason: String) {
+        guard !circleNotified else { return }
+        circleNotified = true
+        guard canTextCircle else { return }
+        alerts.notifyTrustedCircle(level: .critical, reading: viewModel.reading, settings: settings, reason: reason)
+    }
 }

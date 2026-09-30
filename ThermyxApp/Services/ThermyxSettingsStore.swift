@@ -1,4 +1,5 @@
 import Foundation
+import Security
 
 @MainActor
 final class ThermyxSettingsStore: ObservableObject {
@@ -32,8 +33,10 @@ final class ThermyxSettingsStore: ObservableObject {
     /// this; it only gates whether authorization is requested at all.
     @Published var healthKitEnabled: Bool { didSet { save() } }
 
-    /// The commanded range on the Advanced target slider.
-    static let targetRange: ClosedRange<Double> = 26...40
+    /// The commanded range on the Advanced target slider. The top stays two
+    /// degrees under the 40 °C burn-protection limit, so holding at the
+    /// warmest setting never trips the limit on its own.
+    static let targetRange: ClosedRange<Double> = 26...38
 
     /// Which foot the per-foot screens open on.
     @Published var preferredFoot: Foot { didSet { save() } }
@@ -42,8 +45,22 @@ final class ThermyxSettingsStore: ObservableObject {
 
     init() {
         backendURL = defaults.string(forKey: "thermyx.backendURL") ?? ""
-        backendToken = defaults.string(forKey: "thermyx.backendToken") ?? ""
-        deviceID = defaults.string(forKey: "thermyx.deviceID") ?? "thermyx-right-01"
+        // The token lives in the Keychain. Older builds kept it in
+        // UserDefaults; move it across once and remove the plain copy.
+        if let legacy = defaults.string(forKey: "thermyx.backendToken") {
+            if !legacy.isEmpty { ThermyxKeychain.set(legacy, for: Self.tokenAccount) }
+            defaults.removeObject(forKey: "thermyx.backendToken")
+        }
+        backendToken = ThermyxKeychain.get(Self.tokenAccount) ?? ""
+        // Each install gets its own ID, so two wearers never share a status
+        // on the relay. Installs that already saved one keep it.
+        if let storedID = defaults.string(forKey: "thermyx.deviceID"), !storedID.isEmpty {
+            deviceID = storedID
+        } else {
+            let fresh = Self.makeDeviceID()
+            deviceID = fresh
+            defaults.set(fresh, forKey: "thermyx.deviceID")
+        }
         let storedContacts: [ThermyxContact]
         if let data = defaults.data(forKey: "thermyx.contacts"), let decoded = try? JSONDecoder().decode([ThermyxContact].self, from: data) {
             storedContacts = decoded
@@ -70,12 +87,21 @@ final class ThermyxSettingsStore: ObservableObject {
         aiSuggestionsEnabled = defaults.object(forKey: "thermyx.aiSuggestionsEnabled") as? Bool ?? false
         preferredFoot = defaults.string(forKey: "thermyx.preferredFoot").flatMap(Foot.init(rawValue:)) ?? .left
         let storedTarget = defaults.double(forKey: "thermyx.targetTemperatureC")
-        targetTemperatureC = storedTarget == 0 ? 31 : storedTarget
+        targetTemperatureC = storedTarget == 0 ? 31 : min(max(storedTarget, Self.targetRange.lowerBound), Self.targetRange.upperBound)
 
         alertOnCaution = defaults.object(forKey: "thermyx.alertOnCaution") as? Bool ?? false
         alertOnHighRisk = defaults.object(forKey: "thermyx.alertOnHighRisk") as? Bool ?? true
         alertOnCritical = defaults.object(forKey: "thermyx.alertOnCritical") as? Bool ?? true
         healthKitEnabled = defaults.object(forKey: "thermyx.healthKitEnabled") as? Bool ?? false
+    }
+
+    private static let tokenAccount = "thermyx.backendToken"
+
+    /// `thermyx-` plus six characters that are easy to read aloud and type
+    /// (no 0/O, 1/I/L).
+    static func makeDeviceID() -> String {
+        let alphabet = Array("abcdefghjkmnpqrstuvwxyz23456789")
+        return "thermyx-" + String((0..<6).map { _ in alphabet.randomElement()! })
     }
 
     private static func isLegacyPrototypeContact(_ contact: ThermyxContact) -> Bool {
@@ -118,7 +144,7 @@ final class ThermyxSettingsStore: ObservableObject {
 
     private func save() {
         defaults.set(backendURL, forKey: "thermyx.backendURL")
-        defaults.set(backendToken, forKey: "thermyx.backendToken")
+        ThermyxKeychain.set(backendToken, for: Self.tokenAccount)
         defaults.set(deviceID, forKey: "thermyx.deviceID")
         defaults.set(try? JSONEncoder().encode(contacts), forKey: "thermyx.contacts")
         defaults.set(temperatureUnit.rawValue, forKey: "thermyx.temperatureUnit")
@@ -132,5 +158,38 @@ final class ThermyxSettingsStore: ObservableObject {
         defaults.set(alertOnHighRisk, forKey: "thermyx.alertOnHighRisk")
         defaults.set(alertOnCritical, forKey: "thermyx.alertOnCritical")
         defaults.set(healthKitEnabled, forKey: "thermyx.healthKitEnabled")
+    }
+}
+
+/// Minimal generic-password Keychain wrapper for the relay token.
+enum ThermyxKeychain {
+    private static let service = "com.thermyx.app"
+
+    static func get(_ account: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func set(_ value: String, for account: String) {
+        let base: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        SecItemDelete(base as CFDictionary)
+        guard !value.isEmpty else { return }
+        var attributes = base
+        attributes[kSecValueData as String] = Data(value.utf8)
+        attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(attributes as CFDictionary, nil)
     }
 }
