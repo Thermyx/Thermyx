@@ -81,7 +81,9 @@ struct UserRoot: View {
             viewModel.healthService = health
             await viewModel.history.loadIfNeeded()
             #if DEBUG
-            if !ThermyxPreviewHarness.isActive { await alerts.requestPermission() }
+            if !ThermyxPreviewHarness.isActive || ThermyxPreviewHarness.isSimulated {
+                await alerts.requestPermission()
+            }
             #else
             await alerts.requestPermission()
             #endif

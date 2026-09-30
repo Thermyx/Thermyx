@@ -17,6 +17,11 @@ struct AdvancedView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Advanced") {
+            #if DEBUG
+            if let simulator = viewModel.ble.simulator {
+                SimulatedConditionsCard(simulator: simulator, unit: unit)
+            }
+            #endif
             connectionSection
             targetTemperature
             backendSection
@@ -434,3 +439,51 @@ private extension Double {
         (self / step).rounded() * step
     }
 }
+
+#if DEBUG
+/// Development-only controls for the simulated insoles: the air around the
+/// wearer and whether they are tiring. Together with Cool / Auto / Heat these
+/// drive the risk level through every rung of the escalation ladder.
+private struct SimulatedConditionsCard: View {
+    @ObservedObject var simulator: ThermyxInsoleSimulator
+    let unit: TemperatureUnit
+
+    private let presets: [(String, Double)] = [("Mild", 22), ("Warm", 27), ("Hot", 36)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Simulated conditions")
+            ThermyxCard(padding: Thermyx.Space.xxl, radius: Thermyx.Radius.list, border: Thermyx.Ink.amber.opacity(0.5)) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+                    Text("Air temperature · \(TemperatureFormat.degrees(simulator.ambientC, in: unit, decimals: 0))")
+                        .font(ThermyxFont.rowTitle)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    Picker("Air temperature", selection: $simulator.ambientC) {
+                        ForEach(presets.indices, id: \.self) { index in
+                            Text(presets[index].0).tag(presets[index].1)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Toggle(isOn: $simulator.fatigued) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Wearer is tiring")
+                                .font(ThermyxFont.rowTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text("Gait stability drops and load shifts to the right foot.")
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textMuted)
+                        }
+                    }
+                    .tint(Thermyx.Ink.amber)
+
+                    Text("Hot air + Heat raises the risk level; add a tiring wearer to reach Critical.")
+                        .font(ThermyxFont.caption)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+#endif
