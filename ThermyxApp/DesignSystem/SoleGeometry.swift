@@ -113,53 +113,42 @@ enum SoleGeometry {
 
     // MARK: Sensor sites
     //
-    // The eight FSR positions from the prototype: medial and lateral heel,
-    // medial and lateral midfoot, first, third and fifth metatarsal heads, and
-    // the hallux. Coordinates were placed against the measured width profile
-    // of the traced outline; every site clears the edge by at least 0.054 of
-    // foot length, which is about 16 mm at US 12 — enough for an FSR 402.
+    // The three FSR 402 pressure sensors in the current prototype: heel, arch,
+    // and forefoot (under the metatarsal heads). Each sits on the centreline
+    // of its thermal zone, well clear of the edge. An earlier eight-sensor
+    // draft (medial/lateral heel and midfoot, three metatarsal heads, hallux)
+    // was dropped with the multiplexer it needed.
 
     enum SensorSite: String, CaseIterable, Identifiable {
-        case heelLateral, heelMedial
-        case midfootLateral, midfootMedial
-        case metatarsal5, metatarsal3, metatarsal1
-        case hallux
+        case heel
+        case arch
+        case forefoot
 
         var id: String { rawValue }
 
         var label: String {
             switch self {
-            case .heelLateral: return "Lateral heel"
-            case .heelMedial: return "Medial heel"
-            case .midfootLateral: return "Lateral midfoot"
-            case .midfootMedial: return "Medial midfoot"
-            case .metatarsal5: return "5th metatarsal"
-            case .metatarsal3: return "3rd metatarsal"
-            case .metatarsal1: return "1st metatarsal"
-            case .hallux: return "Hallux"
+            case .heel: return "Heel"
+            case .arch: return "Arch"
+            case .forefoot: return "Forefoot"
             }
         }
 
         /// Position in sole space.
         var position: CGPoint {
             switch self {
-            case .heelLateral: return CGPoint(x: -0.022, y: 0.13)
-            case .heelMedial: return CGPoint(x: 0.096, y: 0.13)
-            case .midfootLateral: return CGPoint(x: -0.094, y: 0.42)
-            case .midfootMedial: return CGPoint(x: 0.083, y: 0.44)
-            case .metatarsal5: return CGPoint(x: -0.137, y: 0.66)
-            case .metatarsal3: return CGPoint(x: -0.001, y: 0.70)
-            case .metatarsal1: return CGPoint(x: 0.140, y: 0.72)
-            case .hallux: return CGPoint(x: 0.143, y: 0.90)
+            case .heel: return CGPoint(x: 0.035, y: 0.14)
+            case .arch: return CGPoint(x: 0.000, y: 0.44)
+            case .forefoot: return CGPoint(x: 0.020, y: 0.71)
             }
         }
 
         /// Which thermal zone this site sits in.
         var zone: FootZone {
             switch self {
-            case .heelLateral, .heelMedial: return .heel
-            case .midfootLateral, .midfootMedial: return .arch
-            case .metatarsal5, .metatarsal3, .metatarsal1, .hallux: return .forefoot
+            case .heel: return .heel
+            case .arch: return .arch
+            case .forefoot: return .forefoot
             }
         }
     }

@@ -1,6 +1,7 @@
 #if DEBUG
 import Foundation
 import SwiftUI
+import UserNotifications
 
 /// A development-only harness for driving the app into a given screen and
 /// state, so layouts can be reviewed without a physical insole.
@@ -34,6 +35,11 @@ enum ThermyxPreviewHarness {
         case trustedSample
         case trustedSampleInsights
         case legal
+        /// Simulated insole pair, already paired, with a day of history.
+        /// Every control works: the insoles respond to Cool / Auto / Heat.
+        case simulator
+        /// Simulated insoles, starting from the beginning of onboarding.
+        case simulatorOnboarding
     }
 
     static let state: State? = {
@@ -45,6 +51,23 @@ enum ThermyxPreviewHarness {
     }()
 
     static var isActive: Bool { state != nil }
+
+    /// True when the BLE layer is driving simulated insoles rather than the
+    /// scripted preview stream.
+    static var isSimulated: Bool { state == .simulator || state == .simulatorOnboarding }
+
+    /// Shows notification banners while the app is open, so the risk alerts
+    /// can be seen during a simulated session.
+    final class ForegroundNotifications: NSObject, UNUserNotificationCenterDelegate {
+        static let shared = ForegroundNotifications()
+        func userNotificationCenter(
+            _ center: UNUserNotificationCenter,
+            willPresent notification: UNNotification,
+            withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+        ) {
+            completionHandler([.banner, .list, .sound])
+        }
+    }
 
     /// Drives a scripted walk through the tabs, so a screen recording of the
     /// real app can be captured without a hand on the device. Used to produce
@@ -98,7 +121,9 @@ enum ThermyxPreviewHarness {
                 // the onboarding walkthrough, where the banner would be wrong.
                 // Every other preview state still carries it.
                 if ThermyxPreviewHarness.isActive, !ThermyxPreviewHarness.isTouring {
-                    Text("Preview data · not live readings")
+                    Text(ThermyxPreviewHarness.isSimulated
+                         ? "Simulated insoles · not live readings"
+                         : "Preview data · not live readings")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.onEmber)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 5)
@@ -166,7 +191,7 @@ enum ThermyxPreviewHarness {
         guard let state else { return }
 
         switch state {
-        case .onboardingRole, .onboardingPair:
+        case .onboardingRole, .onboardingPair, .simulatorOnboarding:
             roles.reset()
         case .trusted, .trustedSample, .trustedSampleInsights:
             roles.complete(role: .trustedMember, name: "Watcher", watched: "Morgan Lee", code: "THERMYX-01")
@@ -188,6 +213,18 @@ enum ThermyxPreviewHarness {
     /// charts to have something to draw.
     @MainActor
     static func start(viewModel: ThermyxViewModel) async {
+        if isSimulated {
+            UNUserNotificationCenter.current().delegate = ForegroundNotifications.shared
+            await viewModel.history.loadIfNeeded()
+            if state == .simulator {
+                // A day of back-filled history so the charts have something to
+                // draw, then pair both simulated insoles.
+                viewModel.history.deleteAll()
+                viewModel.injectPreviewHistory(includeZones: true, feet: Foot.allCases)
+                viewModel.ble.simulator?.connectAll()
+            }
+            return
+        }
         guard let state,
               state != .onboardingRole, state != .onboardingPair,
               state != .trusted, state != .trustedSample, state != .trustedSampleInsights

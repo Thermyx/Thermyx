@@ -186,6 +186,28 @@ struct HomeView: View {
     }
 
     private var riskBand: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            riskRow
+            if settings.aiSuggestionsEnabled,
+               let suggestion = ThermyxSuggestion.nextStep(for: assessment, reading: reading) {
+                Text("Next: \(suggestion)")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 16)
+                    .accessibilityLabel("Suggested next step: \(suggestion)")
+            }
+        }
+        .padding(.horizontal, Thermyx.Space.l)
+        .padding(.vertical, 11)
+        .background(assessment.level.fill, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
+                .strokeBorder(assessment.level.border, lineWidth: Thermyx.Stroke.hairline)
+        }
+    }
+
+    private var riskRow: some View {
         HStack(spacing: Thermyx.Space.s) {
             Circle()
                 .fill(assessment.level.tint)
@@ -197,13 +219,6 @@ struct HomeView: View {
                 .foregroundStyle(Thermyx.Ink.textSecondary)
                 .lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .padding(.horizontal, Thermyx.Space.l)
-        .padding(.vertical, 11)
-        .background(assessment.level.fill, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
-                .strokeBorder(assessment.level.border, lineWidth: Thermyx.Stroke.hairline)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Risk level \(assessment.level.rawValue)")
@@ -219,20 +234,20 @@ struct HomeView: View {
                 accessibilityValue: reading.ambientTemperatureC.map { TemperatureFormat.full($0, in: unit) }
             )
             MetricTile(
-                label: "Gait",
+                label: "Steadiness",
                 value: reading.gaitStability.map { "\(Int(($0 * 100).rounded()))%" },
                 tint: Thermyx.Ink.ice
             )
             if viewModel.bothConnected {
                 MetricTile(
-                    label: "L / R",
+                    label: "L–R gap",
                     value: asymmetryText,
                     tint: asymmetryTint,
                     accessibilityValue: asymmetryAccessibility
                 )
             } else {
                 MetricTile(
-                    label: "Balance",
+                    label: "Forefoot load",
                     value: reading.pressureBalance.map { "\(Int(($0 * 100).rounded()))%" }
                 )
             }

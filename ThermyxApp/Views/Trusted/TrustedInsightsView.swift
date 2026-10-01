@@ -323,9 +323,9 @@ struct TrustedInsightsView: View {
                     ],
                     range: .day,
                     height: 120,
-                    format: { String(format: "%+.1f°", $0) },
+                    format: GapFormat.degrees,
                     showsExtremes: false,
-                    averageLabel: "Mean gap",
+                    averageLabel: "Average",
                     highTint: Thermyx.Ink.amber,
                     lowTint: Thermyx.Ink.amber
                 )

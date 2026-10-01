@@ -27,7 +27,14 @@ struct TrustedWatchView: View {
                     header
 
                     if let event {
+                        silenceWarning
                         riskCard(event: event)
+                        if let mapsURL = event.location?.mapsURL, !member.isShowingSample {
+                            Link(destination: mapsURL) {
+                                Label("Open their location in Maps", systemImage: "mappin.and.ellipse")
+                            }
+                            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
+                        }
                         actionCard
                         if let pair, pair.hasAny { soleRow(pair) }
                         metricGrid(event.readings, pair: pair)
@@ -94,6 +101,24 @@ struct TrustedWatchView: View {
             }
         }
         .padding(.top, Thermyx.Space.m)
+    }
+
+    /// Shown when the wearer's phone has gone quiet. Their app posts at least
+    /// once a minute while an insole is connected, so silence is itself news.
+    private var silenceWarning: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            if let silence = member.silence(now: context.date), silence >= TrustedMemberViewModel.silenceWarning {
+                ThermyxCard(fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
+                    VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+                        SectionLabel("No update for \(Int(silence / 60)) min", color: Thermyx.Ink.amber)
+                        Text("Their phone, signal, or insoles may be off. The status below is the last one received, not a live one. Check in with them.")
+                            .font(ThermyxFont.caption)
+                            .foregroundStyle(Thermyx.Ink.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
     }
 
     private func riskCard(event: ThermyxAlertEvent) -> some View {
@@ -260,7 +285,7 @@ struct TrustedWatchView: View {
             )
             if let index = pair?.asymmetryIndex {
                 MetricTile(
-                    label: "L / R difference",
+                    label: "L–R gap",
                     value: "\(Int((index * 100).rounded()))%",
                     tint: index > 0.5 ? Thermyx.Ink.amber : Thermyx.Ink.textPrimary,
                     numeralFont: ThermyxFont.zoneNumeral

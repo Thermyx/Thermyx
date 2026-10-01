@@ -33,10 +33,30 @@ them against each other *now*, which is faster and far more specific. The
 - an `asymmetryIndex` combining them, and which foot is consistently warmer or
   more loaded across a window.
 
-A sustained gap raises **caution on its own** — favouring one foot is both a fit
-problem and a fatigue signal. It never escalates past caution by itself: a
+A gap that holds for **two minutes** raises **caution on its own** — favouring
+one foot is both a fit problem and a fatigue signal. Shorter gaps are ordinary
+walking noise and are ignored. It never escalates past caution by itself: a
 difference between feet is not the same kind of evidence as a foot that is
 simply too hot.
+
+## Safety behaviour
+
+- **Burn protection.** A foot-contact (or any zone) temperature of **40 °C** or
+  more is High risk on its own and locks out heating, whether the wearer chose
+  Heat or Auto started heating by itself. The firmware enforces the same limit
+  independently.
+- **Background monitoring.** The app keeps its Bluetooth links with the screen
+  locked (`bluetooth-central` background mode plus state restoration), and
+  reconnects a dropped insole automatically.
+- **Stale data.** An insole that stays connected but stops sending for 5 s has
+  its readings cleared, so nothing freezes on screen looking live.
+- **Alerts.** The wearer is notified when the level rises. The trusted circle
+  is texted on a rise and at most every five minutes while it stays elevated;
+  the relay throttles repeats as well. A heartbeat is posted every minute, so a
+  watcher sees "No update for N min" when the wearer's phone goes quiet.
+- **Critical.** A full-screen alert offers Call 911 and "I'm OK". If nobody
+  answers within 60 s, the trusted circle is texted automatically. SOS and
+  alert texts include a map link when the wearer allowed location.
 
 ## The rule this app is built around
 
@@ -103,11 +123,20 @@ xcodebuild -project ThermyxApp.xcodeproj -scheme ThermyxApp \
 Device builds need a development team, because HealthKit is an entitlement.
 Simulator builds do not.
 
+### Schemes and tests
+
+- **ThermyxApp** runs the app normally.
+- **Thermyx Demo** runs it with **simulated insoles** (see below).
+- **⌘U** runs `ThermyxAppTests` (risk engine, burn limit, sustained asymmetry,
+  suggestions, formatting, alert-event compatibility).
+
+The alert relay has its own tests: `cd ThermyxBackend && npm test`.
+
 ## Where the data comes from
 
 ```
 insole sensors
-   → XIAO nRF52840 firmware
+   → XIAO ESP32-C3 firmware (firmware/thermyx_insole)
    → BLE notification (BLE_PROTOCOL.md)
    → ThermyxBLEService.decodeTelemetry
    → ThermyxReading
@@ -176,9 +205,11 @@ The deployment and operator runbook for the relay is in
 The app is already wired for real data; nothing needs to be swapped out. In
 order:
 
-**1. Firmware — the only blocker.** Flash the XIAO with firmware implementing
-`ThermyxApp/BLE_PROTOCOL.md`. The UUIDs, byte order, scaling, and mode values
-must match exactly. Then: turn on the insole → open Thermyx → Home header or
+**1. Firmware — the only blocker.** Flash each XIAO ESP32-C3 with
+`firmware/thermyx_insole` (see [`firmware/README.md`](firmware/README.md) for
+the pin map; set the foot before each upload). It implements
+`ThermyxApp/BLE_PROTOCOL.md` but has not yet been compiled for the board or
+run on hardware, so bring it up with the insole off the foot. Then: turn on the insole → open Thermyx → Home header or
 the empty state's Scan button → pick the device → readings appear. **No app
 changes are required.** Every empty state you see today is the app correctly
 reporting that no insole has connected yet.
@@ -193,12 +224,14 @@ app changes.
 **3. History and charts** populate themselves. The Day range needs about three
 minutes of wear; Week and Month accumulate from there.
 
-**4. Learning Center copy.** `Resources/Content/learning-articles.json` ships
-six real headlines with outline bodies, each marked `"status": "placeholder"`.
-Write and cite each one, then change its status to `"published"`. The draft
-banner and badges disappear on their own once nothing is a placeholder. **No
-statistics have been filled in anywhere — do not ship a figure that has not
-been checked against its original publication.**
+**4. Learning Center copy.** `Resources/Content/learning-articles.json` has all
+six articles written, with their sources named at the end of each, but still
+marked `"status": "placeholder"`: the sources could not be opened when they were
+written, so nobody has yet checked each figure against its original
+publication. Check them (the Charkoudian skin-blood-flow figure, the NIOSH
+water guidance, the WMS frostbite rewarming range, and the CDC symptom lists),
+then change each status to `"published"`. The draft banner and badges
+disappear on their own once nothing is a placeholder.
 
 **5. Insole artwork** — see *Sole geometry* below.
 
@@ -233,6 +266,18 @@ opt-in, off by default, and every screen carries an amber "Sample shift · not
 harness this ships — it is a user-facing teaching aid, not injected telemetry,
 and it never masquerades as live.
 
+### Simulated insoles
+
+`-ThermyxUIPreview simulator` (the **Thermyx Demo** scheme) replaces the radio
+with two simulated insoles inside `ThermyxBLEService`, so every control works on
+the iOS Simulator: scan, pair, disconnect, Cool / Auto / Heat (the temperature
+responds), the Auto target slider, the heat lockout, and alerts.
+`simulatorOnboarding` does the same from the start of onboarding. A
+**Simulated conditions** card at the top of Safety → Advanced sets the air
+temperature and whether the wearer is tiring, which is enough to walk the risk
+level up every rung. Every screen carries a "Simulated insoles · not live
+readings" strip while it runs, and none of it is compiled into Release.
+
 ### Retiring the harness entirely
 
 When hardware is reliable enough that the harness is no longer useful, delete
@@ -241,13 +286,17 @@ it in this order and verify a Release archive manually:
 1. Delete `DesignSystem/ThermyxPreviewHarness.swift`.
 2. `ThermyxApp.swift` — remove the `.previewHarness(…)` call and the `#if !DEBUG`
    shim beneath it.
-3. `Services/ThermyxBLEService.swift` — remove the `#if DEBUG` extension at the
-   end of the file.
+3. `Services/ThermyxBLEService.swift` — remove the `simulator` property and the
+   `#if DEBUG` hooks at the top of `scan`, `stopScan`, `connect`, `disconnect`,
+   and both `send` methods, and the `#if DEBUG` section at the end of the file
+   (the preview injection and `ThermyxInsoleSimulator`).
 4. Remove the `#if DEBUG` initial-state blocks in `Views/RootView.swift` (tab
    selection and the notification-prompt guard),
    `Views/User/InsightsHubView.swift` and `Views/User/SafetyView.swift`
-   (navigation paths), and `Views/Onboarding/OnboardingFlow.swift` (step).
-5. Regenerate the Xcode project, build a Release archive, and verify that a
+   (navigation paths), `Views/Onboarding/OnboardingFlow.swift` (step), and
+   `Views/User/AdvancedView.swift` (the Simulated conditions card).
+5. Delete the **Thermyx Demo** scheme.
+6. Regenerate the Xcode project, build a Release archive, and verify that a
    preview launch argument has no effect.
 
 ## Credits and licences
@@ -330,21 +379,17 @@ into real millimetres for a given size.
 
 ### Sensor sites
 
-The eight FSR positions from the prototype are defined in
-`SoleGeometry.SensorSite`, placed against the outline's measured width profile.
-Every site clears the edge by at least **0.054 of foot length** — about 16 mm at
-US 12, comfortably more than an FSR 402 needs.
+The three FSR 402 pressure sensors in the prototype are defined in
+`SoleGeometry.SensorSite`, one per thermal zone, on the zone's centreline.
 
 | Site | Sole space (x, y) | Zone |
 |---|---|---|
-| Lateral heel | −0.022, 0.13 | Heel |
-| Medial heel | 0.096, 0.13 | Heel |
-| Lateral midfoot | −0.094, 0.42 | Arch |
-| Medial midfoot | 0.083, 0.44 | Arch |
-| 5th metatarsal | −0.137, 0.66 | Forefoot |
-| 3rd metatarsal | −0.001, 0.70 | Forefoot |
-| 1st metatarsal | 0.140, 0.72 | Forefoot |
-| Hallux | 0.143, 0.90 | Forefoot |
+| Heel | 0.035, 0.14 | Heel |
+| Arch | 0.000, 0.44 | Arch |
+| Forefoot (under the metatarsal heads) | 0.020, 0.71 | Forefoot |
+
+An earlier eight-sensor draft (medial and lateral heel and midfoot, three
+metatarsal heads, hallux) was dropped along with the multiplexer it needed.
 
 Thermal zone centres and radii live alongside them, so a three-zone heat bloom
 fills its region without spilling into the next.

@@ -127,7 +127,7 @@ struct DeviceProfileSheet: View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
             SectionLabel("Device")
             ThermyxGroupedCard {
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-right-01", text: $settings.deviceID)
+                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
                 ThermyxDivider()
                 ThermyxValueRow(label: "Pairing code", value: roles.pairingCode, valueFont: ThermyxFont.rowTitle, valueTracking: 2)
             }
@@ -197,7 +197,7 @@ struct DeviceProfileSheet: View {
 
     private var assistSection: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("AI Assistance")
+            SectionLabel("Suggestions")
 
             ThermyxGroupedCard {
                 Toggle(isOn: $settings.aiSuggestionsEnabled) {
@@ -205,7 +205,7 @@ struct DeviceProfileSheet: View {
                         Text("Suggest what to do next")
                             .font(ThermyxFont.body)
                             .foregroundStyle(Thermyx.Ink.textPrimary)
-                        Text("Not built yet — this records your preference")
+                        Text("Shown on Home, worked out on this phone")
                             .font(ThermyxFont.captionSmall)
                             .foregroundStyle(Thermyx.Ink.textSupporting)
                     }
@@ -216,7 +216,7 @@ struct DeviceProfileSheet: View {
                 .frame(minHeight: Thermyx.minimumTapTarget)
             }
 
-            Text("When this ships, Thermyx would use your own readings on this device to suggest a next action — take shade, warm gradually, check your fit. It is off by default, nothing runs today, and no reading has ever left your phone for it.")
+            Text("Thermyx uses your live readings to suggest one next step under the risk level on Home: take shade, warm gradually, check your fit. The suggestions are simple rules that run on this phone; nothing is sent anywhere. Off by default.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)

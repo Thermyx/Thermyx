@@ -1,4 +1,5 @@
 import Foundation
+import UserNotifications
 
 @MainActor
 final class TrustedMemberViewModel: ObservableObject {
@@ -49,8 +50,19 @@ final class TrustedMemberViewModel: ObservableObject {
     /// the shared backend carries a single summary per event, so a live
     /// watcher sees the summary until the backend learns to send both.
     var displayedBilateral: BilateralReading? {
-        isShowingSample ? TrustedSampleData.bilateral() : nil
+        isShowingSample ? TrustedSampleData.bilateral() : latestEvent?.bilateral
     }
+
+    /// How long since the wearer's phone last posted anything. The wearer's
+    /// app posts at least once a minute while an insole is connected, so a
+    /// long silence means their phone, signal, or insoles went quiet — not
+    /// that everything is fine.
+    func silence(now: Date = .now) -> TimeInterval? {
+        guard !isShowingSample, let latestEvent else { return nil }
+        return now.timeIntervalSince(latestEvent.timestamp)
+    }
+
+    static let silenceWarning: TimeInterval = 3 * 60
 
     var displayedEvents: [ThermyxRiskEvent] {
         isShowingSample ? TrustedSampleData.events() : []
@@ -66,6 +78,7 @@ final class TrustedMemberViewModel: ObservableObject {
             do {
                 let event = try await client.fetchStatus(deviceID: deviceID, backendURL: settings.backendURL, token: settings.backendToken)
                 if let event, event.timestamp != latestEvent?.timestamp {
+                    notifyIfEscalated(event, previous: latestEvent)
                     recentEvents.append(event)
                     if recentEvents.count > Self.windowSize {
                         recentEvents.removeFirst(recentEvents.count - Self.windowSize)
@@ -79,6 +92,28 @@ final class TrustedMemberViewModel: ObservableObject {
                 lastError = error.localizedDescription
             }
         }
+    }
+
+    /// A local notification when the wearer's level rises, they press SOS,
+    /// or they check in — so the watcher hears about it without staring at
+    /// the screen. (True background push needs APNs on the relay.)
+    private func notifyIfEscalated(_ event: ThermyxAlertEvent, previous: ThermyxAlertEvent?) {
+        guard previous != nil || event.kind == .sos else { return } // skip the first poll after launch
+        let level = ThermyxRiskLevel(rawValue: event.level) ?? .unavailable
+        let before = previous.flatMap { ThermyxRiskLevel(rawValue: $0.level) } ?? .normal
+        let content = UNMutableNotificationContent()
+        switch event.kind {
+        case .sos:
+            content.title = "SOS: they pressed Call 911"
+        case .ok:
+            content.title = "They checked in: I'm OK"
+        default:
+            guard level.severity > before.severity, level.severity >= ThermyxRiskLevel.caution.severity else { return }
+            content.title = "Thermyx: \(level.rawValue)"
+        }
+        content.body = event.reasons.joined(separator: " ")
+        content.sound = level == .critical || event.kind == .sos ? .defaultCritical : .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thermyx.watch.\(event.timestamp.timeIntervalSince1970)", content: content, trigger: nil))
     }
 
     deinit { timer?.invalidate() }

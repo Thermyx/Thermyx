@@ -17,6 +17,11 @@ struct AdvancedView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Advanced") {
+            #if DEBUG
+            if let simulator = viewModel.ble.simulator {
+                SimulatedConditionsCard(simulator: simulator, unit: unit)
+            }
+            #endif
             connectionSection
             targetTemperature
             backendSection
@@ -95,7 +100,7 @@ struct AdvancedView: View {
                             .foregroundStyle(isOn ? Thermyx.Ink.textPrimary : Thermyx.Ink.textFaint)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                        Text("XIAO nRF52840 · BLE telemetry")
+                        Text("XIAO ESP32-C3 · BLE telemetry")
                             .font(ThermyxFont.caption)
                             .foregroundStyle(Thermyx.Ink.textSupporting)
                     }
@@ -151,6 +156,14 @@ struct AdvancedView: View {
                     }
 
                     ThermalTargetSlider(value: $settings.targetTemperatureC, range: ThermyxSettingsStore.targetRange)
+                        .onChange(of: settings.targetTemperatureC) { _, celsius in
+                            viewModel.setTargetTemperature(celsius)
+                        }
+
+                    Text("Auto holds your feet at this temperature. It is sent to connected insoles as you change it, and heating always stops at the \(TemperatureFormat.degrees(ThermyxRiskEngine.burnLimitC, in: unit, decimals: 0)) burn-protection limit.")
+                        .font(ThermyxFont.caption)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     HStack {
                         Text("Cool \(TemperatureFormat.degrees(ThermyxSettingsStore.targetRange.lowerBound, in: unit, decimals: 0))")
@@ -175,7 +188,7 @@ struct AdvancedView: View {
                 ThermyxDivider()
                 ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
                 ThermyxDivider()
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-right-01", text: $settings.deviceID)
+                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
             }
 
             Text("The backend only receives escalated risk events and forwards approved SMS to your trusted circle. Readings stay on this phone.")
@@ -298,13 +311,13 @@ struct AdvancedView: View {
     }
 
     private var layoutNote: String {
-        let base = "Eight pressure sites per insole: medial and lateral heel, medial and lateral midfoot, the first, third and fifth metatarsal heads, and the hallux."
+        let base = "Three pressure sensors per insole (heel, arch, and forefoot) and two temperature sensors."
         guard let size = settings.soleSize else {
             return base + " Set a sole size to see the spacing in millimetres."
         }
-        // Heel to first metatarsal head, the span the wiring run has to cover.
-        let span = size.millimetres(0.72 - 0.13)
-        return base + String(format: " At %@, the heel-to-first-metatarsal span is %.0f mm.", size.label, span)
+        // Heel sensor to forefoot sensor, the span the wiring run has to cover.
+        let span = size.millimetres(SoleGeometry.SensorSite.forefoot.position.y - SoleGeometry.SensorSite.heel.position.y)
+        return base + String(format: " At %@, the heel-to-forefoot sensor span is %.0f mm.", size.label, span)
     }
 
     // MARK: - Legal
@@ -434,3 +447,63 @@ private extension Double {
         (self / step).rounded() * step
     }
 }
+
+#if DEBUG
+/// Development-only controls for the simulated insoles: the air around the
+/// wearer and whether they are tiring. Together with Cool / Auto / Heat these
+/// drive the risk level through every rung of the escalation ladder.
+private struct SimulatedConditionsCard: View {
+    @ObservedObject var simulator: ThermyxInsoleSimulator
+    let unit: TemperatureUnit
+
+    private let presets: [(String, Double)] = [("Mild", 22), ("Warm", 27), ("Hot", 36)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Simulated conditions")
+            ThermyxCard(padding: Thermyx.Space.xxl, radius: Thermyx.Radius.list, border: Thermyx.Ink.amber.opacity(0.5)) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+                    Text("Air temperature · \(TemperatureFormat.degrees(simulator.ambientC, in: unit, decimals: 0))")
+                        .font(ThermyxFont.rowTitle)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    Picker("Air temperature", selection: $simulator.ambientC) {
+                        ForEach(presets.indices, id: \.self) { index in
+                            Text(presets[index].0).tag(presets[index].1)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Toggle(isOn: $simulator.fatigued) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Wearer is tiring")
+                                .font(ThermyxFont.rowTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text("Gait stability drops and load shifts to the right foot.")
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textMuted)
+                        }
+                    }
+                    .tint(Thermyx.Ink.amber)
+
+                    Toggle(isOn: $simulator.coolingFault) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Insole fault")
+                                .font(ThermyxFont.rowTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text("The Peltier and fan stop working and heat builds up in the shoe.")
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textMuted)
+                        }
+                    }
+                    .tint(Thermyx.Ink.amber)
+
+                    Text("Hot air is Caution; add a tiring wearer for High; add an insole fault for Critical. The foot hitting 40° while heating is High on its own.")
+                        .font(ThermyxFont.caption)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
+}
+#endif

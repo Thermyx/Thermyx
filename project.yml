@@ -44,3 +44,42 @@ targets:
         CODE_SIGN_ENTITLEMENTS: ThermyxApp/ThermyxApp.entitlements
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  # Unit tests for the risk engine, formatting, and models.
+  ThermyxAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ThermyxAppTests
+    dependencies:
+      - target: ThermyxApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.thermyx.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+schemes:
+  ThermyxApp:
+    build:
+      targets:
+        ThermyxApp: all
+    test:
+      targets:
+        - ThermyxAppTests
+    run:
+      config: Debug
+  # Launches with simulated insoles (Debug only) so every control can be
+  # exercised on the iOS Simulator, which has no Bluetooth.
+  Thermyx Demo:
+    build:
+      targets:
+        ThermyxApp: all
+    test:
+      targets:
+        - ThermyxAppTests
+    run:
+      config: Debug
+      commandLineArguments:
+        "-ThermyxUIPreview simulator": true

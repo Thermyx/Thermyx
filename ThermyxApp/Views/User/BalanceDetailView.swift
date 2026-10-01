@@ -121,8 +121,8 @@ struct BalanceDetailView: View {
                     ],
                     range: settings.insightsRange,
                     height: 150,
-                    format: { String(format: "%+.1f°", $0) },
-                    averageLabel: "Mean gap",
+                    format: GapFormat.degrees,
+                    averageLabel: "Average",
                     highTint: Thermyx.Ink.ember,
                     lowTint: Thermyx.Ink.ice
                 )
@@ -152,8 +152,8 @@ struct BalanceDetailView: View {
                     ],
                     range: settings.insightsRange,
                     height: 150,
-                    format: { String(format: "%+.0f pts", $0) },
-                    averageLabel: "Mean gap",
+                    format: GapFormat.points,
+                    averageLabel: "Average",
                     highTint: Thermyx.Ink.signal,
                     lowTint: Thermyx.Ink.signal
                 )
