@@ -5,6 +5,9 @@ struct ThermyxContact: Codable, Identifiable, Equatable {
     var name: String
     var phoneNumber: String
     var enabled: Bool
+    /// When the contact confirmed this number by reading back a code the
+    /// relay texted them. Only used when the relay has verification on.
+    var verifiedAt: Date?
 
     init(name: String, phoneNumber: String, enabled: Bool = true) {
         self.id = UUID()

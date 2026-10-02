@@ -19,6 +19,8 @@
 //   SMS_ENABLED            "true" to allow texting; OFF by default until tested with real phones
 //   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER   (only when SMS_ENABLED)
 //   SMS_REMINDER_MINUTES   repeat-text gap at the same level, default 5
+//   CONTACT_VERIFICATION_ENABLED  "true" to text trusted contacts a code that
+//                          confirms their number; also needs SMS_ENABLED. OFF by default.
 const http = require("node:http");
 const path = require("node:path");
 const { openStore } = require("./store");
@@ -104,10 +106,12 @@ function createRelay(options = {}) {
   const now = options.now || (() => Date.now());
   const store = options.store || openStore(env.DATABASE_FILE || path.join(__dirname, "data", "thermyx.sqlite"), now);
   const smsEnabled = env.SMS_ENABLED === "true";
+  const contactVerification = smsEnabled && env.CONTACT_VERIFICATION_ENABLED === "true";
   const reminderMs = Number(env.SMS_REMINDER_MINUTES || 5) * 60_000;
   const sendSMS = options.sendSMS || twilioSend(env);
   const pairLimit = rateLimiter(10, 60_000, now);   // per IP: slows code guessing
   const apiLimit = rateLimiter(120, 60_000, now);   // per token
+  const verifyLimit = rateLimiter(5, 60 * 60_000, now); // contact codes per wearer per hour
 
   store.purgeExpired();
   const purgeTimer = setInterval(() => store.purgeExpired(), 10 * 60_000);
@@ -190,7 +194,7 @@ function createRelay(options = {}) {
     const url = new URL(req.url, "http://relay.local");
     const route = `${req.method} ${url.pathname}`;
 
-    if (route === "GET /health") return json(res, 200, { ok: true, smsEnabled });
+    if (route === "GET /health") return json(res, 200, { ok: true, smsEnabled, contactVerification });
 
     // Pairing is the only unauthenticated write, and it is rate-limited per IP.
     if (route === "POST /v1/pair") {
@@ -199,7 +203,7 @@ function createRelay(options = {}) {
         if (typeof body.code !== "string" || !body.code.trim()) return json(res, 400, { error: "invalid_code" });
         const result = store.redeemCode(body.code, typeof body.name === "string" ? body.name : undefined);
         if (!result) return json(res, 403, { error: "code_invalid_or_expired" });
-        return json(res, 200, { ...result, smsEnabled });
+        return json(res, 200, { ...result, smsEnabled, contactVerification });
       });
     }
 
@@ -226,6 +230,28 @@ function createRelay(options = {}) {
     if (route === "POST /v1/events") return readBody(req, res, body => handleEvent(identity, body, res));
     if (route === "GET /v1/watchers") return json(res, 200, { watchers: store.listWatchers(identity.deviceID) });
     if (route === "POST /v1/watchers/codes") return json(res, 201, store.createWatcherCode(identity.deviceID));
+    // Contact confirmation: the relay texts a 6-digit code to the number; the
+    // contact reads it back to the wearer, who enters it. Off by default.
+    if (route === "POST /v1/contacts/verify" || route === "POST /v1/contacts/confirm") {
+      if (!contactVerification) return json(res, 403, { error: "verification_disabled" });
+      return readBody(req, res, async body => {
+        const phone = typeof body.phone === "string" ? normalisePhone(body.phone) : null;
+        if (!phone) return json(res, 400, { error: "invalid_phone" });
+        if (route === "POST /v1/contacts/confirm") {
+          const result = store.confirmContact(identity.deviceID, phone, body.code);
+          return json(res, result === "confirmed" ? 200 : 400, result === "confirmed" ? { verified: true } : { error: `code_${result}` });
+        }
+        if (!verifyLimit(identity.deviceID)) return json(res, 429, { error: "rate_limited" });
+        const code = store.createContactCheck(identity.deviceID, phone);
+        try {
+          await sendWithRetry(sendSMS, phone, `Thermyx: ${code} is the code to confirm you're a trusted contact for ${identity.deviceID}. Read it to them only if you agreed to get their safety alerts.`);
+        } catch (error) {
+          log(`Verification text to …${phone.slice(-4)} failed:`, error.message);
+          return json(res, 502, { error: "send_failed" });
+        }
+        return json(res, 202, { sent: true, expiresInMinutes: 10 });
+      });
+    }
     // The wearer's "Delete my data": ends this phone's access, every
     // watcher's access, and removes the stored status and location.
     if (route === "DELETE /v1/device") {

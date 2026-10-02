@@ -19,6 +19,10 @@ final class ThermyxAlertCoordinator: ObservableObject {
     /// tell a quiet wearer from a wearer whose phone has gone silent.
     static let heartbeatInterval: TimeInterval = 60
 
+    /// Set while Demo Mode runs: nothing is posted to the relay, and the
+    /// wearer's own notifications say they are simulated.
+    var isDemoMode = false
+
     private var lastAlertSentAt: Date?
     private var lastAlertSentLevel: ThermyxRiskLevel = .unavailable
     private var lastPostAt: Date?
@@ -86,7 +90,7 @@ final class ThermyxAlertCoordinator: ObservableObject {
 
     private func notifyWearer(_ level: ThermyxRiskLevel) {
         let content = UNMutableNotificationContent()
-        content.title = "Thermyx safety alert"
+        content.title = isDemoMode ? "Thermyx demo — simulated, not live data" : "Thermyx safety alert"
         content.body = level.explanation
         content.sound = level == .critical ? .defaultCritical : .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thermyx.\(level.rawValue)", content: content, trigger: nil))
@@ -105,7 +109,7 @@ final class ThermyxAlertCoordinator: ObservableObject {
         settings: ThermyxSettingsStore,
         texts: Bool
     ) {
-        guard settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
+        guard !isDemoMode, settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
         lastPostAt = .now
 
         let activeEvent = kind == .sos || level.severity >= ThermyxRiskLevel.high.severity

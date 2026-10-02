@@ -34,6 +34,7 @@ struct ThermyxAlertAPIClient {
         let watcherID: String?
         let status: String?
         let smsEnabled: Bool?
+        let contactVerification: Bool?
     }
 
     func pair(baseURL: String, code: String, name: String?) async throws -> PairResult {
@@ -107,6 +108,18 @@ struct ThermyxAlertAPIClient {
     func deleteDevice(baseURL: String, token: String) async throws {
         struct Ack: Decodable {}
         let _: Ack = try await request("DELETE", "/v1/device", baseURL: baseURL, token: token, body: Optional<String>.none)
+    }
+
+    /// Texts a trusted contact a 6-digit code. Only when the relay has
+    /// contact verification on.
+    func sendContactCode(phone: String, baseURL: String, token: String) async throws {
+        struct Ack: Decodable {}
+        let _: Ack = try await request("POST", "/v1/contacts/verify", baseURL: baseURL, token: token, body: ["phone": phone])
+    }
+
+    func confirmContact(phone: String, code: String, baseURL: String, token: String) async throws {
+        struct Ack: Decodable {}
+        let _: Ack = try await request("POST", "/v1/contacts/confirm", baseURL: baseURL, token: token, body: ["phone": phone, "code": code])
     }
 
     // MARK: Watcher

@@ -15,6 +15,9 @@ final class ThermyxSettingsStore: ObservableObject {
     /// Whether the relay has texting turned on. Off until the team has tested
     /// real delivery; the app shows a labelled preview instead.
     @Published var relayTextingEnabled: Bool { didSet { save() } }
+    /// Whether the relay offers contact-number confirmation. Off unless the
+    /// team turns it on after testing with real phones.
+    @Published var relayContactVerification: Bool { didSet { save() } }
     /// The wearer's explicit consent to include their location in what
     /// approved watchers see, and only during a High, Critical, or SOS event.
     @Published var shareLocationDuringEvents: Bool { didSet { save() } }
@@ -66,6 +69,7 @@ final class ThermyxSettingsStore: ObservableObject {
         deviceID = defaults.string(forKey: "thermyx.deviceID") ?? ""
         relayRole = defaults.string(forKey: "thermyx.relayRole") ?? ""
         relayTextingEnabled = defaults.bool(forKey: "thermyx.relayTextingEnabled")
+        relayContactVerification = defaults.bool(forKey: "thermyx.relayContactVerification")
         shareLocationDuringEvents = defaults.bool(forKey: "thermyx.shareLocationDuringEvents")
         let storedContacts: [ThermyxContact]
         if let data = defaults.data(forKey: "thermyx.contacts"), let decoded = try? JSONDecoder().decode([ThermyxContact].self, from: data) {
@@ -119,7 +123,8 @@ final class ThermyxSettingsStore: ObservableObject {
     var isPairedWithRelay: Bool { !backendURL.isEmpty && !backendToken.isEmpty }
 
     /// Stores what the relay issued when a pairing code was redeemed.
-    func completePairing(url: String, role: String, token: String, deviceID: String?, textingEnabled: Bool) {
+    func completePairing(url: String, role: String, token: String, deviceID: String?, textingEnabled: Bool, contactVerification: Bool = false) {
+        relayContactVerification = contactVerification
         backendURL = url
         relayRole = role
         backendToken = token
@@ -135,6 +140,12 @@ final class ThermyxSettingsStore: ObservableObject {
         relayRole = ""
         deviceID = ""
         relayTextingEnabled = false
+        relayContactVerification = false
+    }
+
+    func markVerified(_ contact: ThermyxContact) {
+        guard let index = contacts.firstIndex(where: { $0.id == contact.id }) else { return }
+        contacts[index].verifiedAt = .now
     }
 
     private static func isLegacyPrototypeContact(_ contact: ThermyxContact) -> Bool {
@@ -181,6 +192,7 @@ final class ThermyxSettingsStore: ObservableObject {
         defaults.set(deviceID, forKey: "thermyx.deviceID")
         defaults.set(relayRole, forKey: "thermyx.relayRole")
         defaults.set(relayTextingEnabled, forKey: "thermyx.relayTextingEnabled")
+        defaults.set(relayContactVerification, forKey: "thermyx.relayContactVerification")
         defaults.set(shareLocationDuringEvents, forKey: "thermyx.shareLocationDuringEvents")
         defaults.set(try? JSONEncoder().encode(contacts), forKey: "thermyx.contacts")
         defaults.set(temperatureUnit.rawValue, forKey: "thermyx.temperatureUnit")

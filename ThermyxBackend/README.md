@@ -46,7 +46,7 @@ and shows a labelled preview of the message instead.
 cd ThermyxBackend
 npm run demo                # port 8787, database in ./data/demo.sqlite
 npm run admin wearer-code   # in a second terminal: prints a one-time code
-npm test                    # 15 tests, no network needed
+npm test                    # 17 tests, no network needed
 ```
 
 In the app: **Safety → Advanced → Connect to relay**, enter
@@ -71,6 +71,7 @@ Invite** makes a watcher code for a second phone or simulator, which joins as
    TWILIO_AUTH_TOKEN=...
    TWILIO_FROM_NUMBER=+1...
    SMS_REMINDER_MINUTES=5
+   CONTACT_VERIFICATION_ENABLED=false  # needs SMS_ENABLED; leave off until tested
    ```
 
 3. Make a wearer code with `npm run admin wearer-code` in the host's shell.
@@ -98,6 +99,8 @@ Every route except `/health` and `/v1/pair` needs `Authorization: Bearer <token>
 | `POST /v1/watchers/:id/approve` | wearer | Approve or renew for 90 days |
 | `DELETE /v1/watchers/:id` | wearer | Revoke now |
 | `DELETE /v1/device` | wearer | Delete my data: ends this phone's and every watcher's access and removes the stored status and location |
+| `POST /v1/contacts/verify` `{phone}` | wearer | Off by default. Texts the number a 6-digit code (10 min, 5 tries, 5 sends/hour) |
+| `POST /v1/contacts/confirm` `{phone, code}` | wearer | Confirms the code the contact read back. Numbers are stored only as salted hashes, and only until confirmed or expired |
 | `DELETE /v1/watch` | watcher | Stop watching (ends this watcher's own access) |
 | `GET /v1/watch` | watcher | `{status: "pending"}` or `{status: "approved", state: {level, kind, updatedAt, location?}}` |
 | `GET /health` | — | Liveness and whether texting is on |

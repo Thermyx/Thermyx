@@ -113,7 +113,8 @@ struct RelayConnectionCard: View {
                 role: result.role,
                 token: result.token,
                 deviceID: result.deviceID,
-                textingEnabled: result.smsEnabled ?? false
+                textingEnabled: result.smsEnabled ?? false,
+                contactVerification: result.contactVerification ?? false
             )
             code = ""
         } catch {
@@ -381,5 +382,79 @@ struct TextingPreviewCard: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Preview of a text to trusted contacts. Not sent; texting is not turned on yet.")
+    }
+}
+
+// MARK: - Contact confirmation
+
+/// Confirms a trusted contact's number: the relay texts them a code, they
+/// read it back, the wearer types it in. Shown only when the relay has
+/// contact verification turned on, which it is not by default.
+struct VerifyContactSheet: View {
+    @ObservedObject var settings: ThermyxSettingsStore
+    let contact: ThermyxContact
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var sent = false
+    @State private var code = ""
+    @State private var working = false
+    @State private var error: String?
+    private let client = ThermyxAlertAPIClient()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+            Text("Confirm \(contact.name)'s number")
+                .font(ThermyxFont.cardTitle)
+                .foregroundStyle(Thermyx.Ink.textPrimary)
+            Text(sent
+                 ? "A 6-digit code was texted to \(contact.phoneNumber). Ask \(contact.name) to read it to you. It expires in 10 minutes."
+                 : "Thermyx will text \(contact.phoneNumber) a code. When \(contact.name) reads it back, you'll know the number is right and they agreed to get your alerts.")
+                .font(ThermyxFont.caption)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            if sent {
+                TextField("6-digit code", text: $code)
+                    .keyboardType(.numberPad)
+                    .textContentType(.oneTimeCode)
+                    .font(ThermyxFont.rowNumeral)
+                    .padding(Thermyx.Space.m)
+                    .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+            }
+            if let error {
+                Text(error)
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.amber)
+            }
+            Button(sent ? "Confirm" : "Text the code") {
+                Task { if sent { await confirm() } else { await send() } }
+            }
+            .buttonStyle(ThermyxPrimaryButtonStyle())
+            .disabled(working || (sent && code.filter(\.isNumber).count != 6))
+            Spacer(minLength: 0)
+        }
+        .padding(Thermyx.Space.screen)
+    }
+
+    private func send() async {
+        working = true; defer { working = false }
+        do {
+            try await client.sendContactCode(phone: contact.phoneNumber, baseURL: settings.backendURL, token: settings.backendToken)
+            sent = true; error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func confirm() async {
+        working = true; defer { working = false }
+        do {
+            try await client.confirmContact(phone: contact.phoneNumber, code: code, baseURL: settings.backendURL, token: settings.backendToken)
+            settings.markVerified(contact)
+            dismiss()
+        } catch ThermyxAlertAPIClient.ClientError.server(400) {
+            error = "That code didn't match or has expired. Check it, or text a new one."
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 }

@@ -64,11 +64,12 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     private static let knownInsolesKey = "thermyx.knownInsoles"
     private static let restoreIdentifier = "com.thermyx.app.central"
 
-    #if DEBUG
-    /// Development-only simulated pair. Non-nil only when the app is launched
-    /// with `-ThermyxUIPreview simulator` (or `simulatorOnboarding`).
+    /// The simulated pair, when Demo Mode is on (Advanced → Demo Mode, or
+    /// `-ThermyxUIPreview simulator` in development). While it runs, every
+    /// screen carries "Simulated — not live sensor data", and nothing is sent
+    /// to the relay, written to history, Apple Health, or the baseline.
     private(set) var simulator: ThermyxInsoleSimulator?
-    #endif
+    @Published private(set) var isDemoMode = false
 
     override init() {
         super.init()
@@ -77,6 +78,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         if ThermyxPreviewHarness.isSimulated {
             state = .poweredOn
             simulator = ThermyxInsoleSimulator(ble: self)
+            isDemoMode = true
             return
         }
         #endif
@@ -88,6 +90,56 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             queue: nil,
             options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier]
         )
+    }
+
+    // MARK: - Demo Mode
+
+    /// Swaps the real radio for the simulated pair. Real insoles are
+    /// disconnected first so simulated and live readings can never mix.
+    func startDemoMode() {
+        guard simulator == nil else { return }
+        // Drop real links without forgetting the insoles, so they reconnect
+        // when Demo Mode ends. Pending reconnects are cancelled too.
+        if central != nil {
+            central.stopScan()
+            let ids = Set(links.values.map(\.identifier)).union(pendingFoot.keys)
+            for id in ids {
+                userDisconnects.insert(id)
+                if let peripheral = links.values.first(where: { $0.identifier == id }) ?? peripherals[id] {
+                    central.cancelPeripheralConnection(peripheral)
+                }
+                tearDown(id)
+            }
+            pendingFoot.removeAll()
+        }
+        readings.removeAll()
+        discovered.removeAll()
+        simulator = ThermyxInsoleSimulator(ble: self)
+        isDemoMode = true
+        state = .poweredOn
+        simulator?.connectAll()
+    }
+
+    /// Ends Demo Mode and returns to real Bluetooth.
+    func stopDemoMode() {
+        guard let simulator else { return }
+        for foot in Foot.allCases { simulator.disconnect(foot) }
+        simulator.shutdown()
+        self.simulator = nil
+        isDemoMode = false
+        readings.removeAll()
+        discovered.removeAll()
+        userDisconnects.removeAll()
+        if central == nil {
+            central = CBCentralManager(
+                delegate: self,
+                queue: nil,
+                options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier]
+            )
+        } else {
+            state = central.state
+            reconnectKnownInsoles()
+        }
     }
 
     // MARK: - Stale-data watchdog
@@ -163,14 +215,12 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     // MARK: Scanning
 
     func scan() {
-        #if DEBUG
         if let simulator {
             errorMessage = nil
             discovered.removeAll()
             simulator.startScan()
             return
         }
-        #endif
         guard state == .poweredOn else {
             errorMessage = "Bluetooth is unavailable or permission has not been granted."
             return
@@ -184,18 +234,14 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     }
 
     func stopScan() {
-        #if DEBUG
         if let simulator { simulator.stopScan(); return }
-        #endif
         central.stopScan()
     }
 
     /// Connect to a discovered device. `foot` is used when the firmware did
     /// not declare one; otherwise the declared foot wins.
     func connect(to device: DiscoveredDevice, as foot: Foot? = nil) {
-        #if DEBUG
         if let simulator { simulator.connect(device, as: foot); return }
-        #endif
         guard let target = peripherals[device.id] else { return }
         let assigned = device.advertisedFoot ?? foot
         if let assigned {
@@ -205,9 +251,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     }
 
     func disconnect(_ foot: Foot) {
-        #if DEBUG
         if let simulator { simulator.disconnect(foot); return }
-        #endif
         guard let peripheral = links[foot] else { return }
         userDisconnects.insert(peripheral.identifier)
         var known = knownInsoles
@@ -233,12 +277,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             errorMessage = "No insole is connected to receive commands."
             return
         }
-        #if DEBUG
         if let simulator {
             for target in targets { simulator.command(command, to: target) }
             return
         }
-        #endif
         let commandByte: UInt8 = switch command {
         case .off: 0
         case .heating: 1
@@ -259,12 +301,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// command ignores it.
     func send(targetTemperatureC celsius: Double, to foot: Foot? = nil) {
         let targets: [Foot] = foot.map { [$0] } ?? Array(connected)
-        #if DEBUG
         if let simulator {
             for target in targets { simulator.setTarget(celsius, for: target) }
             return
         }
-        #endif
         let centi = Int16(clamping: Int((celsius * 100).rounded()))
         let raw = UInt16(bitPattern: centi)
         let packet = Data([2, UInt8(raw & 0xFF), UInt8(raw >> 8)])
@@ -469,6 +509,12 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
 
     nonisolated func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         Task { @MainActor in
+            // A real insole must never join a simulated session.
+            if self.simulator != nil {
+                self.userDisconnects.insert(peripheral.identifier)
+                central.cancelPeripheralConnection(peripheral)
+                return
+            }
             self.errorMessage = nil
             peripheral.delegate = self
             peripheral.discoverServices([Self.serviceUUID])
@@ -574,7 +620,10 @@ extension ThermyxBLEService: CBPeripheralDelegate {
     ) {
         guard let data = characteristic.value else { return }
         let identifier = peripheral.identifier
-        Task { @MainActor in self.decodeTelemetry(data, from: identifier) }
+        Task { @MainActor in
+            guard self.simulator == nil else { return }
+            self.decodeTelemetry(data, from: identifier)
+        }
     }
 
     /// Commands are written with response, so a refusal is reported rather
@@ -614,10 +663,9 @@ extension ThermyxBLEService {
 }
 #endif
 
-#if DEBUG
 // MARK: - Simulated insoles
 //
-// Development-only. Stands in for the XIAO firmware so every control in the
+// Demo Mode and development. Stands in for the XIAO firmware so every control in the
 // app can be exercised on the iOS Simulator, which has no Bluetooth. It hooks
 // in at the BLE layer, so scanning, pairing, disconnecting, and mode commands
 // all run through the same view model and screens as real hardware — only the
@@ -749,6 +797,12 @@ final class ThermyxInsoleSimulator: ObservableObject {
         ble?.simDetach(foot)
     }
 
+    func shutdown() {
+        tickTimer?.invalidate()
+        tickTimer = nil
+        stopScan()
+    }
+
     func command(_ mode: ThermalMode, to foot: Foot) {
         insoles[foot]?.commanded = mode
     }
@@ -846,4 +900,3 @@ final class ThermyxInsoleSimulator: ObservableObject {
         ble.simPublish(reading, rssi: rssiValue(foot))
     }
 }
-#endif

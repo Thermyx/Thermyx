@@ -59,7 +59,10 @@ final class ThermyxViewModel: ObservableObject {
                 self.reading = next
                 self.updateTrend()
                 self.trackAsymmetry(next)
-                self.baseline.observe(next, fixedLevel: self.fixedAssessment.level)
+                // Simulated readings never teach the baseline.
+                if !self.ble.isDemoMode {
+                    self.baseline.observe(next, fixedLevel: self.fixedAssessment.level)
+                }
                 for entry in next.present { self.ingest(entry) }
                 self.syncFocus()
             }
@@ -101,6 +104,8 @@ final class ThermyxViewModel: ObservableObject {
     private(set) var trend = TemperatureTrend()
 
     private func updateTrend() {
+        // Demo Mode writes no history, so there is no honest trend to show.
+        guard !ble.isDemoMode else { trend = TemperatureTrend(); return }
         let current = reading.peakFootTemperatureC
         trend = TemperatureTrend(
             delta5: history.footTrend(over: 5 * 60, current: current)?.delta,
@@ -282,6 +287,9 @@ final class ThermyxViewModel: ObservableObject {
                 ble.send(command: .cooling)
             }
         }
+
+        // Demo Mode readings are never written to history or Health.
+        guard !ble.isDemoMode else { return }
 
         if sessionStart[foot] == nil { sessionStart[foot] = entry.timestamp }
         if let last = lastRecordedAt[foot], let temperature = entry.footTemperatureC, temperature >= 35 {

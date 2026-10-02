@@ -219,3 +219,26 @@ enum DataDeletion {
         return relayError
     }
 }
+
+// MARK: - Demo Mode banner
+
+/// Stamped along the bottom of every screen while Demo Mode runs, in debug
+/// and release builds alike, so a screenshot can never pass simulated
+/// readings off as live ones.
+struct DemoModeBanner: ViewModifier {
+    @ObservedObject var ble: ThermyxBLEService
+
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
+            if ble.isDemoMode {
+                Text("Simulated — not live sensor data")
+                    .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.onEmber)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 5)
+                    .background(Thermyx.Ink.ember)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Simulated. This is not live sensor data.")
+            }
+        }
+    }
+}

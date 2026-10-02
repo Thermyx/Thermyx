@@ -16,6 +16,7 @@ struct SafetyView: View {
         #endif
     }()
     @State private var showingAddContact = false
+    @State private var verifying: ThermyxContact?
     @State private var showingSOSConfirmation = false
     @State private var showingCannotCall = false
     @State private var okSentAt: Date?
@@ -55,6 +56,11 @@ struct SafetyView: View {
         }
         .sheet(isPresented: $showingAddContact) {
             AddContactSheet(settings: settings)
+                .presentationDetents([.medium])
+                .presentationBackground(Thermyx.Ink.midnight)
+        }
+        .sheet(item: $verifying) { contact in
+            VerifyContactSheet(settings: settings, contact: contact)
                 .presentationDetents([.medium])
                 .presentationBackground(Thermyx.Ink.midnight)
         }
@@ -269,6 +275,12 @@ struct SafetyView: View {
                     ContactRow(contact: contact) {
                         settings.toggleContact(contact)
                     }
+                    if settings.relayContactVerification, settings.relayRole == "wearer", contact.verifiedAt == nil {
+                        Button("Confirm \(contact.name)'s number") { verifying = contact }
+                            .font(ThermyxFont.captionSmall.weight(.semibold))
+                            .foregroundStyle(Thermyx.Ink.ice)
+                            .frame(minHeight: Thermyx.minimumTapTarget)
+                    }
                 }
                 if !settings.relayTextingEnabled, !enabledContacts.isEmpty {
                     TextingPreviewCard(settings: settings, level: level, reasons: viewModel.assessment.reasons)
@@ -390,7 +402,7 @@ struct ContactRow: View {
                     Text(contact.name)
                         .font(ThermyxFont.rowTitleRegular)
                         .foregroundStyle(Thermyx.Ink.textPrimary)
-                    Text(contact.phoneNumber)
+                    Text(contact.verifiedAt == nil ? contact.phoneNumber : "\(contact.phoneNumber) · confirmed")
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textSupporting)
                 }

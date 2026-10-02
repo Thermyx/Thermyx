@@ -18,11 +18,7 @@ struct AdvancedView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Advanced") {
-            #if DEBUG
-            if let simulator = viewModel.ble.simulator {
-                SimulatedConditionsCard(simulator: simulator, unit: unit)
-            }
-            #endif
+            DemoModeSection(ble: viewModel.ble, unit: unit)
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 DeviceHealthStrip(now: context.date)
             }
@@ -448,8 +444,55 @@ private extension Double {
     }
 }
 
-#if DEBUG
-/// Development-only controls for the simulated insoles: the air around the
+/// Demo Mode: a simulated pair for showing the app without hardware. Off at
+/// every launch. While it is on, every screen is stamped "Simulated — not
+/// live sensor data" and nothing is sent to the relay or saved to history,
+/// Apple Health, or the personal baseline.
+private struct DemoModeSection: View {
+    @ObservedObject var ble: ThermyxBLEService
+    let unit: TemperatureUnit
+    @State private var confirming = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Demo Mode")
+            ThermyxGroupedCard {
+                Toggle(isOn: Binding(
+                    get: { ble.isDemoMode },
+                    set: { on in if on { confirming = true } else { ble.stopDemoMode() } }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Simulated insoles")
+                            .font(ThermyxFont.body)
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                        Text(ble.isDemoMode ? "On · not live sensor data" : "Off")
+                            .font(ThermyxFont.captionSmall)
+                            .foregroundStyle(ble.isDemoMode ? Thermyx.Ink.amber : Thermyx.Ink.textSupporting)
+                    }
+                }
+                .tint(Thermyx.Ink.amber)
+                .padding(.horizontal, Thermyx.Space.xl)
+                .padding(.vertical, Thermyx.Space.m)
+                .frame(minHeight: Thermyx.minimumTapTarget)
+            }
+            Text("For showing Thermyx without insoles. Real insoles are disconnected while it runs, and simulated readings are never sent to watchers or saved.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+            if let simulator = ble.simulator {
+                SimulatedConditionsCard(simulator: simulator, unit: unit)
+            }
+        }
+        .confirmationDialog("Turn on Demo Mode?", isPresented: $confirming, titleVisibility: .visible) {
+            Button("Use simulated insoles") { ble.startDemoMode() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your real insoles will be disconnected. Every screen will say \"Simulated — not live sensor data\" until you turn it off.")
+        }
+    }
+}
+
+/// Demo Mode controls for the simulated insoles: the air around the
 /// wearer and whether they are tiring. Together with Cool / Auto / Heat these
 /// drive the risk level through every rung of the escalation ladder.
 private struct SimulatedConditionsCard: View {
@@ -506,4 +549,4 @@ private struct SimulatedConditionsCard: View {
         }
     }
 }
-#endif
+

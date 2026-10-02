@@ -11,7 +11,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // Lifetimes.
 const CODE_TTL_MS = 10 * 60_000;                 // pairing codes: 10 minutes, single use
@@ -20,6 +20,8 @@ const WATCHER_TTL_MS = 90 * 24 * 3_600_000;       // watcher access: 90 days, re
 const LOCATION_TTL_MS = 60 * 60_000;              // shared location: 1 hour at most
 const AUDIT_RETENTION_MS = 30 * 24 * 3_600_000;
 const STATUS_RETENTION_MS = 7 * 24 * 3_600_000;
+const CONTACT_CODE_TTL_MS = 10 * 60_000;          // contact confirmation codes: 10 minutes
+const CONTACT_CODE_ATTEMPTS = 5;
 
 // Codes: 8 characters from an alphabet without look-alikes (no 0/O, 1/I/L).
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -218,6 +220,7 @@ function openStore(file, now = () => Date.now()) {
       const result = db.prepare("UPDATE tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL").run(now(), deviceID);
       db.prepare("UPDATE watchers SET status = 'revoked', revoked_at = ? WHERE device_id = ? AND status != 'revoked'").run(now(), deviceID);
       db.prepare("DELETE FROM status WHERE device_id = ?").run(deviceID);
+      db.prepare("DELETE FROM contact_checks WHERE device_id = ?").run(deviceID);
       audit(actor, "revoke_device", deviceID);
       return result.changes;
     },
@@ -243,7 +246,37 @@ function openStore(file, now = () => Date.now()) {
       db.prepare("DELETE FROM status WHERE updated_at < ?").run(t - STATUS_RETENTION_MS);
       db.prepare("DELETE FROM audit WHERE at < ?").run(t - AUDIT_RETENTION_MS);
       db.prepare("DELETE FROM sms_log WHERE at < ?").run(t - AUDIT_RETENTION_MS);
+      db.prepare("DELETE FROM contact_checks WHERE expires_at < ?").run(t);
       db.prepare("DELETE FROM tokens WHERE expires_at < ? OR revoked_at < ?").run(t - AUDIT_RETENTION_MS, t - AUDIT_RETENTION_MS);
+    },
+
+    /** Starts a contact confirmation; returns the 6-digit code to text. */
+    createContactCheck(deviceID, phone) {
+      const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+      db.prepare(`INSERT INTO contact_checks (device_id, phone_hash, code_hash, created_at, expires_at, attempts)
+        VALUES (?, ?, ?, ?, ?, 0)
+        ON CONFLICT (device_id, phone_hash) DO UPDATE SET code_hash = excluded.code_hash,
+          created_at = excluded.created_at, expires_at = excluded.expires_at, attempts = 0`)
+        .run(deviceID, sha256(`${deviceID}:${phone}`), sha256(`${deviceID}:${code}`), now(), now() + CONTACT_CODE_TTL_MS);
+      audit(`wearer:${deviceID}`, "contact_check_sent", null);
+      return code;
+    },
+
+    /** "confirmed", "wrong", or "expired" (also after too many attempts). */
+    confirmContact(deviceID, phone, code) {
+      const key = sha256(`${deviceID}:${phone}`);
+      const row = db.prepare("SELECT * FROM contact_checks WHERE device_id = ? AND phone_hash = ?").get(deviceID, key);
+      if (!row || row.expires_at <= now() || row.attempts >= CONTACT_CODE_ATTEMPTS) {
+        if (row) db.prepare("DELETE FROM contact_checks WHERE device_id = ? AND phone_hash = ?").run(deviceID, key);
+        return "expired";
+      }
+      if (row.code_hash !== sha256(`${deviceID}:${String(code || "").replace(/\D/g, "")}`)) {
+        db.prepare("UPDATE contact_checks SET attempts = attempts + 1 WHERE device_id = ? AND phone_hash = ?").run(deviceID, key);
+        return "wrong";
+      }
+      db.prepare("DELETE FROM contact_checks WHERE device_id = ? AND phone_hash = ?").run(deviceID, key);
+      audit(`wearer:${deviceID}`, "contact_confirmed", null);
+      return "confirmed";
     },
 
     close() { db.close(); }
@@ -281,6 +314,17 @@ function migrate(db) {
       CREATE INDEX watchers_by_device ON watchers (device_id);
       CREATE INDEX tokens_by_watcher ON tokens (watcher_id);
       INSERT INTO schema_version (version) VALUES (1);
+    `);
+  }
+  if ((db.prepare("SELECT MAX(version) AS v FROM schema_version").get().v || 0) < 2) {
+    // Contact confirmation codes. The number is stored only as a hash salted
+    // with the device ID, and the row is deleted once confirmed or expired.
+    db.exec(`
+      CREATE TABLE contact_checks (
+        device_id TEXT NOT NULL, phone_hash TEXT NOT NULL, code_hash TEXT NOT NULL,
+        created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (device_id, phone_hash));
+      INSERT INTO schema_version (version) VALUES (2);
     `);
   }
   if ((db.prepare("SELECT MAX(version) AS v FROM schema_version").get().v || 0) !== SCHEMA_VERSION) {

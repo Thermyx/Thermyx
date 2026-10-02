@@ -230,6 +230,39 @@ test("with texting on: once per level, again on escalation, reminders after the 
   } finally { await r.close(); }
 });
 
+test("contact verification is off by default", async () => {
+  const r = await start({ env: { SMS_ENABLED: "true" } });
+  try {
+    const { wearer } = await pairBoth(r);
+    assert.equal((await r.call("POST", "/v1/contacts/verify", { token: wearer.token, body: { phone: "2025550148" } })).status, 403);
+    assert.equal(r.sent.length, 0);
+  } finally { await r.close(); }
+});
+
+test("contact verification: code texted, single use, limited attempts, numbers never stored", async () => {
+  const r = await start({ env: { SMS_ENABLED: "true", CONTACT_VERIFICATION_ENABLED: "true" } });
+  try {
+    const { wearer, watcher } = await pairBoth(r);
+    assert.equal((await r.call("POST", "/v1/contacts/verify", { token: watcher.token, body: { phone: "2025550148" } })).status, 403);
+    const sent = await r.call("POST", "/v1/contacts/verify", { token: wearer.token, body: { phone: "(202) 555-0148" } });
+    assert.equal(sent.status, 202);
+    assert.equal(r.sent[0].to, "+12025550148");
+    const code = r.sent[0].body.match(/\b(\d{6})\b/)[1];
+    const wrong = code === "000000" ? "111111" : "000000";
+    assert.equal((await r.call("POST", "/v1/contacts/confirm", { token: wearer.token, body: { phone: "2025550148", code: wrong } })).body.error, "code_wrong");
+    assert.equal((await r.call("POST", "/v1/contacts/confirm", { token: wearer.token, body: { phone: "2025550148", code } })).status, 200);
+    assert.equal((await r.call("POST", "/v1/contacts/confirm", { token: wearer.token, body: { phone: "2025550148", code } })).body.error, "code_expired");
+
+    await r.call("POST", "/v1/contacts/verify", { token: wearer.token, body: { phone: "2025550148" } });
+    for (let i = 0; i < 5; i++) await r.call("POST", "/v1/contacts/confirm", { token: wearer.token, body: { phone: "2025550148", code: "999999x" } });
+    const last = r.sent.at(-1).body.match(/\b(\d{6})\b/)[1];
+    assert.equal((await r.call("POST", "/v1/contacts/confirm", { token: wearer.token, body: { phone: "2025550148", code: last } })).body.error, "code_expired");
+
+    const dump = JSON.stringify(r.store.auditTrail(100));
+    assert.ok(!dump.includes("5550148"));
+  } finally { await r.close(); }
+});
+
 test("pairing attempts are rate-limited per address", async () => {
   const r = await start();
   try {
