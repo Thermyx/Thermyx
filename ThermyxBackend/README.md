@@ -1,96 +1,109 @@
 # Thermyx Prototype 1 alert relay
 
-This Node 18+ service is the shared-status bridge for a supervised Prototype 1
-evaluation. It accepts authenticated events from the wearer app, exposes the
-latest one to a trusted-member app, and texts the trusted circle through
-Twilio. It does not call emergency services and is not a medical or
-emergency-response service.
+The relay lets a wearer's phone share its current safety state with watchers
+the wearer has approved, and (once tested) text the wearer's trusted contacts.
+It does not call emergency services and is not a medical or emergency-response
+service.
+
+**Persistence is a competition prototype**: one SQLite file through Node's
+built-in driver (Node 22.5+). It needs a persistent disk and backups if hosted,
+and it is not durable production infrastructure.
+
+## Access model
+
+| Who | How they get access | What they can do |
+|---|---|---|
+| Team member | Shell access to the relay machine | `npm run admin wearer-code` makes a one-time code. There is no admin web endpoint. |
+| Wearer's phone | Redeems a wearer code once, receives its own device token | Post its state, invite watchers, approve / renew / revoke them |
+| Watcher's phone | Redeems a watcher code the wearer made, receives its own read-only token | Nothing until the wearer approves. Then: current level, alert/SOS/OK, last update time, and a location only during an active event the wearer consented to share |
+
+- **Pairing codes** are single use, expire after **10 minutes**, are either a
+  wearer code or a watcher code, and every creation and redemption is audited.
+  Pairing is rate-limited to 10 attempts a minute per address.
+- **Watcher access** starts as *pending*, lasts **90 days** after approval
+  (approving again renews it), and is cut off immediately when revoked.
+- **Tokens and codes** are stored only as SHA-256 hashes.
+- **Location** is stored only when the wearer consented and the event is High
+  risk, Critical, or SOS. It expires after **1 hour** and is cleared as soon
+  as the event ends.
+- **Retention**: expired codes after a day; audit and text logs after 30 days;
+  a device's status after 7 days without an update. Phone numbers, sensor
+  readings and reasons are never stored.
+- **Logs** never contain tokens, codes, phone numbers (beyond the last four
+  digits of a failed send), or locations.
+
+## Texting is OFF by default
+
+Texts go out only when `SMS_ENABLED=true` **and** Twilio is configured. Keep
+it off until the team has tested real delivery, throttling, the "I'm OK"
+update, and location links with actual phones. While it is off, events are
+still stored and watchers still see them; the app says texting is not on yet
+and shows a labelled preview of the message instead.
 
 ## Run it locally (demo)
 
 ```bash
 cd ThermyxBackend
-npm run demo          # THERMYX_TOKEN=local-demo-token, port 8787
-npm test              # 9 tests, no network needed
+npm run demo                # port 8787, database in ./data/demo.sqlite
+npm run admin wearer-code   # in a second terminal: prints a one-time code
+npm test                    # 14 tests, no network needed
 ```
 
-In the app, under **Safety → Advanced → Shared backend**, set the URL to
-`http://<this computer's LAN IP>:8787` (or `http://localhost:8787` from the iOS
-Simulator on the same Mac) and the token to `local-demo-token`. Use a second
-phone or simulator as **Trusted member** with the same device ID to watch.
-Without Twilio credentials the relay still stores and serves status; texts
-return `sms_not_configured`.
+In the app: **Safety → Advanced → Connect to relay**, enter
+`http://<this computer's LAN IP>:8787` (or `http://localhost:8787` from the
+iOS Simulator on the same Mac) and the code. Then **Safety → Watchers →
+Invite** makes a watcher code for a second phone or simulator, which joins as
+**Trusted member**.
 
 ## Deployment
 
-1. Deploy behind a host that terminates HTTPS (Render, Fly.io, Railway, a VPS
-   behind Caddy). A `Dockerfile` is included; mount a volume at `/data` so
-   status survives restarts.
-2. Set secrets in the host's secret manager — never in the repository or an app
-   build:
+1. Deploy behind a host that terminates HTTPS, with a **persistent volume**
+   mounted at `/data` (the `Dockerfile` sets `DATABASE_FILE=/data/thermyx.sqlite`).
+   Many hosts erase local files on redeploy; without a volume everyone would
+   have to pair again.
+2. Environment:
 
    ```text
-   THERMYX_TOKEN=<long random shared secret>          # required; the relay refuses to start without it
-   THERMYX_DEVICE_TOKENS={"thermyx-ab12cd":"<token>"} # optional; locks a device to its own token
-   TWILIO_ACCOUNT_SID=<Twilio account SID>             # only needed to send texts
-   TWILIO_AUTH_TOKEN=<Twilio auth token>
-   TWILIO_FROM_NUMBER=<Twilio number in E.164 format>
    PORT=8787
-   STATUS_FILE=/data/status.json                       # default ./data/status.json
-   SMS_REMINDER_MINUTES=5                              # repeat-text gap at the same level
+   DATABASE_FILE=/data/thermyx.sqlite
+   SMS_ENABLED=false                 # leave false until tested with real phones
+   TWILIO_ACCOUNT_SID=...            # only when texting is enabled
+   TWILIO_AUTH_TOKEN=...
+   TWILIO_FROM_NUMBER=+1...
+   SMS_REMINDER_MINUTES=5
    ```
 
-3. Configure both apps with `https://<your-host>` and the token under
-   **Safety → Advanced**. The app stores the token in the Keychain. Use a unique
-   token per prototype environment and rotate it after any suspected disclosure.
-4. Run a supervised end-to-end test: trigger an alert, confirm the watcher's
-   screen updates, then confirm the test contact receives one text.
+3. Make a wearer code with `npm run admin wearer-code` in the host's shell.
+4. Back up `/data/thermyx.sqlite` if the deployment matters.
+
+## Admin commands
+
+```bash
+npm run admin wearer-code          # one-time wearer code
+npm run admin devices              # paired devices and approved-watcher counts
+npm run admin revoke-device <id>   # cut off a device and all its watchers
+npm run admin audit 50             # recent audit records
+```
 
 ## API
 
-Every endpoint except `/health` requires `Authorization: Bearer <token>`.
+Every route except `/health` and `/v1/pair` needs `Authorization: Bearer <token>`.
 
-- `POST /v1/alerts` — an event from the wearer app:
+| Route | Role | Purpose |
+|---|---|---|
+| `POST /v1/pair` `{code, name?}` | — | Redeem a code. Wearer → `{role, deviceID, token}`; watcher → `{role, watcherID, token, status: "pending"}` |
+| `POST /v1/events` | wearer | `{level, kind, reasons?, recipients?, location?, locationConsent?}`. `kind` is `status` (heartbeat, never texts), `alert`, `sos`, or `ok` |
+| `POST /v1/watchers/codes` | wearer | New one-time watcher code |
+| `GET /v1/watchers` | wearer | Watchers: name, status (pending / approved / expired), dates |
+| `POST /v1/watchers/:id/approve` | wearer | Approve or renew for 90 days |
+| `DELETE /v1/watchers/:id` | wearer | Revoke now |
+| `GET /v1/watch` | watcher | `{status: "pending"}` or `{status: "approved", state: {level, kind, updatedAt, location?}}` |
+| `GET /health` | — | Liveness and whether texting is on |
 
-  ```json
-  {
-    "deviceID": "thermyx-ab12cd",
-    "kind": "alert",
-    "level": "High risk",
-    "reasons": ["Ambient temperature is elevated."],
-    "recipients": ["+12025550148"],
-    "timestamp": 780000000,
-    "readings": { "footTemperatureC": 38.4 },
-    "foot": "right",
-    "left": { "footTemperatureC": 36.1 },
-    "right": { "footTemperatureC": 38.4 },
-    "location": { "latitude": 29.7604, "longitude": -95.3698, "accuracyM": 30 }
-  }
-  ```
+## Texting rules (when enabled)
 
-  `kind` is `status` (the once-a-minute heartbeat; never texts), `alert`,
-  `sos` (Call 911 pressed), or `ok` (the wearer checked in). `level` is one of
-  `Normal`, `Caution`, `High risk`, `Critical`. Missing `kind` means `alert`.
-- `GET /v1/status/:deviceID` — the latest event for that device (phone
-  numbers removed), or `{ "event": null }`.
-- `GET /health` — liveness check.
-
-## Texting rules
-
-- `status` events never text.
-- `alert` events text on the first escalation, again on any higher level, and
-  at most once per `SMS_REMINDER_MINUTES` at the same level. A `Normal` event
-  resets this, so the next escalation texts immediately.
-- `sos` and `ok` always text.
-- Up to five recipients; numbers are normalised to E.164 (10-digit numbers are
-  treated as US).
-- A failed send is retried once and logged (only the last four digits of the
-  number are logged).
-- A map link is added when the event carries a location.
-
-## Limits
-
-Latest status is persisted to a JSON file; there is no history, audit trail,
-consent workflow, or push notifications (watchers poll every 2 s while their
-app is open and get local notifications on escalation). Those are needed
-before any use beyond the supervised prototype.
+- `status` events never text. `sos` and `ok` always do.
+- `alert` events text on the first rise, again on any higher level, and at most
+  once per `SMS_REMINDER_MINUTES` at the same level. Back at Normal resets this.
+- Up to five recipients, normalised to E.164 (10-digit numbers are treated as US).
+- A failed send is retried once; attempts are recorded in the audit trail.

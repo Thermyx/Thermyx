@@ -1,13 +1,14 @@
 {
   "name": "thermyx-alert-relay",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Prototype alert relay for the Thermyx insole app",
   "main": "server.js",
-  "engines": { "node": ">=18" },
+  "engines": { "node": ">=22.5" },
   "scripts": {
-    "start": "node server.js",
-    "demo": "THERMYX_TOKEN=local-demo-token node server.js",
-    "test": "node --test test/*.test.js"
+    "start": "node --disable-warning=ExperimentalWarning server.js",
+    "demo": "DATABASE_FILE=./data/demo.sqlite node --disable-warning=ExperimentalWarning server.js",
+    "admin": "node --disable-warning=ExperimentalWarning admin.js",
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
   }
 }
