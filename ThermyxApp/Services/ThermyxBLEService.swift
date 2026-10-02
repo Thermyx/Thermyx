@@ -101,7 +101,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         // Drop real links without forgetting the insoles, so they reconnect
         // when Demo Mode ends. Pending reconnects are cancelled too.
         if central != nil {
-            central.stopScan()
+            if central.state == .poweredOn { central.stopScan() }
             let ids = Set(links.values.map(\.identifier)).union(pendingFoot.keys)
             for id in ids {
                 userDisconnects.insert(id)
