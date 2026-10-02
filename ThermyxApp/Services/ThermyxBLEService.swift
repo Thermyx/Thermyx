@@ -32,6 +32,14 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// Set when a device connects without declaring which foot it is on, so
     /// the UI can ask.
     @Published var awaitingFootAssignment: DiscoveredDevice?
+    /// The last command an insole refused at the Bluetooth level.
+    @Published private(set) var lastWriteFailure: WriteFailure?
+
+    struct WriteFailure: Equatable {
+        let foot: Foot
+        let message: String
+        let at: Date
+    }
 
     struct DiscoveredDevice: Identifiable, Equatable {
         let id: UUID
@@ -281,18 +289,12 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             for target in targets { simulator.command(command, to: target) }
             return
         }
-        let commandByte: UInt8 = switch command {
-        case .off: 0
-        case .heating: 1
-        case .cooling: 2
-        case .ventilation: 3
-        }
         for target in targets {
             guard let characteristic = commandCharacteristics[target],
                   let peripheral = links[target],
                   characteristic.properties.contains(.write)
             else { continue }
-            peripheral.writeValue(Data([1, commandByte]), for: characteristic, type: .withResponse)
+            peripheral.writeValue(ThermyxProtocol.command(command), for: characteristic, type: .withResponse)
         }
     }
 
@@ -305,9 +307,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             for target in targets { simulator.setTarget(celsius, for: target) }
             return
         }
-        let centi = Int16(clamping: Int((celsius * 100).rounded()))
-        let raw = UInt16(bitPattern: centi)
-        let packet = Data([2, UInt8(raw & 0xFF), UInt8(raw >> 8)])
+        let packet = ThermyxProtocol.target(celsius)
         for target in targets {
             guard let characteristic = commandCharacteristics[target],
                   let peripheral = links[target],
@@ -320,89 +320,27 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     // MARK: Decoding
 
     private func decodeTelemetry(_ data: Data, from peripheralID: UUID) {
-        // Thermyx telemetry, little-endian. See BLE_PROTOCOL.md.
-        // [0] version, [1] mode, [2] battery %, [3...4] foot temp centi-C,
-        // [5...6] ambient centi-C, [7...8] gait 0...10000,
-        // [9...10] pressure balance 0...10000, [11] flags (bits 0-1 = foot),
-        // v2+: [12...17] forefoot/arch/heel centi-C,
-        // v3+: [18...19] cadence spm x10, [20...21] standing fraction x10000.
-        let bytes = [UInt8](data)
-        guard let version = bytes.first, (1...3).contains(version) else {
+        // The wire format lives in ThermyxProtocol, where it is unit tested.
+        let telemetry: ThermyxProtocol.Telemetry
+        switch ThermyxProtocol.decode(data) {
+        case .success(let decoded):
+            telemetry = decoded
+        case .failure(.unsupportedVersion):
             errorMessage = "Received a telemetry packet in an unsupported format."
             return
-        }
-        let requiredLength: Int = switch version {
-        case 3: 22
-        case 2: 18
-        default: 12
-        }
-        guard bytes.count >= requiredLength else {
+        case .failure(.tooShort):
             errorMessage = "Received an incomplete telemetry packet."
             return
         }
 
-        func int16(_ index: Int) -> Int16 { Int16(bitPattern: UInt16(bytes[index]) | UInt16(bytes[index + 1]) << 8) }
-        func uint16(_ index: Int) -> UInt16 { UInt16(bytes[index]) | UInt16(bytes[index + 1]) << 8 }
-        func centidegrees(_ index: Int) -> Double { Double(int16(index)) / 100.0 }
-
         // The packet's own foot declaration wins; otherwise fall back to what
         // the user assigned at pairing.
-        guard let foot = Foot.from(flags: bytes[11]) ?? pendingFoot[peripheralID] ?? footFor(peripheralID) else {
+        guard let foot = telemetry.declaredFoot ?? pendingFoot[peripheralID] ?? footFor(peripheralID) else {
             errorMessage = "An insole connected without saying which foot it is on."
             return
         }
         adopt(peripheralID, as: foot)
-
-        var zones: FootZoneTemperatures?
-        if version >= 2 {
-            let candidate = FootZoneTemperatures(
-                forefootC: centidegrees(12),
-                archC: centidegrees(14),
-                heelC: centidegrees(16)
-            )
-            // A disconnected or failed thermistor reports a sentinel; treat
-            // any implausible zone as all three absent rather than drawing a
-            // heat map off a broken channel.
-            let plausible = [candidate.forefootC, candidate.archC, candidate.heelC]
-                .allSatisfy { (-20...80).contains($0) }
-            zones = plausible ? candidate : nil
-        }
-
-        var cadence: Double?
-        var standing: Double?
-        if version >= 3 {
-            let rawCadence = uint16(18)
-            if rawCadence != UInt16.max { cadence = Double(rawCadence) / 10.0 }
-            let rawStanding = uint16(20)
-            if rawStanding != UInt16.max { standing = min(1, Double(rawStanding) / 10000.0) }
-        }
-
-        let mode: ThermalMode = switch bytes[1] {
-        case 1: .heating
-        case 2: .cooling
-        case 3: .ventilation
-        default: .off
-        }
-
-        // A disconnected or shorted thermistor reads far outside anything a
-        // foot or the air can be. Treat it as missing, never as a reading.
-        func plausible(_ celsius: Double) -> Double? { (-20...80).contains(celsius) ? celsius : nil }
-
-        readings[foot] = ThermyxReading(
-            foot: foot,
-            timestamp: .now,
-            footTemperatureC: plausible(centidegrees(3)),
-            ambientTemperatureC: plausible(centidegrees(5)),
-            // 0xFFFF / 0xFF mean "not measured" (e.g. no steps yet, no load,
-            // no battery sense fitted) and are shown as missing.
-            pressureBalance: uint16(9) == UInt16.max ? nil : min(1, Double(uint16(9)) / 10000.0),
-            gaitStability: uint16(7) == UInt16.max ? nil : min(1, Double(uint16(7)) / 10000.0),
-            batteryPercent: bytes[2] <= 100 ? Int(bytes[2]) : nil,
-            thermalMode: mode,
-            zones: zones,
-            cadenceStepsPerMinute: cadence,
-            standingFraction: standing
-        )
+        readings[foot] = telemetry.reading(for: foot)
 
         var stamps = packetTimestamps[foot] ?? []
         stamps.append(.now)
@@ -633,8 +571,10 @@ extension ThermyxBLEService: CBPeripheralDelegate {
         let identifier = peripheral.identifier
         let message = error.localizedDescription
         Task { @MainActor in
-            let label = self.footFor(identifier)?.label ?? "An"
+            let foot = self.footFor(identifier)
+            let label = foot?.label ?? "An"
             self.errorMessage = "\(label) insole didn't accept the command: \(message)"
+            if let foot { self.lastWriteFailure = WriteFailure(foot: foot, message: message, at: .now) }
         }
     }
 }
@@ -897,6 +837,16 @@ final class ThermyxInsoleSimulator: ObservableObject {
             cadenceStepsPerMinute: (fatigued ? 88 : 104) + Double.random(in: -2...2),
             standingFraction: fatigued ? 0.42 : 0.28
         )
-        ble.simPublish(reading, rssi: rssiValue(foot))
+        // Like the firmware: echo the setting being followed, and flag the
+        // burn cutoff while it holds the heater off.
+        var echoed = reading
+        echoed.settingEcho = switch insole.commanded {
+        case .cooling: .cool
+        case .heating: .heat
+        case .ventilation: .auto
+        case .off: nil
+        }
+        echoed.burnCutoff = insole.commanded == .heating && insole.active != .heating && contact >= 38.5
+        ble.simPublish(echoed, rssi: rssiValue(foot))
     }
 }

@@ -12,6 +12,8 @@ final class ThermyxViewModel: ObservableObject {
     /// pair: a wearer asking for cooling means both feet.
     @Published private(set) var thermalSetting: ThermalSetting = .auto
     @Published var commandError: String?
+    /// Whether the last Cool / Auto / Heat tap actually took effect.
+    @Published private(set) var command = ThermalCommandTracker()
     /// A short explanation shown on the control bar when the app changes the
     /// thermal mode on the wearer's behalf (the heat lockout), so a choice
     /// never silently flips.
@@ -64,7 +66,17 @@ final class ThermyxViewModel: ObservableObject {
                     self.baseline.observe(next, fixedLevel: self.fixedAssessment.level)
                 }
                 for entry in next.present { self.ingest(entry) }
+                self.updateCommand()
                 self.syncFocus()
+            }
+            .store(in: &cancellables)
+
+        ble.$lastWriteFailure
+            .compactMap { $0 }
+            .sink { [weak self] failure in
+                guard let self else { return }
+                self.command.writeFailed(foot: failure.foot, message: failure.message)
+                if let message = self.command.failureMessage { self.commandError = message }
             }
             .store(in: &cancellables)
 
@@ -177,6 +189,8 @@ final class ThermyxViewModel: ObservableObject {
     /// not what we asked for.
     var thermalStatusText: String {
         guard isControlAvailable else { return "Unavailable" }
+        if case .pending(let setting, _, _) = command.state { return "Switching to \(setting.label)…" }
+        if case .failed = command.state { return "\(thermalSetting.label) not confirmed" }
         if isHeatLockedOut {
             return "Heat locked · \(reading.thermalMode?.statusLabel ?? "mixed")"
         }
@@ -191,7 +205,8 @@ final class ThermyxViewModel: ObservableObject {
 
     var thermalStatusTint: Color {
         guard isControlAvailable else { return Thermyx.Ink.textSupporting }
-        if isHeatLockedOut { return Thermyx.Ink.amber }
+        if command.failureMessage != nil || isHeatLockedOut { return Thermyx.Ink.amber }
+        if command.isPending { return Thermyx.Ink.textSupporting }
         guard let mode = reading.thermalMode else { return Thermyx.Ink.amber }
         switch mode {
         case .heating: return Thermyx.Ink.amber
@@ -240,6 +255,23 @@ final class ThermyxViewModel: ObservableObject {
         thermalSetting = setting
         commandError = nil
         ble.send(command: setting.command)
+        track(setting)
+    }
+
+    /// Starts following a command, and re-checks once the timeout has passed
+    /// in case the insole has gone quiet and no packet arrives to do it.
+    private func track(_ setting: ThermalSetting) {
+        command.begin(setting, feet: Set(connectedFeet))
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(ThermalCommandTracker.timeout + 0.5))
+            self?.updateCommand()
+        }
+    }
+
+    private func updateCommand() {
+        guard command.isPending else { return }
+        command.update(readings: ble.readings, connected: ble.connected)
+        if let message = command.failureMessage { commandError = message }
     }
 
     /// Sends a new hold temperature to every connected insole.
@@ -285,6 +317,7 @@ final class ThermyxViewModel: ObservableObject {
                     showNotice("Heat turned off at \(pairAssessment.level.rawValue). Switched to Cool.")
                 }
                 ble.send(command: .cooling)
+                track(.cool)
             }
         }
 

@@ -25,6 +25,12 @@ struct ThermyxReading: Equatable {
     /// Proportion of the reporting window spent loaded but not stepping,
     /// 0...1. Protocol v3 and above.
     let standingFraction: Double?
+    /// The setting the insole says it is following (flags bits 2–3), when the
+    /// firmware reports it. Lets the app confirm a command actually landed.
+    var settingEcho: ThermalSetting?
+    /// True while the firmware's own burn cutoff is holding the heater off
+    /// (flags bit 4).
+    var burnCutoff = false
 
     init(
         foot: Foot,

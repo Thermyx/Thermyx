@@ -21,9 +21,15 @@ target-temperature command used by Auto.
 | TMP117 ambient sensor | same bus, address 0x49 (ADD0 to V+) |
 | GY-521 / MPU-6050 | same bus, address 0x68 |
 | FSR402 heel / arch / forefoot | A0 / A1 / A2, each with a 10 kΩ resistor to GND |
-| Battery sense (optional) | 2 × 100 kΩ divider from the cell to A3; set `HAS_BATTERY_SENSE 1` |
+| Battery sense (optional) | Off by default. A0–A2 are the board's only dependable analog pins and the FSRs use all three; "A3" (GPIO5) is on ADC2, which reads unreliably with Bluetooth on. Use an external ADC (e.g. ADS1115 on the I2C bus) or free an ADC1 pin, set `PIN_BATTERY`, then `HAS_BATTERY_SENSE 1`. The build stops with an error until you do. |
 
 D9 is left unused on purpose: it is the ESP32-C3 boot strap pin.
+
+**Pull-downs.** While the chip resets or boots, its pins float. The DRV8833's
+inputs and nSLEEP have internal pull-downs, so the bridge stays off; for
+margin, fit an external **10 kΩ pull-down on nSLEEP (D10)**. If a build drives
+the Peltier or fan through MOSFETs instead, a pull-down on **every gate** is
+required, not optional — the firmware cannot hold a pin low before it starts.
 
 If the build uses NTC thermistors instead of TMP117s, replace `readTMP117`
 with an ADC read and a Beta-equation conversion; everything else is the same.
@@ -46,6 +52,11 @@ with an ADC read and a Beta-equation conversion; everything else is the same.
 - **No unsupervised heating**: if the phone disconnects while Heat is
   selected, the insole falls back to Auto.
 - Heating runs at a lower duty than cooling.
+- **A hung loop resets the chip**: a 4-second task watchdog restarts it, and
+  the outputs come back up off.
+
+The watchdog, pull-down note and battery-pin warning come from Aaron Qin's
+firmware work.
 
 ## What it reports
 
@@ -57,3 +68,7 @@ with an ADC read and a Beta-equation conversion; everything else is the same.
 - Pressure balance: forefoot share of the three FSRs.
 - Cadence and standing fraction (v3).
 - Battery: "not measured" (`0xFF`) unless battery sense is fitted.
+- Flags byte: the foot (bits 0–1), the setting it is following (bits 2–3:
+  1 Cool, 2 Auto, 3 Heat), and whether the burn cutoff is holding heat off
+  (bit 4). The app uses the setting to confirm that a Cool / Auto / Heat tap
+  actually took effect.
