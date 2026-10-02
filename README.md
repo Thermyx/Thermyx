@@ -50,13 +50,35 @@ simply too hot.
   reconnects a dropped insole automatically.
 - **Stale data.** An insole that stays connected but stops sending for 5 s has
   its readings cleared, so nothing freezes on screen looking live.
-- **Alerts.** The wearer is notified when the level rises. The trusted circle
-  is texted on a rise and at most every five minutes while it stays elevated;
-  the relay throttles repeats as well. A heartbeat is posted every minute, so a
-  watcher sees "No update for N min" when the wearer's phone goes quiet.
-- **Critical.** A full-screen alert offers Call 911 and "I'm OK". If nobody
-  answers within 60 s, the trusted circle is texted automatically. SOS and
-  alert texts include a map link when the wearer allowed location.
+- **Alerts.** The wearer is notified when the level rises. Approved watchers
+  see the current level and how fresh it is; a heartbeat is posted every
+  minute so a watcher sees "No update for N min" when the wearer's phone goes
+  quiet. **Texting trusted contacts is off** until the relay's `SMS_ENABLED`
+  is turned on after testing with real phones; until then the app shows a
+  labelled "Preview · not sent" of the message.
+- **Critical.** A full-screen alert offers Call 911 (opens the phone's dialer)
+  and "I'm OK" immediately. Only the automatic contact text waits 60 s.
+  Location goes to the relay only with the wearer's consent and only during a
+  High, Critical, or SOS event, and expires after an hour.
+- **Why am I seeing this?** Every level from Caution up explains itself: each
+  signal with its value and rule, which foot, data age, a confidence rating,
+  and the next step. Per-insole health (live / stale / off, battery, signal)
+  shows there and on Advanced.
+- **Personal baseline.** Calibrates over 10 calm minutes, then learns slowly.
+  A reading well above the wearer's usual, steadiness well below it, or a fast
+  rise can add Caution. It can never lower a level the fixed rules set, and
+  never goes past Caution on its own.
+
+## Relay access model
+
+The phone pairs with the relay using a one-time, 10-minute code made by
+`npm run admin wearer-code`, and receives its own device token. Watchers join
+with a one-time invite the wearer makes, see nothing until the wearer approves
+them, appear in a "Who can see your status" list with one-tap remove, and lose
+access after 90 days unless renewed. **Delete my data** (Safety → Advanced)
+removes everything on the phone and the wearer's record on the relay; **What
+leaves your phone?** on the same screen lists exactly what is shared. Details:
+[`ThermyxBackend/README.md`](ThermyxBackend/README.md).
 
 ## The rule this app is built around
 
@@ -193,11 +215,12 @@ medical-device release. Before distributing it through TestFlight:
   device, then archive it through Xcode for TestFlight.
 - Fill every bracketed field in both legal documents, replace placeholder
   Learning Center copy, and confirm the onboarding video is approved.
-- Configure the production backend URL and token in the app only after the
-  backend is deployed behind HTTPS. Store the token in device settings; never
-  commit it.
-- Keep the alert relay under supervised use. It stores latest status only in
-  memory and is not a durable notification, emergency, or audit system.
+- Deploy the relay behind HTTPS with a persistent volume, then pair each
+  phone with a one-time code. No token is ever typed or committed.
+- Keep the alert relay under supervised use. Its SQLite store is a
+  competition prototype, not a durable notification, emergency, or audit
+  system. Keep texting and contact verification off until tested with real
+  phones.
 
 The deployment and operator runbook for the relay is in
 [`ThermyxBackend/README.md`](ThermyxBackend/README.md).
@@ -275,8 +298,14 @@ responds), the Auto target slider, the heat lockout, and alerts.
 `simulatorOnboarding` does the same from the start of onboarding. A
 **Simulated conditions** card at the top of Safety → Advanced sets the air
 temperature and whether the wearer is tiring, which is enough to walk the risk
-level up every rung. Every screen carries a "Simulated insoles · not live
-readings" strip while it runs, and none of it is compiled into Release.
+level up every rung.
+
+The same simulated pair ships as **Demo Mode** (Safety → Advanced → Demo
+Mode), so the app can be shown without hardware in any build. It is off at
+every launch, disconnects real insoles while it runs, and never sends
+anything to the relay or writes to history, Apple Health, or the personal
+baseline. Every screen carries "Simulated — not live sensor data" while it
+runs, in debug and release builds alike.
 
 ### Retiring the harness entirely
 
@@ -286,15 +315,13 @@ it in this order and verify a Release archive manually:
 1. Delete `DesignSystem/ThermyxPreviewHarness.swift`.
 2. `ThermyxApp.swift` — remove the `.previewHarness(…)` call and the `#if !DEBUG`
    shim beneath it.
-3. `Services/ThermyxBLEService.swift` — remove the `simulator` property and the
-   `#if DEBUG` hooks at the top of `scan`, `stopScan`, `connect`, `disconnect`,
-   and both `send` methods, and the `#if DEBUG` section at the end of the file
-   (the preview injection and `ThermyxInsoleSimulator`).
+3. `Services/ThermyxBLEService.swift` — remove the `#if DEBUG` preview
+   injection. (The simulator itself stays: it powers Demo Mode.)
 4. Remove the `#if DEBUG` initial-state blocks in `Views/RootView.swift` (tab
    selection and the notification-prompt guard),
    `Views/User/InsightsHubView.swift` and `Views/User/SafetyView.swift`
    (navigation paths), `Views/Onboarding/OnboardingFlow.swift` (step), and
-   `Views/User/AdvancedView.swift` (the Simulated conditions card).
+   `Views/User/AdvancedView.swift` is unaffected: its Demo Mode section stays.
 5. Delete the **Thermyx Demo** scheme.
 6. Regenerate the Xcode project, build a Release archive, and verify that a
    preview launch argument has no effect.

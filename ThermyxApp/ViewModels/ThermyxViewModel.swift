@@ -22,6 +22,7 @@ final class ThermyxViewModel: ObservableObject {
 
     let ble = ThermyxBLEService()
     let history = ThermyxHistoryStore()
+    let baseline = PersonalBaselineStore()
 
     weak var healthService: ThermyxHealthService?
 
@@ -33,6 +34,9 @@ final class ThermyxViewModel: ObservableObject {
     /// When each left/right gap started, so only sustained gaps count.
     private var temperatureGapSince: Date?
     private var loadGapSince: Date?
+    /// True once both insoles have been on together this session, so losing
+    /// one lowers confidence instead of passing as single-insole use.
+    @Published private(set) var pairExpected = false
     /// The pair's session, written to Health once when the last foot ends.
     private var pairSession: (start: Date, end: Date, exposure: TimeInterval)?
     private var lastLockoutCommand: Date?
@@ -53,7 +57,12 @@ final class ThermyxViewModel: ObservableObject {
                     self.endSession(for: foot)
                 }
                 self.reading = next
+                self.updateTrend()
                 self.trackAsymmetry(next)
+                // Simulated readings never teach the baseline.
+                if !self.ble.isDemoMode {
+                    self.baseline.observe(next, fixedLevel: self.fixedAssessment.level)
+                }
                 for entry in next.present { self.ingest(entry) }
                 self.syncFocus()
             }
@@ -69,6 +78,8 @@ final class ThermyxViewModel: ObservableObject {
                     self.ble.send(targetTemperatureC: Self.savedTargetC, to: foot)
                 }
                 self.knownConnected = connected
+                if connected.count == 2 { self.pairExpected = true }
+                if connected.isEmpty { self.pairExpected = false }
                 self.syncFocus()
             }
             .store(in: &cancellables)
@@ -76,12 +87,55 @@ final class ThermyxViewModel: ObservableObject {
 
     // MARK: - Derived state
 
-    /// The pair's risk, including the left/right signals.
-    var assessment: ThermyxRiskAssessment {
+    /// The fixed rules alone: thresholds, burn limit, sustained gaps.
+    var fixedAssessment: ThermyxRiskAssessment {
         ThermyxRiskEngine.assess(
             reading,
             sustainedTemperatureGap: isSustained(temperatureGapSince),
             sustainedLoadGap: isSustained(loadGapSince)
+        )
+    }
+
+    /// The pair's risk: the fixed rules, plus the personal baseline and
+    /// trend layer, which can only add caution.
+    var assessment: ThermyxRiskAssessment { personal(unit: .celsius).assessment }
+
+    /// Recomputed once per reading rather than on every redraw.
+    private(set) var trend = TemperatureTrend()
+
+    private func updateTrend() {
+        // Demo Mode writes no history, so there is no honest trend to show.
+        guard !ble.isDemoMode else { trend = TemperatureTrend(); return }
+        let current = reading.peakFootTemperatureC
+        trend = TemperatureTrend(
+            delta5: history.footTrend(over: 5 * 60, current: current)?.delta,
+            delta10: history.footTrend(over: 10 * 60, current: current)?.delta
+        )
+    }
+
+    private func personal(unit: TemperatureUnit) -> PersonalLayer.Result {
+        PersonalLayer.apply(
+            fixedAssessment,
+            reading: reading,
+            baseline: baseline.isEnabled ? baseline.baseline : nil,
+            trend: baseline.isEnabled ? trend : TemperatureTrend(),
+            unit: unit
+        )
+    }
+
+    /// Everything behind the current level, for "Why am I seeing this?".
+    func explanation(unit: TemperatureUnit, now: Date = .now) -> RiskExplanation {
+        let layered = personal(unit: unit)
+        return RiskExplanation.build(
+            assessment: layered.assessment,
+            reading: reading,
+            sustainedTemperatureGap: isSustained(temperatureGapSince),
+            sustainedLoadGap: isSustained(loadGapSince),
+            rssi: ble.rssi,
+            bothExpected: pairExpected,
+            unit: unit,
+            extras: layered.signals,
+            now: now
         )
     }
 
@@ -233,6 +287,9 @@ final class ThermyxViewModel: ObservableObject {
                 ble.send(command: .cooling)
             }
         }
+
+        // Demo Mode readings are never written to history or Health.
+        guard !ble.isDemoMode else { return }
 
         if sessionStart[foot] == nil { sessionStart[foot] = entry.timestamp }
         if let last = lastRecordedAt[foot], let temperature = entry.footTemperatureC, temperature >= 35 {

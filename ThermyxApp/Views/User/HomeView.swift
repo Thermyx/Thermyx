@@ -5,6 +5,7 @@ struct HomeView: View {
     @ObservedObject var roles: ThermyxRoleStore
     @ObservedObject var settings: ThermyxSettingsStore
 
+    @State private var showingWhy = false
     @State private var showingPairing: Bool = {
         #if DEBUG
         return ThermyxPreviewHarness.opensProfileSheet
@@ -35,6 +36,11 @@ struct HomeView: View {
         .thermyxTopScrim()
         .sheet(isPresented: $showingPairing) {
             DeviceProfileSheet(roles: roles, settings: settings)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingWhy) {
+            RiskExplanationSheet(settings: settings)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -195,7 +201,11 @@ struct HomeView: View {
                     .foregroundStyle(Thermyx.Ink.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 16)
-                    .accessibilityLabel("Suggested next step: \(suggestion)")
+                    .accessibilityLabel("Guidance: \(suggestion)")
+            }
+            if assessment.level.severity >= ThermyxRiskLevel.caution.severity {
+                WhyButton(tint: assessment.level.tint) { showingWhy = true }
+                    .padding(.leading, 16)
             }
         }
         .padding(.horizontal, Thermyx.Space.l)

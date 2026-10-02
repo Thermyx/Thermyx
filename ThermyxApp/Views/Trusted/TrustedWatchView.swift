@@ -36,16 +36,19 @@ struct TrustedWatchView: View {
                             .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
                         }
                         actionCard
-                        if let pair, pair.hasAny { soleRow(pair) }
-                        metricGrid(event.readings, pair: pair)
+                        // Readings appear only in the teaching sample. A live
+                        // watcher sees the safety level and its freshness,
+                        // never the wearer's sensor data.
+                        if member.isShowingSample {
+                            if let pair, pair.hasAny { soleRow(pair) }
+                            metricGrid(event.readings, pair: pair)
+                        }
                     } else {
                         Spacer(minLength: Thermyx.Space.xxl)
                         ThermyxEmptyState(
-                            title: member.isConnected ? "No status shared yet" : "Not connected",
-                            message: member.isConnected
-                                ? "This phone is connected to the shared backend. Their status will appear here as soon as their insole sends one."
-                                : "Check the backend address and device ID under Settings. Nothing is shown until real status arrives.",
-                            systemImage: "antenna.radiowaves.left.and.right"
+                            title: emptyTitle,
+                            message: emptyMessage,
+                            systemImage: member.access == .pending ? "hourglass" : "antenna.radiowaves.left.and.right"
                         )
                         samplePrompt
                         Spacer(minLength: Thermyx.Space.xxl)
@@ -67,6 +70,28 @@ struct TrustedWatchView: View {
             .background(Thermyx.Ink.midnight)
             .thermyxTopScrim()
             .trustedSampleBanner(member: member, watchedName: roles.watchedUserName)
+        }
+    }
+
+    private var emptyTitle: String {
+        switch member.access {
+        case .notConnected: return "Not connected"
+        case .pending: return "Waiting for approval"
+        case .removed: return "Access removed"
+        case .approved: return "No status shared yet"
+        }
+    }
+
+    private var emptyMessage: String {
+        switch member.access {
+        case .notConnected:
+            return "Ask \(roles.watchedUserName) to invite you from their Safety screen, then enter the code under Settings → Relay."
+        case .pending:
+            return "\(roles.watchedUserName) needs to approve you on their phone. You'll see nothing until they do."
+        case .removed:
+            return "\(roles.watchedUserName) removed your access, or it expired. Ask them for a new invite."
+        case .approved:
+            return "You're approved. Their status appears here once their insoles connect and their phone shares it."
         }
     }
 

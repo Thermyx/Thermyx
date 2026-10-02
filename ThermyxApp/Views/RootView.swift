@@ -101,6 +101,7 @@ struct UserRoot: View {
         }
         .onReceive(viewModel.$reading) { reading in
             let assessment = viewModel.assessment
+            alerts.isDemoMode = viewModel.ble.isDemoMode
             alerts.evaluate(assessment, reading: reading, settings: settings)
             if assessment.level == .critical {
                 let snoozed = criticalSnoozedUntil.map { Date.now < $0 } ?? false
@@ -165,7 +166,7 @@ struct TrustedMemberRoot: View {
             if ThermyxPreviewHarness.showsSampleShift { member.isShowingSample = true }
             #endif
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-            member.start(settings: settings, deviceID: settings.deviceID)
+            member.start(settings: settings)
         }
         .onDisappear { member.stop() }
     }

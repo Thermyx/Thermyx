@@ -16,6 +16,7 @@ struct SafetyView: View {
         #endif
     }()
     @State private var showingAddContact = false
+    @State private var verifying: ThermyxContact?
     @State private var showingSOSConfirmation = false
     @State private var showingCannotCall = false
     @State private var okSentAt: Date?
@@ -36,6 +37,7 @@ struct SafetyView: View {
                 imOKRow
                 escalationLadder
                 trustedCircle
+                WatchersSection(settings: settings, alerts: alerts, level: level)
                 advancedRow
                 notificationNote
                 brandPlate
@@ -54,6 +56,11 @@ struct SafetyView: View {
         }
         .sheet(isPresented: $showingAddContact) {
             AddContactSheet(settings: settings)
+                .presentationDetents([.medium])
+                .presentationBackground(Thermyx.Ink.midnight)
+        }
+        .sheet(item: $verifying) { contact in
+            VerifyContactSheet(settings: settings, contact: contact)
                 .presentationDetents([.medium])
                 .presentationBackground(Thermyx.Ink.midnight)
         }
@@ -78,17 +85,19 @@ struct SafetyView: View {
         }
     }
 
-    /// Texting needs both an enabled contact and the shared relay.
+    /// Texting needs an enabled contact, a paired relay, and texting turned
+    /// on at the relay (off until tested with real phones).
     private var canTextCircle: Bool {
-        !enabledContacts.isEmpty && !settings.backendURL.isEmpty
+        !enabledContacts.isEmpty && settings.isPairedWithRelay && settings.relayTextingEnabled
     }
 
     private var sosSubtitle: String {
-        if enabledContacts.isEmpty { return "Add a trusted contact to also text them" }
-        if settings.backendURL.isEmpty { return "Set up the shared backend under Advanced to also text your trusted circle" }
-        return alerts.location.isAuthorized
-            ? "Also texts your trusted circle your location"
-            : "Also texts your trusted circle (location is off)"
+        if enabledContacts.isEmpty { return "Opens your phone's dialer. Add a trusted contact to also text them" }
+        if !settings.isPairedWithRelay { return "Opens your phone's dialer. Connect to a relay under Advanced to also text your trusted circle" }
+        if !settings.relayTextingEnabled { return "Opens your phone's dialer. Texting your trusted circle isn't turned on yet" }
+        return settings.shareLocationDuringEvents && alerts.location.isAuthorized
+            ? "Opens your phone's dialer and texts your trusted circle your location"
+            : "Opens your phone's dialer and texts your trusted circle"
     }
 
     // MARK: - I'm OK
@@ -99,11 +108,11 @@ struct SafetyView: View {
                 alerts.sendImOK(level: level, reading: viewModel.reading, settings: settings)
                 okSentAt = .now
             } label: {
-                Label("Tell my trusted circle I'm OK", systemImage: "hand.thumbsup.fill")
+                Label(canTextCircle ? "Tell my watchers and trusted circle I'm OK" : "Tell my watchers I'm OK", systemImage: "hand.thumbsup.fill")
             }
             .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
-            .disabled(!canTextCircle)
-            .opacity(canTextCircle ? 1 : 0.5)
+            .disabled(!settings.isPairedWithRelay)
+            .opacity(settings.isPairedWithRelay ? 1 : 0.5)
 
             if let okSentAt {
                 Text("Sent at \(okSentAt.formatted(date: .omitted, time: .shortened)).")
@@ -266,6 +275,15 @@ struct SafetyView: View {
                     ContactRow(contact: contact) {
                         settings.toggleContact(contact)
                     }
+                    if settings.relayContactVerification, settings.relayRole == "wearer", contact.verifiedAt == nil {
+                        Button("Confirm \(contact.name)'s number") { verifying = contact }
+                            .font(ThermyxFont.captionSmall.weight(.semibold))
+                            .foregroundStyle(Thermyx.Ink.ice)
+                            .frame(minHeight: Thermyx.minimumTapTarget)
+                    }
+                }
+                if !settings.relayTextingEnabled, !enabledContacts.isEmpty {
+                    TextingPreviewCard(settings: settings, level: level, reasons: viewModel.assessment.reasons)
                 }
             }
         }
@@ -275,7 +293,7 @@ struct SafetyView: View {
         NavigationLink(value: SafetyDestination.advanced) {
             ThermyxNavigationRow(
                 title: "Advanced",
-                detail: "Device, backend, firmware",
+                detail: "Device, relay, firmware",
                 systemImage: "gearshape.fill",
                 iconTint: Thermyx.Ink.textSupporting,
                 iconFill: Thermyx.Tint.neutralFill
@@ -384,7 +402,7 @@ struct ContactRow: View {
                     Text(contact.name)
                         .font(ThermyxFont.rowTitleRegular)
                         .foregroundStyle(Thermyx.Ink.textPrimary)
-                    Text(contact.phoneNumber)
+                    Text(contact.verifiedAt == nil ? contact.phoneNumber : "\(contact.phoneNumber) · confirmed")
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textSupporting)
                 }
@@ -511,10 +529,11 @@ struct CriticalAlertView: View {
     @State private var remaining = CriticalAlertView.countdownSeconds
     @State private var circleNotified = false
     @State private var showingCannotCall = false
+    @State private var showingWhy = false
 
     private var assessment: ThermyxRiskAssessment { viewModel.assessment }
     private var canTextCircle: Bool {
-        settings.contacts.contains(where: \.enabled) && !settings.backendURL.isEmpty
+        settings.contacts.contains(where: \.enabled) && settings.isPairedWithRelay && settings.relayTextingEnabled
     }
 
     var body: some View {
@@ -534,6 +553,8 @@ struct CriticalAlertView: View {
                 .font(ThermyxFont.bodyLarge)
                 .foregroundStyle(.white.opacity(0.92))
                 .fixedSize(horizontal: false, vertical: true)
+
+            WhyButton(tint: .white) { showingWhy = true }
 
             Text(countdownText)
                 .font(ThermyxFont.rowTitle)
@@ -574,6 +595,10 @@ struct CriticalAlertView: View {
                 notifyCircle(reason: "No response to a Critical alert for \(Self.countdownSeconds) seconds.")
             }
         }
+        .sheet(isPresented: $showingWhy) {
+            RiskExplanationSheet(settings: settings)
+                .presentationDetents([.medium, .large])
+        }
         .alert("This device can't place calls", isPresented: $showingCannotCall) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -583,17 +608,22 @@ struct CriticalAlertView: View {
     }
 
     private var countdownText: String {
-        if circleNotified { return canTextCircle ? "Your trusted circle has been texted." : "No trusted contacts could be texted. Call for help if you need it." }
+        if circleNotified { return canTextCircle ? "Your trusted circle is being texted." : "No trusted contacts could be texted. Call for help if you need it." }
         if canTextCircle { return "Texting your trusted circle in \(remaining) s unless you tap I'm OK." }
-        return settings.contacts.contains(where: \.enabled)
-            ? "Tap I'm OK if you're safe. Set up the shared backend under Safety → Advanced so your trusted circle is texted next time."
-            : "Tap I'm OK if you're safe. Add trusted contacts on the Safety tab so someone is told next time."
+        if !settings.contacts.contains(where: \.enabled) {
+            return "Tap I'm OK if you're safe. Add trusted contacts on the Safety tab so someone is told next time."
+        }
+        if !settings.isPairedWithRelay {
+            return "Tap I'm OK if you're safe. Connect to a relay under Safety → Advanced so your trusted circle can be told next time."
+        }
+        return "Tap I'm OK if you're safe. Texting isn't turned on yet, so nobody will be texted automatically. Approved watchers see that you're at Critical."
     }
 
     private func notifyCircle(reason: String) {
         guard !circleNotified else { return }
         circleNotified = true
-        guard canTextCircle else { return }
+        // Always tell the relay, so approved watchers see it; contacts are
+        // texted only when texting is on (the coordinator decides).
         alerts.notifyTrustedCircle(level: .critical, reading: viewModel.reading, settings: settings, reason: reason)
     }
 }

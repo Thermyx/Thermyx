@@ -7,7 +7,7 @@
       "deck": "Extremities shed heat before core temperature moves. What that means for when you should stop.",
       "readMinutes": 5,
       "featured": true,
-      "status": "placeholder",
+      "status": "published",
       "sections": [
         {
           "kind": "body",
@@ -15,7 +15,7 @@
         },
         {
           "kind": "pullStat",
-          "text": "In severe heat stress, blood flow to the skin can rise to 6–8 litres a minute — a large share of everything the heart pumps (Charkoudian, 2003)."
+          "text": "In hyperthermia, blood flow to the skin can reach 6 to 8 litres a minute (Charkoudian, 2003)."
         },
         {
           "kind": "body",
@@ -35,7 +35,7 @@
       "deck": "What the shaded range on your temperature chart means, and what falling outside it does and does not tell you.",
       "readMinutes": 3,
       "featured": false,
-      "status": "placeholder",
+      "status": "published",
       "sections": [
         {
           "kind": "body",
@@ -59,11 +59,11 @@
       "deck": "Warming a cold foot too fast carries its own risks. How to use the heating mode without creating a burn.",
       "readMinutes": 4,
       "featured": false,
-      "status": "placeholder",
+      "status": "published",
       "sections": [
         {
           "kind": "body",
-          "text": "Cold feet need warming gently. Numb or very cold skin cannot feel heat properly, so it is easy to burn it with a heat source that would feel fine on warm skin. Frostbite guidance warns against rewarming with dry heat such as fires, heaters, or heating pads for this reason, and recommends warm water at 37–39 °C when rewarming is needed (Wilderness Medical Society). If a foot is white, waxy, hard, or has lost feeling, that is a medical problem: get care rather than warming it with the insole."
+          "text": "Cold feet need warming gently. Numb or very cold skin cannot feel heat properly, so it is easy to burn it with a heat source that would feel fine on warm skin. Frostbite guidance from the Wilderness Medical Society says to avoid heat sources such as fires and space heaters because of the risk of burns, and to rewarm in water held at 37–39 °C (98.6–102.2 °F) with a thermometer when rewarming is needed. If a foot is white, waxy, hard, or has lost feeling, that is a medical problem: get care rather than warming it with the insole."
         },
         {
           "kind": "body",
@@ -74,7 +74,7 @@
           "text": "Use Auto with a modest target (30–32 °C) rather than Heat when your feet are cold, and check your feet after the first 20 minutes. Stop heating if your feet feel numb, tingle strongly, or look red or blistered."
         }
       ],
-      "sources": "Sources: McIntosh SE, et al. Wilderness Medical Society Clinical Practice Guidelines for the Prevention and Treatment of Frostbite: 2024 Update. Wilderness & Environmental Medicine. 2024. doi:10.1177/10806032231222359."
+      "sources": "Sources: McIntosh SE, et al. Wilderness Medical Society Clinical Practice Guidelines for the Prevention and Treatment of Frostbite: 2024 Update. Wilderness & Environmental Medicine. 2024;35(2):183–197. doi:10.1177/10806032231222359."
     },
     {
       "id": "fatigue-gait",
@@ -83,11 +83,11 @@
       "deck": "Stability, cadence, and load shift as a shift wears on. What Thermyx can and cannot read from that.",
       "readMinutes": 4,
       "featured": false,
-      "status": "placeholder",
+      "status": "published",
       "sections": [
         {
           "kind": "body",
-          "text": "As muscles tire, walking changes. Research on induced fatigue has found changes such as shorter, slower, or more variable steps, although results differ between studies and people (a 2019 systematic review in PLOS ONE, in older adults). Thermyx watches three related things from the insole: steadiness (how regular your step timing is), cadence (steps per minute), and how much of your weight goes through the front of your foot. With two insoles it can also see when you start favouring one side."
+          "text": "As muscles tire, walking changes, but not always in the same way. A 2019 systematic review of fatigue experiments in healthy older adults found small changes in step length, step width, and walking speed, and more variable trunk movement, with results that differed between studies and test setups. Thermyx watches three related things from the insole: steadiness (how regular your step timing is), cadence (steps per minute), and how much of your weight goes through the front of your foot. With two insoles it can also see when you start favouring one side."
         },
         {
           "kind": "body",
@@ -98,7 +98,7 @@
           "text": "If Home shows your steadiness below your usual level, slow down and take a break. If you are also hot, treat it as a heat warning: shade, water, and Cool. If one foot keeps taking more load, check your shoes and anything that hurts."
         }
       ],
-      "sources": "Sources: Effects of experimentally induced fatigue on healthy older adults' gait: a systematic review. PLOS ONE. 2019;14(12):e0226939."
+      "sources": "Sources: Effects of experimentally induced fatigue on healthy older adults' gait: a systematic review. PLOS ONE. 2019;14(12):e0226939. doi:10.1371/journal.pone.0226939."
     },
     {
       "id": "hydration",
@@ -107,26 +107,26 @@
       "deck": "The countermeasures that actually move the needle when a warning fires.",
       "readMinutes": 5,
       "featured": false,
-      "status": "placeholder",
+      "status": "published",
       "sections": [
         {
           "kind": "body",
-          "text": "Occupational heat guidance comes down to three things: water, rest, and shade. NIOSH recommends that workers in the heat drink about one cup (8 oz) of water every 15–20 minutes, even before they feel thirsty, and warns against drinking much more than that over a shift. It also recommends regular rest breaks in a cool or shaded area, and building up gradually over the first days of hot work (acclimatization), because most heat deaths happen in the first days on the job. OSHA's heat campaign uses the same three words: Water. Rest. Shade."
+          "text": "Occupational heat guidance comes down to three things: water, rest, and shade. NIOSH recommends drinking 1 cup (8 oz) of water every 15–20 minutes when working in the heat, and warns against drinking more than 48 oz (1½ quarts) an hour. Regular rest in a cool or shaded area matters too, and so does building up gradually: OSHA reports that almost half of heat-related deaths at work happen on a worker's first day, and over 70 percent in the first week. OSHA's heat campaign uses the same three words: Water. Rest. Shade."
         },
         {
           "kind": "pullStat",
-          "text": "About one cup of water every 15–20 minutes when working in the heat (NIOSH)."
+          "text": "1 cup of water every 15–20 minutes when working in the heat, and no more than 48 oz an hour (NIOSH)."
         },
         {
           "kind": "body",
-          "text": "Thermyx's cooling can make your feet more comfortable, but it does not replace these steps. Cooling the soles removes only a small amount of heat compared with what your body produces when working hard."
+          "text": "Thermyx's cooling can make your feet more comfortable, but it does not cool your whole body and does not replace these steps."
         },
         {
           "kind": "action",
           "text": "When a warning fires: stop, get into shade, drink a cup of water, and switch the insoles to Cool. Rest until the risk level drops, then keep drinking a cup every 15–20 minutes."
         }
       ],
-      "sources": "Sources: NIOSH. Criteria for a Recommended Standard: Occupational Exposure to Heat and Hot Environments (DHHS/NIOSH Publication 2016-106); NIOSH Heat Stress recommendations (cdc.gov/niosh/heat-stress); OSHA Heat Illness Prevention campaign."
+      "sources": "Sources: NIOSH. Heat Stress: Hydration (DHHS/NIOSH Publication 2017-126). OSHA. Heat — Protecting New Workers (osha.gov/heat-exposure/protecting-new-workers)."
     },
     {
       "id": "what-thermyx-is-not",
@@ -135,7 +135,7 @@
       "deck": "An investigational warning aid, not a diagnosis. The limits, stated plainly.",
       "readMinutes": 3,
       "featured": false,
-      "status": "placeholder",
+      "status": "published",
       "sections": [
         {
           "kind": "body",
@@ -143,14 +143,14 @@
         },
         {
           "kind": "body",
-          "text": "Call 911 for anyone who shows signs of heat stroke, whatever the app shows: confusion or slurred speech, fainting or unresponsiveness, seizures, hot skin with heavy sweating or hot dry skin, or a very high body temperature. While you wait, move them somewhere cool, remove extra clothing, and cool them with cold water or ice on the skin. Heat exhaustion (heavy sweating, headache, nausea, dizziness, weakness, thirst) also needs you to stop, cool down, and drink water, and to get medical help if it gets worse or lasts more than an hour (CDC/NIOSH)."
+          "text": "Call 911 for anyone who shows signs of heat stroke, whatever the app shows: confusion or slurred speech, loss of consciousness, seizures, hot red skin that is dry or damp, or a very high body temperature (103 °F / 39.4 °C or higher). Heat stroke is a medical emergency. While you wait, move them somewhere cooler and cool them with cold water, ice, or cool cloths. Heat exhaustion (heavy sweating, cold and clammy skin, nausea or vomiting, dizziness, headache, cramps, fatigue) means stop, move somewhere cool, loosen clothing, and sip water; get medical help if they are vomiting, if it gets worse, or if it lasts longer than an hour (CDC; OSHA)."
         },
         {
           "kind": "action",
           "text": "Trust how you and the people around you feel over what the app says. If someone is confused, faints, or has a seizure in the heat, call 911 first and look at the app later."
         }
       ],
-      "sources": "Sources: CDC/NIOSH, Heat-related Illnesses (cdc.gov/niosh/heat-stress/about/illnesses.html)."
+      "sources": "Sources: CDC. Warning Signs and Symptoms of Heat-Related Illness (cdc.gov/disasters/extremeheat). OSHA. Heat-Related Illnesses and First Aid (osha.gov/heat-exposure/illness-first-aid)."
     }
   ]
 }

@@ -120,16 +120,15 @@ enum ThermyxPreviewHarness {
                 // Hidden during a tour: the recording is captured for use as
                 // the onboarding walkthrough, where the banner would be wrong.
                 // Every other preview state still carries it.
-                if ThermyxPreviewHarness.isActive, !ThermyxPreviewHarness.isTouring {
-                    Text(ThermyxPreviewHarness.isSimulated
-                         ? "Simulated insoles · not live readings"
-                         : "Preview data · not live readings")
+                // Simulated insoles get the always-compiled Demo Mode banner.
+                if ThermyxPreviewHarness.isActive, !ThermyxPreviewHarness.isTouring, !ThermyxPreviewHarness.isSimulated {
+                    Text("Simulated — not live sensor data")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.onEmber)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 5)
                         .background(Thermyx.Ink.ember)
                         .allowsHitTesting(false)
-                        .accessibilityLabel("Preview data. These are not live readings.")
+                        .accessibilityLabel("Simulated. This is not live sensor data.")
                 }
             }
         }

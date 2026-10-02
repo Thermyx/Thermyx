@@ -15,6 +15,7 @@ struct ThermyxApp: App {
                 // to a no-op extension that does not exist in a Release build —
                 // a shipping binary contains no synthetic-data code path at all.
                 .previewHarness(roles: roles, settings: settings, viewModel: viewModel)
+                .modifier(DemoModeBanner(ble: viewModel.ble))
         }
     }
 }

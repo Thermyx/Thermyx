@@ -17,17 +17,28 @@ final class TrustedMemberViewModel: ObservableObject {
     /// is showing.
     @Published var isShowingSample = false
 
+    /// Where this watcher stands with the wearer's relay.
+    enum Access: Equatable {
+        case notConnected
+        /// Paired, but the wearer has not approved this watcher yet.
+        case pending
+        case approved
+        /// The wearer removed this watcher, or access expired.
+        case removed
+    }
+    @Published private(set) var access: Access = .notConnected
+
     private static let windowSize = 24
 
     private var timer: Timer?
     private let client = ThermyxAlertAPIClient()
 
-    func start(settings: ThermyxSettingsStore, deviceID: String) {
+    func start(settings: ThermyxSettingsStore) {
         stop()
-        poll(settings: settings, deviceID: deviceID)
+        poll(settings: settings)
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self, weak settings] _ in
             guard let self, let settings else { return }
-            Task { @MainActor in self.poll(settings: settings, deviceID: deviceID) }
+            Task { @MainActor in self.poll(settings: settings) }
         }
     }
 
@@ -46,11 +57,11 @@ final class TrustedMemberViewModel: ObservableObject {
         isShowingSample ? TrustedSampleData.shift() : []
     }
 
-    /// Both feet at the current moment. Only the sample provides this today;
-    /// the shared backend carries a single summary per event, so a live
-    /// watcher sees the summary until the backend learns to send both.
+    /// Both feet at the current moment. Only the teaching sample has this:
+    /// a live watcher deliberately receives no sensor readings, only the
+    /// wearer's safety level and how fresh it is.
     var displayedBilateral: BilateralReading? {
-        isShowingSample ? TrustedSampleData.bilateral() : latestEvent?.bilateral
+        isShowingSample ? TrustedSampleData.bilateral() : nil
     }
 
     /// How long since the wearer's phone last posted anything. The wearer's
@@ -68,16 +79,38 @@ final class TrustedMemberViewModel: ObservableObject {
         isShowingSample ? TrustedSampleData.events() : []
     }
 
-    private func poll(settings: ThermyxSettingsStore, deviceID: String) {
-        guard !settings.backendURL.isEmpty else {
+    private func poll(settings: ThermyxSettingsStore) {
+        guard settings.isPairedWithRelay, settings.relayRole == "watcher" else {
+            access = .notConnected
             isConnected = false
             lastError = nil
             return
         }
+        let url = settings.backendURL
+        let token = settings.backendToken
         Task {
             do {
-                let event = try await client.fetchStatus(deviceID: deviceID, backendURL: settings.backendURL, token: settings.backendToken)
-                if let event, event.timestamp != latestEvent?.timestamp {
+                let result = try await client.watch(baseURL: url, token: token)
+                isConnected = true
+                lastError = nil
+                guard result.status == "approved" else {
+                    access = .pending
+                    latestEvent = nil
+                    return
+                }
+                access = .approved
+                guard let state = result.state else { latestEvent = nil; return }
+                let event = ThermyxAlertEvent(
+                    deviceID: "",
+                    level: state.level,
+                    reasons: [],
+                    recipients: [],
+                    timestamp: ThermyxAlertAPIClient.parseDate(state.updatedAt) ?? .now,
+                    readings: .init(footTemperatureC: nil, ambientTemperatureC: nil, gaitStability: nil, pressureBalance: nil, batteryPercent: nil),
+                    kind: ThermyxAlertEvent.Kind(rawValue: state.kind),
+                    location: state.location
+                )
+                if event.timestamp != latestEvent?.timestamp {
                     notifyIfEscalated(event, previous: latestEvent)
                     recentEvents.append(event)
                     if recentEvents.count > Self.windowSize {
@@ -85,7 +118,10 @@ final class TrustedMemberViewModel: ObservableObject {
                     }
                 }
                 latestEvent = event
-                isConnected = true
+            } catch ThermyxAlertAPIClient.ClientError.accessRemoved {
+                access = .removed
+                isConnected = false
+                latestEvent = nil
                 lastError = nil
             } catch {
                 isConnected = false
@@ -111,7 +147,9 @@ final class TrustedMemberViewModel: ObservableObject {
             guard level.severity > before.severity, level.severity >= ThermyxRiskLevel.caution.severity else { return }
             content.title = "Thermyx: \(level.rawValue)"
         }
-        content.body = event.reasons.joined(separator: " ")
+        content.body = event.kind == .ok
+            ? "They're OK."
+            : (ThermyxRiskLevel(rawValue: event.level)?.explanation ?? "Open Thermyx to check on them.")
         content.sound = level == .critical || event.kind == .sos ? .defaultCritical : .default
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thermyx.watch.\(event.timestamp.timeIntervalSince1970)", content: content, trigger: nil))
     }

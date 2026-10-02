@@ -1,0 +1,20 @@
+name: Relay tests
+
+on:
+  push:
+    paths: ["ThermyxBackend/**", ".github/workflows/relay.yml"]
+  pull_request:
+    paths: ["ThermyxBackend/**", ".github/workflows/relay.yml"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ThermyxBackend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test

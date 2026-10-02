@@ -189,23 +189,7 @@ struct TrustedSettingsView: View {
 
     private var connectionSection: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Connection")
-
-            ThermyxGroupedCard {
-                ThermyxValueRow(
-                    label: "Pairing code",
-                    value: roles.pairingCode,
-                    valueFont: ThermyxFont.rowTitle,
-                    valueTracking: 2
-                )
-                ThermyxDivider()
-                ThermyxEditableRow(label: "Backend", placeholder: "https://…", text: $settings.backendURL, keyboard: .URL)
-                ThermyxDivider()
-                ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
-                ThermyxDivider()
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
-            }
-
+            RelayConnectionCard(settings: settings, role: "watcher", watcherName: roles.profileName)
             if let error = member.lastError {
                 Text(error)
                     .font(ThermyxFont.captionSmall)

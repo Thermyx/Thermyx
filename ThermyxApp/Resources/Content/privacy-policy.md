@@ -158,10 +158,16 @@ behavioural advertising. We share information only:
 | One-minute reading buckets | 7 days, then deleted automatically |
 | One-hour reading buckets | 180 days, then deleted automatically |
 | Risk events | 30 days |
+| Personal baseline | Until reset or deleted; discarded after 90 days unused |
 | Profile, preferences, contacts | Until you change or delete them |
+| Relay: current level and time | 7 days after the last update |
+| Relay: location (only during a consented High, Critical, or SOS event) | 1 hour, and cleared when the event ends |
 
-**Delete all history** is in Safety → Advanced and removes every retained
-reading and event from the device immediately and irreversibly. Deleting the app
+**Delete my data** is in Safety → Advanced. It removes your history, personal
+baseline, and trusted contacts from the device immediately and irreversibly,
+disconnects the relay, and deletes what the relay holds about you, which also
+ends every watcher's access. **What leaves your phone?** on the same screen
+lists exactly what is shared and when. Deleting the app
 removes everything the app stored. Removing Health permissions stops all access;
 samples already written to Health are managed in the Health app.
 

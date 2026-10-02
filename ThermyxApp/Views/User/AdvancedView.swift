@@ -11,20 +11,20 @@ struct AdvancedView: View {
     @State private var showingPairing = false
     @State private var showingRoleConfirmation = false
     @State private var showingDeleteConfirmation = false
+    @State private var deleteResult: String?
     @State private var legalDocument: LegalDocument.Kind?
 
     private var unit: TemperatureUnit { settings.temperatureUnit }
 
     var body: some View {
         ThermyxDetailScreen(title: "Advanced") {
-            #if DEBUG
-            if let simulator = viewModel.ble.simulator {
-                SimulatedConditionsCard(simulator: simulator, unit: unit)
+            DemoModeSection(ble: viewModel.ble, unit: unit)
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                DeviceHealthStrip(now: context.date)
             }
-            #endif
             connectionSection
             targetTemperature
-            backendSection
+            RelayConnectionCard(settings: settings, role: "wearer")
             healthSection
             sensorLayout
             dataSection
@@ -46,14 +46,16 @@ struct AdvancedView: View {
         } message: {
             Text("You'll go back through onboarding. Your contacts and history stay on this phone.")
         }
-        .confirmationDialog("Delete all history?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
-            Button("Delete history", role: .destructive) {
-                viewModel.history.deleteAll()
-                Task { await viewModel.history.save() }
+        .confirmationDialog("Delete my data?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete my data", role: .destructive) {
+                Task { deleteResult = await DataDeletion.deleteEverything(viewModel: viewModel, settings: settings) ?? "Your data was deleted." }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Every retained reading and event is removed from this phone. This cannot be undone.")
+            Text("Removes your history, personal baseline, and trusted contacts from this phone, disconnects the relay, and deletes what the relay holds about you, which also ends every watcher's access. Apple Health data stays in the Health app. This cannot be undone.")
+        }
+        .alert(deleteResult ?? "", isPresented: Binding(get: { deleteResult != nil }, set: { if !$0 { deleteResult = nil } })) {
+            Button("OK", role: .cancel) {}
         }
     }
 
@@ -177,27 +179,6 @@ struct AdvancedView: View {
         }
     }
 
-    // MARK: - Backend
-
-    private var backendSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Shared backend")
-
-            ThermyxGroupedCard {
-                ThermyxEditableRow(label: "Endpoint", placeholder: "https://…", text: $settings.backendURL, keyboard: .URL)
-                ThermyxDivider()
-                ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
-                ThermyxDivider()
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
-            }
-
-            Text("The backend only receives escalated risk events and forwards approved SMS to your trusted circle. Readings stay on this phone.")
-                .font(ThermyxFont.captionSmall)
-                .foregroundStyle(Thermyx.Ink.textFaint)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     // MARK: - Health
 
     private var healthSection: some View {
@@ -262,12 +243,27 @@ struct AdvancedView: View {
                     value: settings.soleSize?.label ?? "Not set"
                 )
                 ThermyxDivider()
-                ThermyxValueRow(label: "Pairing code", value: roles.pairingCode, valueFont: ThermyxFont.rowTitle, valueTracking: 2)
-                ThermyxDivider()
                 ThermyxValueRow(label: "Role", value: roles.role?.rawValue ?? "—")
             }
 
-            Button("Delete all history") { showingDeleteConfirmation = true }
+            NavigationLink {
+                DataFlowView(settings: settings)
+            } label: {
+                HStack {
+                    Text("What leaves your phone?")
+                        .font(ThermyxFont.body)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
+                .padding(.horizontal, Thermyx.Space.xl)
+                .frame(minHeight: Thermyx.minimumTapTarget)
+                .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            Button("Delete my data") { showingDeleteConfirmation = true }
                 .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
 
             Button("Change role") { showingRoleConfirmation = true }
@@ -448,8 +444,55 @@ private extension Double {
     }
 }
 
-#if DEBUG
-/// Development-only controls for the simulated insoles: the air around the
+/// Demo Mode: a simulated pair for showing the app without hardware. Off at
+/// every launch. While it is on, every screen is stamped "Simulated — not
+/// live sensor data" and nothing is sent to the relay or saved to history,
+/// Apple Health, or the personal baseline.
+private struct DemoModeSection: View {
+    @ObservedObject var ble: ThermyxBLEService
+    let unit: TemperatureUnit
+    @State private var confirming = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Demo Mode")
+            ThermyxGroupedCard {
+                Toggle(isOn: Binding(
+                    get: { ble.isDemoMode },
+                    set: { on in if on { confirming = true } else { ble.stopDemoMode() } }
+                )) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Simulated insoles")
+                            .font(ThermyxFont.body)
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                        Text(ble.isDemoMode ? "On · not live sensor data" : "Off")
+                            .font(ThermyxFont.captionSmall)
+                            .foregroundStyle(ble.isDemoMode ? Thermyx.Ink.amber : Thermyx.Ink.textSupporting)
+                    }
+                }
+                .tint(Thermyx.Ink.amber)
+                .padding(.horizontal, Thermyx.Space.xl)
+                .padding(.vertical, Thermyx.Space.m)
+                .frame(minHeight: Thermyx.minimumTapTarget)
+            }
+            Text("For showing Thermyx without insoles. Real insoles are disconnected while it runs, and simulated readings are never sent to watchers or saved.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+            if let simulator = ble.simulator {
+                SimulatedConditionsCard(simulator: simulator, unit: unit)
+            }
+        }
+        .confirmationDialog("Turn on Demo Mode?", isPresented: $confirming, titleVisibility: .visible) {
+            Button("Use simulated insoles") { ble.startDemoMode() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your real insoles will be disconnected. Every screen will say \"Simulated — not live sensor data\" until you turn it off.")
+        }
+    }
+}
+
+/// Demo Mode controls for the simulated insoles: the air around the
 /// wearer and whether they are tiring. Together with Cool / Auto / Heat these
 /// drive the risk level through every rung of the escalation ladder.
 private struct SimulatedConditionsCard: View {
@@ -506,4 +549,4 @@ private struct SimulatedConditionsCard: View {
         }
     }
 }
-#endif
+
