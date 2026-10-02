@@ -78,4 +78,66 @@ final class RiskEngineTests: XCTestCase {
         let calm = BilateralReading(left: reading(), right: nil)
         XCTAssertNil(ThermyxSuggestion.nextStep(for: ThermyxRiskEngine.assess(calm), reading: calm))
     }
+
+    // MARK: - Explanation
+
+    private func pair(_ left: ThermyxReading?, _ right: ThermyxReading?) -> BilateralReading {
+        var p = BilateralReading.empty
+        p.left = left
+        p.right = right
+        return p
+    }
+
+    func testExplanationNamesTheSignalsThatCount() {
+        let p = pair(reading(.left, footC: 38.5, ambientC: 36), nil)
+        let a = ThermyxRiskEngine.assess(p, sustainedTemperatureGap: false, sustainedLoadGap: false)
+        let e = RiskExplanation.build(assessment: a, reading: p, sustainedTemperatureGap: false, sustainedLoadGap: false,
+                                      rssi: [.left: -60], bothExpected: false, unit: .celsius)
+        XCTAssertEqual(e.level, .high)
+        XCTAssertEqual(Set(e.contributing.map(\.kind)), [.footTemperature, .ambient])
+        XCTAssertEqual(e.confidence, .high)
+    }
+
+    func testBurnLimitShowsAsItsOwnSignal() {
+        let p = pair(reading(.left, footC: 40.5), nil)
+        let a = ThermyxRiskEngine.assess(p)
+        let e = RiskExplanation.build(assessment: a, reading: p, sustainedTemperatureGap: false, sustainedLoadGap: false,
+                                      rssi: [:], bothExpected: false, unit: .celsius)
+        XCTAssertTrue(e.contributing.contains { $0.kind == .burnLimit })
+    }
+
+    func testGapSignalsOnlyCountWhenSustained() {
+        let p = pair(reading(.left, footC: 36), reading(.right, footC: 33))
+        let a = ThermyxRiskEngine.assess(p, sustainedTemperatureGap: false, sustainedLoadGap: false)
+        let brief = RiskExplanation.build(assessment: a, reading: p, sustainedTemperatureGap: false, sustainedLoadGap: false,
+                                          rssi: [:], bothExpected: true, unit: .celsius)
+        XCTAssertFalse(brief.contributing.contains { $0.kind == .temperatureGap })
+        let held = RiskExplanation.build(assessment: a, reading: p, sustainedTemperatureGap: true, sustainedLoadGap: false,
+                                         rssi: [:], bothExpected: true, unit: .celsius)
+        XCTAssertTrue(held.contributing.contains { $0.kind == .temperatureGap })
+    }
+
+    func testConfidenceDropsForStaleMissingAndWeakData() {
+        let old = ThermyxReading(foot: .left, timestamp: Date.now.addingTimeInterval(-12), footTemperatureC: 33,
+                             ambientTemperatureC: nil, pressureBalance: 0.5, gaitStability: nil,
+                             batteryPercent: 50, thermalMode: .off)
+        let p = pair(old, nil)
+        let (level, reasons) = RiskExplanation.confidence(reading: p, age: [.left: 12], rssi: [.left: -90], bothExpected: true)
+        XCTAssertEqual(level, .low)
+        XCTAssertGreaterThanOrEqual(reasons.count, 4)
+    }
+
+    func testNoDataIsLowConfidence() {
+        let (level, _) = RiskExplanation.confidence(reading: .empty, age: [:], rssi: [:], bothExpected: false)
+        XCTAssertEqual(level, .low)
+    }
+
+    func testDeviceHealthStates() {
+        XCTAssertEqual(DeviceHealthStrip.state(connected: false, age: 1), .off)
+        XCTAssertEqual(DeviceHealthStrip.state(connected: true, age: nil), .off)
+        XCTAssertEqual(DeviceHealthStrip.state(connected: true, age: 1), .live)
+        XCTAssertEqual(DeviceHealthStrip.state(connected: true, age: 5), .stale)
+        XCTAssertEqual(DeviceHealthStrip.signalWord(-60), "good")
+        XCTAssertEqual(DeviceHealthStrip.signalWord(-90), "weak")
+    }
 }

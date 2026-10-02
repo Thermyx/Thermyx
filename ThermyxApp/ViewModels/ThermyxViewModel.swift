@@ -33,6 +33,9 @@ final class ThermyxViewModel: ObservableObject {
     /// When each left/right gap started, so only sustained gaps count.
     private var temperatureGapSince: Date?
     private var loadGapSince: Date?
+    /// True once both insoles have been on together this session, so losing
+    /// one lowers confidence instead of passing as single-insole use.
+    @Published private(set) var pairExpected = false
     /// The pair's session, written to Health once when the last foot ends.
     private var pairSession: (start: Date, end: Date, exposure: TimeInterval)?
     private var lastLockoutCommand: Date?
@@ -69,6 +72,8 @@ final class ThermyxViewModel: ObservableObject {
                     self.ble.send(targetTemperatureC: Self.savedTargetC, to: foot)
                 }
                 self.knownConnected = connected
+                if connected.count == 2 { self.pairExpected = true }
+                if connected.isEmpty { self.pairExpected = false }
                 self.syncFocus()
             }
             .store(in: &cancellables)
@@ -82,6 +87,20 @@ final class ThermyxViewModel: ObservableObject {
             reading,
             sustainedTemperatureGap: isSustained(temperatureGapSince),
             sustainedLoadGap: isSustained(loadGapSince)
+        )
+    }
+
+    /// Everything behind the current level, for "Why am I seeing this?".
+    func explanation(unit: TemperatureUnit, now: Date = .now) -> RiskExplanation {
+        RiskExplanation.build(
+            assessment: assessment,
+            reading: reading,
+            sustainedTemperatureGap: isSustained(temperatureGapSince),
+            sustainedLoadGap: isSustained(loadGapSince),
+            rssi: ble.rssi,
+            bothExpected: pairExpected,
+            unit: unit,
+            now: now
         )
     }
 

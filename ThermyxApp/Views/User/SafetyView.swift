@@ -517,6 +517,7 @@ struct CriticalAlertView: View {
     @State private var remaining = CriticalAlertView.countdownSeconds
     @State private var circleNotified = false
     @State private var showingCannotCall = false
+    @State private var showingWhy = false
 
     private var assessment: ThermyxRiskAssessment { viewModel.assessment }
     private var canTextCircle: Bool {
@@ -540,6 +541,8 @@ struct CriticalAlertView: View {
                 .font(ThermyxFont.bodyLarge)
                 .foregroundStyle(.white.opacity(0.92))
                 .fixedSize(horizontal: false, vertical: true)
+
+            WhyButton(tint: .white) { showingWhy = true }
 
             Text(countdownText)
                 .font(ThermyxFont.rowTitle)
@@ -579,6 +582,10 @@ struct CriticalAlertView: View {
             if !Task.isCancelled && !circleNotified {
                 notifyCircle(reason: "No response to a Critical alert for \(Self.countdownSeconds) seconds.")
             }
+        }
+        .sheet(isPresented: $showingWhy) {
+            RiskExplanationSheet(settings: settings)
+                .presentationDetents([.medium, .large])
         }
         .alert("This device can't place calls", isPresented: $showingCannotCall) {
             Button("OK", role: .cancel) {}

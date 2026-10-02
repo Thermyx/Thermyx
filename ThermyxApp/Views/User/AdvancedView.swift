@@ -22,6 +22,9 @@ struct AdvancedView: View {
                 SimulatedConditionsCard(simulator: simulator, unit: unit)
             }
             #endif
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                DeviceHealthStrip(now: context.date)
+            }
             connectionSection
             targetTemperature
             RelayConnectionCard(settings: settings, role: "wearer")

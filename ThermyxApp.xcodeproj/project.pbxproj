@@ -84,6 +84,8 @@
 		C9936D8F2F0E27287FF57089 /* FormattingAndModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBAEF8A007F498DD5842387 /* FormattingAndModelTests.swift */; };
 		1260EC7EB22CECA34A50BFA0 /* RiskEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */; };
 		1DFED2A00D6FBCCE31E44A25 /* RelayViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99537A5862C2CFDAC1E408E0 /* RelayViews.swift */; };
+		50093F9088C2E1F145DDB9B6 /* RiskExplanation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F43BCD37280162949AF653C2 /* RiskExplanation.swift */; };
+		13862183CD38EE6E790F9FFE /* ExplainViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDEE10DA2D9131CDFEC34AF3 /* ExplainViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -176,6 +178,8 @@
 		39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiskEngineTests.swift; sourceTree = "<group>"; };
 		090F7973F01B07CCA9C10E54 /* ThermyxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ThermyxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		99537A5862C2CFDAC1E408E0 /* RelayViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayViews.swift; sourceTree = "<group>"; };
+		F43BCD37280162949AF653C2 /* RiskExplanation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiskExplanation.swift; sourceTree = "<group>"; };
+		BDEE10DA2D9131CDFEC34AF3 /* ExplainViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExplainViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -268,6 +272,7 @@
 		8172580AC610E376FDC2460A /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				F43BCD37280162949AF653C2 /* RiskExplanation.swift */,
 				31E338D5ECF04C701AB8D577 /* BilateralReading.swift */,
 				C11CC2368EB8396495B212D0 /* InsightsPeriodStyle.swift */,
 				C26EE0F6F7AB693E5C6EF7B4 /* InsightsRange.swift */,
@@ -321,6 +326,7 @@
 		B1A2A94A3E212D2F1E08CEC4 /* User */ = {
 			isa = PBXGroup;
 			children = (
+				BDEE10DA2D9131CDFEC34AF3 /* ExplainViews.swift */,
 				99537A5862C2CFDAC1E408E0 /* RelayViews.swift */,
 				641D91CFACEDCF539451901D /* AdvancedView.swift */,
 				3844EE1A7C268CD0CB9689B7 /* ArticleView.swift */,
@@ -509,6 +515,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				13862183CD38EE6E790F9FFE /* ExplainViews.swift in Sources */,
+				50093F9088C2E1F145DDB9B6 /* RiskExplanation.swift in Sources */,
 				1DFED2A00D6FBCCE31E44A25 /* RelayViews.swift in Sources */,
 				EE4FB8C6C13461BBDD9CA6D6 /* AdvancedView.swift in Sources */,
 				CD1A4B05B35228A091C4604B /* ArticleView.swift in Sources */,
