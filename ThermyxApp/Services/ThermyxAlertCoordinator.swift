@@ -16,6 +16,10 @@ final class ThermyxAlertCoordinator: ObservableObject {
     /// The rules for when to notify, alert, and post a heartbeat.
     private var policy = ThermyxAlertPolicy()
 
+    /// Set while Demo Mode runs: nothing is posted to the relay, and the
+    /// wearer's own notifications say they are simulated.
+    var isDemoMode = false
+
     func requestPermission() async {
         notificationsAuthorized = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
