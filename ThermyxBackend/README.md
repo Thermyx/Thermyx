@@ -46,7 +46,7 @@ and shows a labelled preview of the message instead.
 cd ThermyxBackend
 npm run demo                # port 8787, database in ./data/demo.sqlite
 npm run admin wearer-code   # in a second terminal: prints a one-time code
-npm test                    # 14 tests, no network needed
+npm test                    # 15 tests, no network needed
 ```
 
 In the app: **Safety → Advanced → Connect to relay**, enter
@@ -97,6 +97,8 @@ Every route except `/health` and `/v1/pair` needs `Authorization: Bearer <token>
 | `GET /v1/watchers` | wearer | Watchers: name, status (pending / approved / expired), dates |
 | `POST /v1/watchers/:id/approve` | wearer | Approve or renew for 90 days |
 | `DELETE /v1/watchers/:id` | wearer | Revoke now |
+| `DELETE /v1/device` | wearer | Delete my data: ends this phone's and every watcher's access and removes the stored status and location |
+| `DELETE /v1/watch` | watcher | Stop watching (ends this watcher's own access) |
 | `GET /v1/watch` | watcher | `{status: "pending"}` or `{status: "approved", state: {level, kind, updatedAt, location?}}` |
 | `GET /health` | — | Liveness and whether texting is on |
 

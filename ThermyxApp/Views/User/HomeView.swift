@@ -201,7 +201,7 @@ struct HomeView: View {
                     .foregroundStyle(Thermyx.Ink.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.leading, 16)
-                    .accessibilityLabel("Suggested next step: \(suggestion)")
+                    .accessibilityLabel("Guidance: \(suggestion)")
             }
             if assessment.level.severity >= ThermyxRiskLevel.caution.severity {
                 WhyButton(tint: assessment.level.tint) { showingWhy = true }

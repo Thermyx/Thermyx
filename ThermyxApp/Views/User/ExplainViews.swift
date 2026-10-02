@@ -127,13 +127,7 @@ struct RiskExplanationSheet: View {
     }
 
     private var baseline: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Personal baseline")
-            Text("Still learning. Your own normal can only make Thermyx more cautious — it never lowers a level the fixed rules set.")
-                .font(ThermyxFont.caption)
-                .foregroundStyle(Thermyx.Ink.textMuted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        BaselineStatus(store: viewModel.baseline)
     }
 
     private func nextStep(_ e: RiskExplanation) -> some View {
@@ -152,6 +146,33 @@ struct RiskExplanationSheet: View {
         case .medium: return Thermyx.Ink.amber
         case .low: return Thermyx.Ink.ember
         }
+    }
+}
+
+/// Where the personal baseline stands, in words.
+struct BaselineStatus: View {
+    @ObservedObject var store: PersonalBaselineStore
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Personal baseline")
+            Text(text)
+                .font(ThermyxFont.caption)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            if store.isEnabled && !store.baseline.isCalibrated {
+                ProgressView(value: store.baseline.calibrationProgress)
+                    .tint(Thermyx.Ink.signal)
+            }
+        }
+    }
+
+    private var text: String {
+        let rule = "Your own normal can only make Thermyx more cautious — it never lowers a level the fixed rules set."
+        guard store.isEnabled else { return "Off. Only the fixed rules are used. Turn it on under Device & profile → Guidance." }
+        let b = store.baseline
+        if b.isCalibrated { return "Learned from \(b.minutesLearned) calm minutes and still adjusting. \(rule)" }
+        return "Calibrating: \(b.minutesLearned) of \(PersonalBaseline.calibrationMinutes) calm minutes. Personal warnings start after that. \(rule)"
     }
 }
 

@@ -11,6 +11,7 @@ struct AdvancedView: View {
     @State private var showingPairing = false
     @State private var showingRoleConfirmation = false
     @State private var showingDeleteConfirmation = false
+    @State private var deleteResult: String?
     @State private var legalDocument: LegalDocument.Kind?
 
     private var unit: TemperatureUnit { settings.temperatureUnit }
@@ -49,14 +50,16 @@ struct AdvancedView: View {
         } message: {
             Text("You'll go back through onboarding. Your contacts and history stay on this phone.")
         }
-        .confirmationDialog("Delete all history?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
-            Button("Delete history", role: .destructive) {
-                viewModel.history.deleteAll()
-                Task { await viewModel.history.save() }
+        .confirmationDialog("Delete my data?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete my data", role: .destructive) {
+                Task { deleteResult = await DataDeletion.deleteEverything(viewModel: viewModel, settings: settings) ?? "Your data was deleted." }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Every retained reading and event is removed from this phone. This cannot be undone.")
+            Text("Removes your history, personal baseline, and trusted contacts from this phone, disconnects the relay, and deletes what the relay holds about you, which also ends every watcher's access. Apple Health data stays in the Health app. This cannot be undone.")
+        }
+        .alert(deleteResult ?? "", isPresented: Binding(get: { deleteResult != nil }, set: { if !$0 { deleteResult = nil } })) {
+            Button("OK", role: .cancel) {}
         }
     }
 
@@ -247,7 +250,24 @@ struct AdvancedView: View {
                 ThermyxValueRow(label: "Role", value: roles.role?.rawValue ?? "—")
             }
 
-            Button("Delete all history") { showingDeleteConfirmation = true }
+            NavigationLink {
+                DataFlowView(settings: settings)
+            } label: {
+                HStack {
+                    Text("What leaves your phone?")
+                        .font(ThermyxFont.body)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
+                .padding(.horizontal, Thermyx.Space.xl)
+                .frame(minHeight: Thermyx.minimumTapTarget)
+                .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            Button("Delete my data") { showingDeleteConfirmation = true }
                 .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
 
             Button("Change role") { showingRoleConfirmation = true }

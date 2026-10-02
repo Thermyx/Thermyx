@@ -196,34 +196,10 @@ struct DeviceProfileSheet: View {
         }
     }
 
-    // MARK: - Assistance
+    // MARK: - Guidance
 
     private var assistSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Suggestions")
-
-            ThermyxGroupedCard {
-                Toggle(isOn: $settings.aiSuggestionsEnabled) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Suggest what to do next")
-                            .font(ThermyxFont.body)
-                            .foregroundStyle(Thermyx.Ink.textPrimary)
-                        Text("Shown on Home, worked out on this phone")
-                            .font(ThermyxFont.captionSmall)
-                            .foregroundStyle(Thermyx.Ink.textSupporting)
-                    }
-                }
-                .tint(Thermyx.Ink.signal)
-                .padding(.horizontal, Thermyx.Space.xl)
-                .padding(.vertical, Thermyx.Space.m)
-                .frame(minHeight: Thermyx.minimumTapTarget)
-            }
-
-            Text("Thermyx uses your live readings to suggest one next step under the risk level on Home: take shade, warm gradually, check your fit. The suggestions are simple rules that run on this phone; nothing is sent anywhere. Off by default.")
-                .font(ThermyxFont.captionSmall)
-                .foregroundStyle(Thermyx.Ink.textFaint)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        GuidanceSection(settings: settings, store: viewModel.baseline)
     }
 }
 

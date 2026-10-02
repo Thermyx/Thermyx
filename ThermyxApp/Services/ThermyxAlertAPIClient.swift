@@ -102,7 +102,20 @@ struct ThermyxAlertAPIClient {
         let _: Ack = try await request("DELETE", "/v1/watchers/\(id)", baseURL: baseURL, token: token, body: Optional<String>.none)
     }
 
+    /// Delete my data: ends this phone's and every watcher's access and
+    /// removes the stored status and location on the relay.
+    func deleteDevice(baseURL: String, token: String) async throws {
+        struct Ack: Decodable {}
+        let _: Ack = try await request("DELETE", "/v1/device", baseURL: baseURL, token: token, body: Optional<String>.none)
+    }
+
     // MARK: Watcher
+
+    /// Stop watching: ends this watcher's own access.
+    func leaveWatching(baseURL: String, token: String) async throws {
+        struct Ack: Decodable {}
+        let _: Ack = try await request("DELETE", "/v1/watch", baseURL: baseURL, token: token, body: Optional<String>.none)
+    }
 
     /// The minimal view a watcher gets: level, kind, freshness, and a
     /// location only during an active event the wearer chose to share.

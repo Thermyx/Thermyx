@@ -139,6 +139,24 @@ test("revoking a watcher cuts access immediately", async () => {
   } finally { await r.close(); }
 });
 
+test("a wearer can delete their relay data; a watcher can leave", async () => {
+  const r = await start();
+  try {
+    const { wearer, watcher } = await pairBoth(r);
+    const second = await pairBoth(r);
+    assert.equal((await r.call("DELETE", "/v1/watch", { token: second.watcher.token })).status, 200);
+    assert.equal((await r.call("GET", "/v1/watch", { token: second.watcher.token })).status, 401);
+
+    await r.call("POST", "/v1/events", { token: wearer.token, body: { level: "High risk", kind: "alert", locationConsent: true, location: { latitude: 1, longitude: 2 } } });
+    assert.equal((await r.call("DELETE", "/v1/device", { token: wearer.token })).status, 200);
+    assert.equal((await r.call("GET", "/v1/watchers", { token: wearer.token })).status, 401);
+    assert.equal((await r.call("GET", "/v1/watch", { token: watcher.token })).status, 401);
+    assert.equal(r.store.watcherView(wearer.deviceID), null);
+    // Another wearer is untouched, and a watcher token cannot delete a device.
+    assert.equal((await r.call("GET", "/v1/watchers", { token: second.wearer.token })).status, 200);
+  } finally { await r.close(); }
+});
+
 test("watcher access expires after 90 days unless renewed", async () => {
   const r = await start();
   try {

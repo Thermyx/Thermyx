@@ -22,6 +22,7 @@ final class ThermyxViewModel: ObservableObject {
 
     let ble = ThermyxBLEService()
     let history = ThermyxHistoryStore()
+    let baseline = PersonalBaselineStore()
 
     weak var healthService: ThermyxHealthService?
 
@@ -56,7 +57,9 @@ final class ThermyxViewModel: ObservableObject {
                     self.endSession(for: foot)
                 }
                 self.reading = next
+                self.updateTrend()
                 self.trackAsymmetry(next)
+                self.baseline.observe(next, fixedLevel: self.fixedAssessment.level)
                 for entry in next.present { self.ingest(entry) }
                 self.syncFocus()
             }
@@ -81,8 +84,8 @@ final class ThermyxViewModel: ObservableObject {
 
     // MARK: - Derived state
 
-    /// The pair's risk, including the left/right signals.
-    var assessment: ThermyxRiskAssessment {
+    /// The fixed rules alone: thresholds, burn limit, sustained gaps.
+    var fixedAssessment: ThermyxRiskAssessment {
         ThermyxRiskEngine.assess(
             reading,
             sustainedTemperatureGap: isSustained(temperatureGapSince),
@@ -90,16 +93,43 @@ final class ThermyxViewModel: ObservableObject {
         )
     }
 
+    /// The pair's risk: the fixed rules, plus the personal baseline and
+    /// trend layer, which can only add caution.
+    var assessment: ThermyxRiskAssessment { personal(unit: .celsius).assessment }
+
+    /// Recomputed once per reading rather than on every redraw.
+    private(set) var trend = TemperatureTrend()
+
+    private func updateTrend() {
+        let current = reading.peakFootTemperatureC
+        trend = TemperatureTrend(
+            delta5: history.footTrend(over: 5 * 60, current: current)?.delta,
+            delta10: history.footTrend(over: 10 * 60, current: current)?.delta
+        )
+    }
+
+    private func personal(unit: TemperatureUnit) -> PersonalLayer.Result {
+        PersonalLayer.apply(
+            fixedAssessment,
+            reading: reading,
+            baseline: baseline.isEnabled ? baseline.baseline : nil,
+            trend: baseline.isEnabled ? trend : TemperatureTrend(),
+            unit: unit
+        )
+    }
+
     /// Everything behind the current level, for "Why am I seeing this?".
     func explanation(unit: TemperatureUnit, now: Date = .now) -> RiskExplanation {
-        RiskExplanation.build(
-            assessment: assessment,
+        let layered = personal(unit: unit)
+        return RiskExplanation.build(
+            assessment: layered.assessment,
             reading: reading,
             sustainedTemperatureGap: isSustained(temperatureGapSince),
             sustainedLoadGap: isSustained(loadGapSince),
             rssi: ble.rssi,
             bothExpected: pairExpected,
             unit: unit,
+            extras: layered.signals,
             now: now
         )
     }

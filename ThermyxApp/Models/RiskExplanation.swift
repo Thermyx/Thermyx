@@ -18,7 +18,7 @@ struct RiskExplanation: Equatable {
         /// Whether this signal is currently pushing the level up.
         let contributes: Bool
 
-        var id: String { kind.rawValue }
+        var id: String { "\(kind.rawValue)-\(title)" }
     }
 
     enum Confidence: String {

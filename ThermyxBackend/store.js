@@ -149,6 +149,12 @@ function openStore(file, now = () => Date.now()) {
       return true;
     },
 
+    leaveAsWatcher(watcherID) {
+      db.prepare("UPDATE watchers SET status = 'revoked', revoked_at = ? WHERE id = ? AND status != 'revoked'").run(now(), watcherID);
+      db.prepare("UPDATE tokens SET revoked_at = ? WHERE watcher_id = ? AND revoked_at IS NULL").run(now(), watcherID);
+      audit(`watcher:${watcherID}`, "watcher_left", watcherID);
+    },
+
     watcherState(watcherID) {
       return db.prepare("SELECT status, expires_at FROM watchers WHERE id = ?").get(watcherID);
     },
@@ -208,11 +214,11 @@ function openStore(file, now = () => Date.now()) {
       audit(`wearer:${deviceID}`, "sms_attempt", `${kind}: ${delivered} delivered, ${failed} failed`);
     },
 
-    revokeDevice(deviceID) {
+    revokeDevice(deviceID, actor = "admin") {
       const result = db.prepare("UPDATE tokens SET revoked_at = ? WHERE device_id = ? AND revoked_at IS NULL").run(now(), deviceID);
       db.prepare("UPDATE watchers SET status = 'revoked', revoked_at = ? WHERE device_id = ? AND status != 'revoked'").run(now(), deviceID);
       db.prepare("DELETE FROM status WHERE device_id = ?").run(deviceID);
-      audit("admin", "revoke_device", deviceID);
+      audit(actor, "revoke_device", deviceID);
       return result.changes;
     },
 

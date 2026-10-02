@@ -209,6 +209,11 @@ function createRelay(options = {}) {
     if (!apiLimit(token)) return json(res, 429, { error: "rate_limited" });
 
     if (identity.role === "watcher") {
+      // A watcher can always stop watching; this ends its own access only.
+      if (route === "DELETE /v1/watch") {
+        store.leaveAsWatcher(identity.watcherID);
+        return json(res, 200, { removed: true });
+      }
       if (route !== "GET /v1/watch") return json(res, 403, { error: "forbidden" });
       const state = store.watcherState(identity.watcherID);
       if (!state || state.status === "revoked") return json(res, 403, { error: "access_revoked" });
@@ -221,6 +226,12 @@ function createRelay(options = {}) {
     if (route === "POST /v1/events") return readBody(req, res, body => handleEvent(identity, body, res));
     if (route === "GET /v1/watchers") return json(res, 200, { watchers: store.listWatchers(identity.deviceID) });
     if (route === "POST /v1/watchers/codes") return json(res, 201, store.createWatcherCode(identity.deviceID));
+    // The wearer's "Delete my data": ends this phone's access, every
+    // watcher's access, and removes the stored status and location.
+    if (route === "DELETE /v1/device") {
+      store.revokeDevice(identity.deviceID, `wearer:${identity.deviceID}`);
+      return json(res, 200, { deleted: true });
+    }
 
     const match = url.pathname.match(/^\/v1\/watchers\/([0-9a-f-]{36})(\/approve)?$/);
     if (match && req.method === "POST" && match[2]) {
