@@ -13,59 +13,24 @@ final class ThermyxAlertCoordinator: ObservableObject {
     let location = ThermyxLocationProvider()
     private let apiClient = ThermyxAlertAPIClient()
 
-    /// Minimum gap between repeat alerts while the level stays elevated.
-    static let reminderInterval: TimeInterval = 5 * 60
-    /// How often the current status is posted to the relay so a watcher can
-    /// tell a quiet wearer from a wearer whose phone has gone silent.
-    static let heartbeatInterval: TimeInterval = 60
-
-    /// Set while Demo Mode runs: nothing is posted to the relay, and the
-    /// wearer's own notifications say they are simulated.
-    var isDemoMode = false
-
-    private var lastAlertSentAt: Date?
-    private var lastAlertSentLevel: ThermyxRiskLevel = .unavailable
-    private var lastPostAt: Date?
+    /// The rules for when to notify, alert, and post a heartbeat.
+    private var policy = ThermyxAlertPolicy()
 
     func requestPermission() async {
         notificationsAuthorized = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
-    /// Called on every reading. Notifies the wearer when the level rises,
-    /// alerts the trusted circle on a rise (and at most every five minutes
-    /// while it stays up), and otherwise posts a once-a-minute heartbeat.
+    /// Called on every reading. ThermyxAlertPolicy decides; this carries it out.
     func evaluate(_ assessment: ThermyxRiskAssessment, reading: BilateralReading, settings: ThermyxSettingsStore) {
         let level = assessment.level
-        guard level != .unavailable else { return }
+        let decision = policy.evaluate(level, alertsEnabled: settings.shouldAlert(for: level))
+        if lastAlertLevel != policy.announced { lastAlertLevel = policy.announced }
 
-        // Back to normal: forget the last alert so the next rise notifies
-        // again, even if it is to the same level as before.
-        if level == .normal {
-            lastAlertLevel = .normal
-            lastAlertSentLevel = .normal
-            lastAlertSentAt = nil
-        } else if level.severity > lastAlertLevel.severity || lastAlertLevel == .unavailable {
-            lastAlertLevel = level
-            notifyWearer(level)
-        } else if level.severity < lastAlertLevel.severity {
-            // Easing off (e.g. High back to Caution) lowers the bar, so a
-            // later climb back up is announced again.
-            lastAlertLevel = level
-        }
-
-        if level.severity >= ThermyxRiskLevel.caution.severity, settings.shouldAlert(for: level) {
-            let rose = level.severity > lastAlertSentLevel.severity
-            let reminderDue = lastAlertSentAt.map { Date.now.timeIntervalSince($0) >= Self.reminderInterval } ?? true
-            if rose || reminderDue {
-                lastAlertSentLevel = level
-                lastAlertSentAt = .now
-                location.refresh()
-                send(kind: .alert, level: level, reasons: assessment.reasons, focus: assessment.foot, reading: reading, settings: settings, texts: true)
-                return
-            }
-        }
-
-        if lastPostAt.map({ Date.now.timeIntervalSince($0) >= Self.heartbeatInterval }) ?? true {
+        if decision.notifyWearer { notifyWearer(level) }
+        if decision.alert {
+            location.refresh()
+            send(kind: .alert, level: level, reasons: assessment.reasons, focus: assessment.foot, reading: reading, settings: settings, texts: true)
+        } else if decision.heartbeat {
             send(kind: .status, level: level, reasons: assessment.reasons, focus: assessment.foot, reading: reading, settings: settings, texts: false)
         }
     }
@@ -84,6 +49,7 @@ final class ThermyxAlertCoordinator: ObservableObject {
 
     /// The wearer checked in: tell the trusted circle they're OK.
     func sendImOK(level: ThermyxRiskLevel, reading: BilateralReading, settings: ThermyxSettingsStore) {
+        policy.imOK()
         let current = level == .unavailable ? .normal : level
         send(kind: .ok, level: current, reasons: ["The wearer says they're OK."], focus: nil, reading: reading, settings: settings, texts: true)
     }
@@ -110,7 +76,6 @@ final class ThermyxAlertCoordinator: ObservableObject {
         texts: Bool
     ) {
         guard !isDemoMode, settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
-        lastPostAt = .now
 
         let activeEvent = kind == .sos || level.severity >= ThermyxRiskLevel.high.severity
         let consented = settings.shareLocationDuringEvents

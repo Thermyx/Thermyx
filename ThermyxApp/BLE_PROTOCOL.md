@@ -26,7 +26,7 @@ either. All multi-byte fields are little-endian.
 | 5–6 | Ambient temperature in °C × 100, signed int16 |
 | 7–8 | Gait stability × 10000, unsigned uint16; `0xFFFF` = not measured |
 | 9–10 | Pressure balance (forefoot share of load) × 10000, unsigned uint16; `0xFFFF` = not measured |
-| 11 | Flags: bits 0–1 say which foot (see [Which foot an insole is on](#which-foot-an-insole-is-on)); bits 2–7 reserved, send `0` |
+| 11 | Flags: bits 0–1 which foot (see [Which foot an insole is on](#which-foot-an-insole-is-on)); bits 2–3 setting echo; bit 4 burn cutoff; bits 5–7 reserved, send `0` |
 
 ### Version 2 — 18 bytes
 
@@ -124,7 +124,18 @@ needs to know which foot each one serves.
 | `1` | Left |
 | `2` | Right |
 
-Bits 2–7 remain reserved; send `0`.
+**Bits 2–3: setting echo.** The setting the insole is following: `1` Cool,
+`2` Auto, `3` Heat, `0` not reported. The app waits for every connected insole
+to echo a new setting and says so plainly if one has not within six seconds.
+Firmware that sends `0` here is still supported: the app then confirms from
+byte 1 (Cool once it is cooling, Heat once it is heating or cut off, Auto on
+the next packet).
+
+**Bit 4: burn cutoff.** Set while the firmware is holding the heater off at
+the burn limit, so the app can tell "Heat refused for safety" from "Heat
+ignored".
+
+Bits 5–7 remain reserved; send `0`.
 
 This is backward compatible: a v1 firmware that sends `0` in the flags byte, as
 the original spec instructed, simply falls through to manual assignment.

@@ -12,7 +12,8 @@
 //   Motion        GY-521 (MPU-6050) on I2C at 0x68
 //   Pressure      3 x FSR402 (heel, arch, forefoot), each in a divider with a
 //                 10 kOhm resistor to GND, read on A0-A2
-//   Battery       optional 2:1 divider (2 x 100 kOhm) from the cell to A3
+//   Battery       optional 2:1 divider (2 x 100 kOhm); off by default, see
+//                 PIN_BATTERY for why it cannot simply go on A3
 //
 // STATUS: written against the protocol and the parts list; not yet compiled
 // or flashed. Check the pin map below against the real wiring before the
@@ -29,17 +30,25 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <esp_task_wdt.h>
 
 // ---------------------------------------------------------------- settings
 
 #define THERMYX_FOOT 1            // 1 = left, 2 = right (protocol byte 11)
-#define HAS_BATTERY_SENSE 0       // 1 once the A3 divider is fitted
+#define HAS_BATTERY_SENSE 0       // 1 once a battery divider is fitted (see PIN_BATTERY)
 
 // Pin map (XIAO ESP32-C3 silkscreen names).
 static const int PIN_FSR_HEEL = A0;
 static const int PIN_FSR_ARCH = A1;
 static const int PIN_FSR_FOREFOOT = A2;
-static const int PIN_BATTERY = A3;
+#if HAS_BATTERY_SENSE
+// The XIAO ESP32-C3's only dependable analog pins are A0-A2 (ADC1), and the
+// FSRs use all three. GPIO5 ("A3") is on ADC2, which reads unreliably while
+// Bluetooth is on. Choose a pin (or an external ADC such as an ADS1115), set
+// it here, and delete the #error.
+#error "Choose PIN_BATTERY before enabling HAS_BATTERY_SENSE (see the comment above)."
+static const int PIN_BATTERY = -1;
+#endif
 static const int PIN_PELTIER_IN1 = D6;   // DRV8833 AIN1
 static const int PIN_PELTIER_IN2 = D7;   // DRV8833 AIN2
 static const int PIN_FAN = D8;           // DRV8833 BIN1; wire BIN2 to GND
@@ -81,6 +90,11 @@ static volatile uint8_t commandedMode = MODE_VENTILATION;
 static volatile float targetC = 31.0f;
 // What the hardware is actually doing, reported back in byte 1.
 static uint8_t activeMode = MODE_VENTILATION;
+// True while the burn cutoff is holding the heater off (flags bit 4).
+static bool burnCutoff = false;
+// A loop that hangs for this long resets the chip, so a stuck heater
+// cannot stay on with nothing watching it.
+static const uint32_t WATCHDOG_MS = 4000;
 
 static BLECharacteristic *telemetry = nullptr;
 static volatile bool connected = false;
@@ -201,9 +215,12 @@ static uint8_t decideMode(bool haveFoot, float footC) {
   // Fail safe: with no foot temperature there is nothing to regulate on.
   if (!haveFoot && (want == MODE_HEATING || want == MODE_COOLING)) return MODE_VENTILATION;
   // Burn protection, with hysteresis.
+  burnCutoff = false;
   if (want == MODE_HEATING) {
-    if (footC >= BURN_LIMIT_C) return MODE_VENTILATION;
-    if (activeMode != MODE_HEATING && footC >= HEAT_RESUME_C) return MODE_VENTILATION;
+    if (footC >= BURN_LIMIT_C || (activeMode != MODE_HEATING && footC >= HEAT_RESUME_C)) {
+      burnCutoff = true;
+      return MODE_VENTILATION;
+    }
   }
   // Cold protection.
   if (want == MODE_COOLING && footC <= COLD_LIMIT_C) return MODE_VENTILATION;
@@ -355,7 +372,10 @@ static void sendTelemetry(bool haveFoot, float footC, bool haveAmbient, float am
   float total = heel + arch + forefoot;
   putUInt16(&packet[9], total < 0.05f ? NO_VALUE : (uint16_t)lroundf(forefoot / total * 10000));
 
-  packet[11] = THERMYX_FOOT;        // flags: bits 0-1 = foot
+  // Flags: bits 0-1 foot; bits 2-3 the setting being followed (1 Cool,
+  // 2 Auto, 3 Heat) so the app can confirm a command landed; bit 4 burn cutoff.
+  uint8_t echo = commandedMode == MODE_COOLING ? 1 : commandedMode == MODE_HEATING ? 3 : 2;
+  packet[11] = THERMYX_FOOT | (echo << 2) | (burnCutoff ? 0x10 : 0);
 
   // Zones: this build has one contact sensor, not three, so the zone fields
   // carry the "absent" marker and the app hides the zone map.
@@ -382,12 +402,19 @@ static float readFSR(int pin) {
 // ---------------------------------------------------------------- Arduino
 
 void setup() {
-  pinMode(PIN_DRIVER_SLEEP, OUTPUT);
-  digitalWrite(PIN_DRIVER_SLEEP, HIGH);
+  // Outputs low first, then wake the driver, so nothing is driven mid-boot.
   pinMode(PIN_PELTIER_IN1, OUTPUT);
   pinMode(PIN_PELTIER_IN2, OUTPUT);
   pinMode(PIN_FAN, OUTPUT);
   applyMode(MODE_OFF);
+  pinMode(PIN_DRIVER_SLEEP, OUTPUT);
+  digitalWrite(PIN_DRIVER_SLEEP, HIGH);
+
+  // Task watchdog (esp32 core 3.x). The core may already have one running;
+  // reconfigure it if so.
+  esp_task_wdt_config_t wdt = { .timeout_ms = WATCHDOG_MS, .idle_core_mask = 0, .trigger_panic = true };
+  if (esp_task_wdt_reconfigure(&wdt) != ESP_OK) esp_task_wdt_init(&wdt);
+  esp_task_wdt_add(NULL);
 
   analogReadResolution(12);
   Wire.begin();
@@ -399,6 +426,7 @@ void setup() {
 void loop() {
   static uint32_t lastPacket = 0;
   uint32_t now = millis();
+  esp_task_wdt_reset();
 
   float heel = readFSR(PIN_FSR_HEEL);
   float arch = readFSR(PIN_FSR_ARCH);
