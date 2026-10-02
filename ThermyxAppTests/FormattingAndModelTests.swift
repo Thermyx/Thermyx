@@ -16,16 +16,6 @@ final class FormattingAndModelTests: XCTestCase {
         XCTAssertEqual(DurationFormat.long(18 * 60), "18m")
     }
 
-    func testDeviceIDsAreUniqueAndReadable() {
-        let ids = Set((0..<200).map { _ in ThermyxSettingsStore.makeDeviceID() })
-        XCTAssertGreaterThan(ids.count, 195)
-        for id in ids {
-            XCTAssertTrue(id.hasPrefix("thermyx-"))
-            XCTAssertEqual(id.count, "thermyx-".count + 6)
-            XCTAssertFalse(id.contains("0") || id.contains("o") || id.contains("1") || id.contains("l"))
-        }
-    }
-
     func testOlderAlertEventsStillDecode() throws {
         // An event from a build that predates kind / per-foot readings.
         let json = #"{"deviceID":"thermyx-right-01","level":"Caution","reasons":["Hot."],"recipients":[],"timestamp":780000000,"readings":{"footTemperatureC":36.1}}"#

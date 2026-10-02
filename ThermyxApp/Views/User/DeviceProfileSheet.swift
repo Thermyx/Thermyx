@@ -127,9 +127,12 @@ struct DeviceProfileSheet: View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
             SectionLabel("Device")
             ThermyxGroupedCard {
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
-                ThermyxDivider()
-                ThermyxValueRow(label: "Pairing code", value: roles.pairingCode, valueFont: ThermyxFont.rowTitle, valueTracking: 2)
+                ThermyxValueRow(
+                    label: "Relay ID",
+                    value: settings.deviceID.isEmpty ? "Not connected" : settings.deviceID,
+                    valueFont: ThermyxFont.rowTitle,
+                    valueTracking: 0
+                )
             }
         }
     }

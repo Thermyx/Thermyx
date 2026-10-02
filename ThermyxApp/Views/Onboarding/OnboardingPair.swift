@@ -46,8 +46,6 @@ struct OnboardingPair: View {
                         field("Who you're watching", text: $watchedName, placeholder: "Their name")
                     }
 
-                    field("Pairing code", text: $pairingCode, placeholder: "THERMYX-01", emphasized: true, tracking: 3)
-
                     if role == .user { discoveryList }
 
                     backendDisclosure
@@ -195,7 +193,7 @@ struct OnboardingPair: View {
                 withAnimation(.easeOut(duration: 0.22)) { showingBackend.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    Text("Advanced: shared backend setup")
+                    Text(role == .user ? "Optional: connect to a relay" : "Connect to their relay")
                         .narrowLabel(ThermyxFont.statusPill, tracking: 1.8, color: Thermyx.Ink.textSupporting)
                     Image(systemName: showingBackend ? "chevron.up" : "chevron.down")
                         .font(.system(size: 11, weight: .bold))
@@ -209,14 +207,8 @@ struct OnboardingPair: View {
             .accessibilityAddTraits(showingBackend ? [.isButton, .isSelected] : .isButton)
 
             if showingBackend {
-                ThermyxGroupedCard {
-                    ThermyxEditableRow(label: "Endpoint", placeholder: "https://…", text: $settings.backendURL, keyboard: .URL)
-                    ThermyxDivider()
-                    ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
-                    ThermyxDivider()
-                    ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
-                }
-                .transition(.opacity)
+                RelayConnectionCard(settings: settings, role: role == .user ? "wearer" : "watcher", watcherName: name)
+                    .transition(.opacity)
             }
         }
     }

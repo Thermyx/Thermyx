@@ -83,6 +83,7 @@
 		FBDB595D3014FAEC48443CC4 /* InsightsHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC44DD95EDDAAD50BC4429CA /* InsightsHubView.swift */; };
 		C9936D8F2F0E27287FF57089 /* FormattingAndModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BBAEF8A007F498DD5842387 /* FormattingAndModelTests.swift */; };
 		1260EC7EB22CECA34A50BFA0 /* RiskEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */; };
+		1DFED2A00D6FBCCE31E44A25 /* RelayViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99537A5862C2CFDAC1E408E0 /* RelayViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -174,6 +175,7 @@
 		2BBAEF8A007F498DD5842387 /* FormattingAndModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FormattingAndModelTests.swift; sourceTree = "<group>"; };
 		39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RiskEngineTests.swift; sourceTree = "<group>"; };
 		090F7973F01B07CCA9C10E54 /* ThermyxAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ThermyxAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		99537A5862C2CFDAC1E408E0 /* RelayViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RelayViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -319,6 +321,7 @@
 		B1A2A94A3E212D2F1E08CEC4 /* User */ = {
 			isa = PBXGroup;
 			children = (
+				99537A5862C2CFDAC1E408E0 /* RelayViews.swift */,
 				641D91CFACEDCF539451901D /* AdvancedView.swift */,
 				3844EE1A7C268CD0CB9689B7 /* ArticleView.swift */,
 				2D3CA2C0D41D4B395C85CC50 /* BalanceDetailView.swift */,
@@ -506,6 +509,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1DFED2A00D6FBCCE31E44A25 /* RelayViews.swift in Sources */,
 				EE4FB8C6C13461BBDD9CA6D6 /* AdvancedView.swift in Sources */,
 				CD1A4B05B35228A091C4604B /* ArticleView.swift in Sources */,
 				ED170FD93B319BC7E777E438 /* AuroraBackground.swift in Sources */,

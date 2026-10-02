@@ -24,7 +24,7 @@ struct AdvancedView: View {
             #endif
             connectionSection
             targetTemperature
-            backendSection
+            RelayConnectionCard(settings: settings, role: "wearer")
             healthSection
             sensorLayout
             dataSection
@@ -177,27 +177,6 @@ struct AdvancedView: View {
         }
     }
 
-    // MARK: - Backend
-
-    private var backendSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Shared backend")
-
-            ThermyxGroupedCard {
-                ThermyxEditableRow(label: "Endpoint", placeholder: "https://…", text: $settings.backendURL, keyboard: .URL)
-                ThermyxDivider()
-                ThermyxEditableRow(label: "Token", placeholder: "Optional", text: $settings.backendToken, isSecure: true)
-                ThermyxDivider()
-                ThermyxEditableRow(label: "Device ID", placeholder: "thermyx-ab12cd", text: $settings.deviceID)
-            }
-
-            Text("The backend only receives escalated risk events and forwards approved SMS to your trusted circle. Readings stay on this phone.")
-                .font(ThermyxFont.captionSmall)
-                .foregroundStyle(Thermyx.Ink.textFaint)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     // MARK: - Health
 
     private var healthSection: some View {
@@ -261,8 +240,6 @@ struct AdvancedView: View {
                     label: "Sole size",
                     value: settings.soleSize?.label ?? "Not set"
                 )
-                ThermyxDivider()
-                ThermyxValueRow(label: "Pairing code", value: roles.pairingCode, valueFont: ThermyxFont.rowTitle, valueTracking: 2)
                 ThermyxDivider()
                 ThermyxValueRow(label: "Role", value: roles.role?.rawValue ?? "—")
             }

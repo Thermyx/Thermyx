@@ -3,9 +3,21 @@ import Security
 
 @MainActor
 final class ThermyxSettingsStore: ObservableObject {
-    @Published var backendURL: String { didSet { save() } }
-    @Published var backendToken: String { didSet { save() } }
-    @Published var deviceID: String { didSet { save() } }
+    /// The relay this phone paired with. Set by pairing, not typed by hand.
+    @Published private(set) var backendURL: String { didSet { save() } }
+    /// This phone's own relay token (wearer or watcher), issued once by the
+    /// relay when a pairing code is redeemed. Kept in the Keychain.
+    @Published private(set) var backendToken: String { didSet { save() } }
+    /// The wearer's relay device ID, assigned by the relay at pairing.
+    @Published private(set) var deviceID: String { didSet { save() } }
+    /// "wearer" or "watcher" — which kind of relay token this phone holds.
+    @Published private(set) var relayRole: String { didSet { save() } }
+    /// Whether the relay has texting turned on. Off until the team has tested
+    /// real delivery; the app shows a labelled preview instead.
+    @Published var relayTextingEnabled: Bool { didSet { save() } }
+    /// The wearer's explicit consent to include their location in what
+    /// approved watchers see, and only during a High, Critical, or SOS event.
+    @Published var shareLocationDuringEvents: Bool { didSet { save() } }
     @Published var contacts: [ThermyxContact] { didSet { save() } }
 
     /// Applied to every temperature display in the app.
@@ -51,15 +63,10 @@ final class ThermyxSettingsStore: ObservableObject {
             defaults.removeObject(forKey: "thermyx.backendToken")
         }
         backendToken = ThermyxKeychain.get(Self.tokenAccount) ?? ""
-        // Each install gets its own ID, so two wearers never share a status
-        // on the relay. Installs that already saved one keep it.
-        if let storedID = defaults.string(forKey: "thermyx.deviceID"), !storedID.isEmpty {
-            deviceID = storedID
-        } else {
-            let fresh = Self.makeDeviceID()
-            deviceID = fresh
-            defaults.set(fresh, forKey: "thermyx.deviceID")
-        }
+        deviceID = defaults.string(forKey: "thermyx.deviceID") ?? ""
+        relayRole = defaults.string(forKey: "thermyx.relayRole") ?? ""
+        relayTextingEnabled = defaults.bool(forKey: "thermyx.relayTextingEnabled")
+        shareLocationDuringEvents = defaults.bool(forKey: "thermyx.shareLocationDuringEvents")
         let storedContacts: [ThermyxContact]
         if let data = defaults.data(forKey: "thermyx.contacts"), let decoded = try? JSONDecoder().decode([ThermyxContact].self, from: data) {
             storedContacts = decoded
@@ -92,15 +99,42 @@ final class ThermyxSettingsStore: ObservableObject {
         alertOnHighRisk = defaults.object(forKey: "thermyx.alertOnHighRisk") as? Bool ?? true
         alertOnCritical = defaults.object(forKey: "thermyx.alertOnCritical") as? Bool ?? true
         healthKitEnabled = defaults.object(forKey: "thermyx.healthKitEnabled") as? Bool ?? false
+
+        // Tokens from before pairing codes were shared secrets typed by hand.
+        // They are not valid on the new relay; drop them so the phone pairs.
+        // The same goes for the old hand-typed address and device ID.
+        if relayRole.isEmpty {
+            backendToken = ""
+            backendURL = ""
+            deviceID = ""
+            ThermyxKeychain.set("", for: Self.tokenAccount)
+            defaults.removeObject(forKey: "thermyx.backendURL")
+            defaults.removeObject(forKey: "thermyx.deviceID")
+        }
     }
 
     private static let tokenAccount = "thermyx.backendToken"
 
-    /// `thermyx-` plus six characters that are easy to read aloud and type
-    /// (no 0/O, 1/I/L).
-    static func makeDeviceID() -> String {
-        let alphabet = Array("abcdefghjkmnpqrstuvwxyz23456789")
-        return "thermyx-" + String((0..<6).map { _ in alphabet.randomElement()! })
+    /// True once this phone has redeemed a pairing code with a relay.
+    var isPairedWithRelay: Bool { !backendURL.isEmpty && !backendToken.isEmpty }
+
+    /// Stores what the relay issued when a pairing code was redeemed.
+    func completePairing(url: String, role: String, token: String, deviceID: String?, textingEnabled: Bool) {
+        backendURL = url
+        relayRole = role
+        backendToken = token
+        if let deviceID { self.deviceID = deviceID }
+        relayTextingEnabled = textingEnabled
+    }
+
+    /// Forgets the relay on this phone. The relay-side token stays until it
+    /// is revoked or expires; for a watcher, the wearer's list shows it.
+    func disconnectRelay() {
+        backendURL = ""
+        backendToken = ""
+        relayRole = ""
+        deviceID = ""
+        relayTextingEnabled = false
     }
 
     private static func isLegacyPrototypeContact(_ contact: ThermyxContact) -> Bool {
@@ -145,6 +179,9 @@ final class ThermyxSettingsStore: ObservableObject {
         defaults.set(backendURL, forKey: "thermyx.backendURL")
         ThermyxKeychain.set(backendToken, for: Self.tokenAccount)
         defaults.set(deviceID, forKey: "thermyx.deviceID")
+        defaults.set(relayRole, forKey: "thermyx.relayRole")
+        defaults.set(relayTextingEnabled, forKey: "thermyx.relayTextingEnabled")
+        defaults.set(shareLocationDuringEvents, forKey: "thermyx.shareLocationDuringEvents")
         defaults.set(try? JSONEncoder().encode(contacts), forKey: "thermyx.contacts")
         defaults.set(temperatureUnit.rawValue, forKey: "thermyx.temperatureUnit")
         defaults.set(insightsRange.rawValue, forKey: "thermyx.insightsRange")

@@ -165,7 +165,7 @@ struct TrustedMemberRoot: View {
             if ThermyxPreviewHarness.showsSampleShift { member.isShowingSample = true }
             #endif
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-            member.start(settings: settings, deviceID: settings.deviceID)
+            member.start(settings: settings)
         }
         .onDisappear { member.stop() }
     }

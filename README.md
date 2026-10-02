@@ -275,8 +275,7 @@ responds), the Auto target slider, the heat lockout, and alerts.
 `simulatorOnboarding` does the same from the start of onboarding. A
 **Simulated conditions** card at the top of Safety → Advanced sets the air
 temperature and whether the wearer is tiring, which is enough to walk the risk
-level up every rung. Every screen carries a "Simulated insoles · not live
-readings" strip while it runs, and none of it is compiled into Release.
+level up every rung. Every screen carries a "Simulated — not live sensor data" strip while it runs, and none of it is compiled into Release.
 
 ### Retiring the harness entirely
 

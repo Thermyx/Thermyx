@@ -92,9 +92,10 @@ final class ThermyxAlertCoordinator: ObservableObject {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thermyx.\(level.rawValue)", content: content, trigger: nil))
     }
 
-    /// Pushes an event to the shared relay, which forwards approved SMS to the
-    /// trusted circle. Only contacts the user enabled are included, and only
-    /// when the event is meant to text anyone.
+    /// Pushes an event to the relay. Approved watchers see its level and
+    /// freshness. Trusted contacts' numbers go along only when the relay has
+    /// texting turned on, and location only when the wearer consented and a
+    /// safety event (High, Critical, SOS) is active.
     private func send(
         kind: ThermyxAlertEvent.Kind,
         level: ThermyxRiskLevel,
@@ -104,41 +105,53 @@ final class ThermyxAlertCoordinator: ObservableObject {
         settings: ThermyxSettingsStore,
         texts: Bool
     ) {
-        guard !settings.backendURL.isEmpty else { return }
+        guard settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
         lastPostAt = .now
 
-        // The readings of the foot that drove this, or the hotter one: never
-        // an average, which would hide the foot that matters.
-        let driver: ThermyxReading? = focus.flatMap { reading[$0] }
-            ?? reading.present.max { ($0.footTemperatureC ?? -.infinity) < ($1.footTemperatureC ?? -.infinity) }
-        let summary = driver.map(ThermyxAlertEvent.AlertReadings.init)
-            ?? .init(footTemperatureC: nil, ambientTemperatureC: nil, gaitStability: nil, pressureBalance: nil, batteryPercent: nil)
-
-        var event = ThermyxAlertEvent(
-            deviceID: settings.deviceID,
+        let activeEvent = kind == .sos || level.severity >= ThermyxRiskLevel.high.severity
+        let consented = settings.shareLocationDuringEvents
+        let recipients = texts && settings.relayTextingEnabled
+            ? settings.contacts.filter(\.enabled).map(\.phoneNumber)
+            : nil
+        let event = ThermyxAlertAPIClient.Event(
             level: level.rawValue,
-            reasons: reasons,
-            recipients: texts ? settings.contacts.filter(\.enabled).map(\.phoneNumber) : [],
-            timestamp: .now,
-            readings: summary
+            kind: kind.rawValue,
+            reasons: texts ? reasons : [],
+            recipients: recipients,
+            location: consented && activeEvent ? location.recent : nil,
+            locationConsent: consented
         )
-        event.kind = kind
-        event.foot = driver?.foot.rawValue
-        event.left = reading.left.map(ThermyxAlertEvent.AlertReadings.init)
-        event.right = reading.right.map(ThermyxAlertEvent.AlertReadings.init)
-        // Location only rides on events that text someone, never heartbeats.
-        if texts { event.location = location.recent }
 
-        let payload = event
+        let url = settings.backendURL
+        let token = settings.backendToken
         Task {
             do {
-                try await apiClient.send(event: payload, backendURL: settings.backendURL, token: settings.backendToken)
+                let result = try await apiClient.send(event: event, baseURL: url, token: token)
                 self.lastBackendError = nil
-                if texts { self.lastSharedAt = .now }
+                if let enabled = result.smsEnabled { settings.relayTextingEnabled = enabled }
+                if (result.texted ?? 0) > 0 { self.lastSharedAt = .now }
             } catch {
                 self.lastBackendError = error.localizedDescription
             }
         }
+    }
+
+    /// Withdraws location sharing on the relay straight away, rather than
+    /// waiting for the next event.
+    func stopSharingLocation(level: ThermyxRiskLevel, settings: ThermyxSettingsStore) {
+        settings.shareLocationDuringEvents = false
+        let current = level == .unavailable ? ThermyxRiskLevel.normal : level
+        send(kind: .status, level: current, reasons: [], focus: nil, reading: .empty, settings: settings, texts: false)
+    }
+
+    /// The text a trusted contact would receive, for the labelled preview
+    /// shown while texting is off.
+    static func previewMessage(level: ThermyxRiskLevel, reasons: [String], deviceID: String, includesLocation: Bool) -> String {
+        var parts = [deviceID.isEmpty ? "Thermyx \(level.rawValue) alert." : "Thermyx \(level.rawValue) on \(deviceID)."]
+        if !reasons.isEmpty { parts.append(reasons.joined(separator: " ")) }
+        if includesLocation { parts.append("Location: (a map link to where you are)") }
+        parts.append("Please check on them.")
+        return parts.joined(separator: " ")
     }
 }
 
