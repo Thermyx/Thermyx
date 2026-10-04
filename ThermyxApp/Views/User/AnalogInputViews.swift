@@ -94,7 +94,7 @@ struct AnalogInputCard: View {
                         .foregroundStyle(Thermyx.Ink.textPrimary)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Raw \(latest.raw) / \(ThermyxSensorProtocol.maxRaw)")
+                    Text(verbatim: "Raw \(latest.raw) / \(ThermyxSensorProtocol.maxRaw)")
                         .font(ThermyxFont.rowTitleRegular)
                         .foregroundStyle(Thermyx.Ink.textSecondary)
                     Text(String(format: "%.2f V", input.volts))
@@ -219,7 +219,7 @@ struct TestBoardHomeNote: View {
                 .tracking(-0.8)
                 .foregroundStyle(Thermyx.Ink.textPrimary)
             if let last = viewModel.recentAnalog.last {
-                Text("\(AnalogInput(raw: last.raw, kind: last.kind).percent, specifier: "%.0f")% · raw \(last.raw)")
+                Text(verbatim: String(format: "%.0f%% · raw %d", AnalogInput(raw: last.raw, kind: last.kind).percent, last.raw))
                     .font(ThermyxFont.metricNumeral)
                     .monospacedDigit()
                     .foregroundStyle(Thermyx.Ink.ice)
