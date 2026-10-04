@@ -52,6 +52,10 @@ final class ThermyxSettingsStore: ObservableObject {
     /// warmest setting never trips the limit on its own.
     static let targetRange: ClosedRange<Double> = 26...38
 
+    /// What the test board's analog pin is wired to. Decides how its 0…4095
+    /// value is labelled; see AnalogSourceKind.
+    @Published var analogSourceKind: AnalogSourceKind { didSet { AnalogSourceKind.stored = analogSourceKind } }
+
     /// Which foot the per-foot screens open on.
     @Published var preferredFoot: Foot { didSet { save() } }
 
@@ -96,6 +100,7 @@ final class ThermyxSettingsStore: ObservableObject {
         soleSize = SoleSize.all.first { $0.usMens == storedSize }
         aiSuggestionsEnabled = defaults.object(forKey: "thermyx.aiSuggestionsEnabled") as? Bool ?? false
         preferredFoot = defaults.string(forKey: "thermyx.preferredFoot").flatMap(Foot.init(rawValue:)) ?? .left
+        analogSourceKind = AnalogSourceKind.stored.isAvailable ? AnalogSourceKind.stored : .testInput
         let storedTarget = defaults.double(forKey: "thermyx.targetTemperatureC")
         targetTemperatureC = storedTarget == 0 ? 31 : min(max(storedTarget, Self.targetRange.lowerBound), Self.targetRange.upperBound)
 

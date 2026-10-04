@@ -43,6 +43,11 @@ struct InsightsHubView: View {
                     availableFeet: digest.feet
                 )
 
+                // The XIAO test board's value, beside (never inside) the body charts.
+                if AnalogInputCard.isRelevant(ble: viewModel.ble, viewModel: viewModel, history: viewModel.history) {
+                    AnalogInputCard(ble: viewModel.ble, history: viewModel.history, settings: settings)
+                }
+
                 if digest.hasAny {
                     heatExposureCard(digest)
                     if digest.hasBoth { balanceCard(digest) }

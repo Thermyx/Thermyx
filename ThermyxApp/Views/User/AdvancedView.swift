@@ -19,6 +19,7 @@ struct AdvancedView: View {
     var body: some View {
         ThermyxDetailScreen(title: "Advanced") {
             DemoModeSection(ble: viewModel.ble, unit: unit)
+            AnalogSourceSection(settings: settings, ble: viewModel.ble)
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 DeviceHealthStrip(now: context.date)
             }
@@ -539,6 +540,18 @@ private struct SimulatedConditionsCard: View {
                         }
                     }
                     .tint(Thermyx.Ink.amber)
+
+                    VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+                        Text("Test input knob · \(Int((simulator.knob * 100).rounded()))%")
+                            .font(ThermyxFont.rowTitle)
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                        Slider(value: $simulator.knob, in: 0...1)
+                            .tint(Thermyx.Ink.amber)
+                            .accessibilityLabel("Simulated test input knob")
+                        Text("Stands in for the potentiometer on the XIAO test board. Shown on Insights → Test input.")
+                            .font(ThermyxFont.caption)
+                            .foregroundStyle(Thermyx.Ink.textMuted)
+                    }
 
                     Text("Hot air is Caution; add a tiring wearer for High; add an insole fault for Critical. The foot hitting 40° while heating is High on its own.")
                         .font(ThermyxFont.caption)

@@ -147,3 +147,34 @@ is authoritative when both are present.
 Nothing in the app assumes a pair. One insole connected and one not is an
 ordinary state: the connected foot shows live data, the other shows its own
 empty state, and no value from one foot is ever shown for the other.
+
+## Single-sensor test board (XIAO ESP32-C3)
+
+A second, much simpler firmware is supported alongside the insole protocol
+above, for bench tests with one analog input. The app scans for both and
+handles each on its own path (`ThermyxSensorProtocol`,
+`Models/ThermyxAnalogInput.swift`).
+
+| Item | Value |
+|---|---|
+| Device name | `Thermyx` |
+| Service UUID | `7a1b0001-3c5d-4e6f-8a9b-0c1d2e3f4a5b` |
+| Characteristic UUID | `7a1b0002-3c5d-4e6f-8a9b-0c1d2e3f4a5b` (READ, NOTIFY) |
+| Value | UTF-8 text of an integer `0`–`4095` (12-bit ADC, 0–3.3 V), e.g. `2048` |
+| Rate | About every 500 ms |
+
+- The app connects to the board **by itself** whenever Bluetooth is on and no
+  board is connected: no list, no tap. It reads the value once on connect,
+  then subscribes to notifications. A dropped board is reconnected
+  automatically; a board the user disconnects stays disconnected until the
+  next scan.
+- Anything that is not a whole number in 0–4095 is rejected, not clamped.
+- The board occupies one foot slot (left, unless a full insole is remembered
+  there) and takes no commands; Cool / Auto / Heat need a full insole.
+- **What the value means is set in the app, never assumed** (Safety →
+  Advanced → Test board): *Test input* (raw + percent, the default),
+  *FSR pressure* (load %), or *Temperature*, which only appears once a
+  calibration is set in code (`AnalogTemperatureCalibration.current`, with
+  ready-made `.ntcDivider()` and `.linear(…)` options). A test input or FSR
+  value is kept in its own history and never feeds temperature charts, risk
+  levels, alerts, or Apple Health.

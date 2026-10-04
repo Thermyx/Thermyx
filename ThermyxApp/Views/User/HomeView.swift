@@ -297,21 +297,27 @@ struct HomeView: View {
             }
             .padding(.horizontal, Thermyx.Space.screen)
 
-            VStack(spacing: Thermyx.Space.m) {
-                Text("No insoles connected")
-                    .font(ThermyxFont.featureHeadline)
-                    .tracking(-0.8)
-                    .foregroundStyle(Thermyx.Ink.textPrimary)
-                    .multilineTextAlignment(.center)
+            if !viewModel.ble.sensorFeet.isEmpty {
+                TestBoardHomeNote(ble: viewModel.ble)
+            } else {
+                VStack(spacing: Thermyx.Space.m) {
+                    Text("No insoles connected")
+                        .font(ThermyxFont.featureHeadline)
+                        .tracking(-0.8)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                        .multilineTextAlignment(.center)
 
-                Text("Thermyx shows no estimated readings. Pair a left or right insole — or both — and live temperature, pressure, and movement start here.")
-                    .font(ThermyxFont.body)
-                    .foregroundStyle(Thermyx.Ink.textSupporting)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text("Thermyx shows no estimated readings. Pair a left or right insole — or both — and live temperature, pressure, and movement start here.")
+                        .font(ThermyxFont.body)
+                        .foregroundStyle(Thermyx.Ink.textSupporting)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             VStack(spacing: Thermyx.Space.m) {
+                SensorLinkStatusPill(ble: viewModel.ble)
+
                 Button(viewModel.isScanning ? "Stop scanning" : "Scan for Thermyx") {
                     viewModel.toggleScan()
                 }

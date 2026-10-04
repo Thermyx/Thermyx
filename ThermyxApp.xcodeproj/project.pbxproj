@@ -92,6 +92,9 @@
 		2781D83AB82D1F86877073DF /* ThermyxAlertPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DBE9CA25A2EB397CE570570 /* ThermyxAlertPolicy.swift */; };
 		0AAB63D0C414B6EA3320CE32 /* ThermalCommandTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B2C6485BEF4CBE47A54BBDC /* ThermalCommandTracker.swift */; };
 		3555643C39A1DCE1266B16B3 /* ProtocolCommandAlertTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1196E000141530EE7C755DAF /* ProtocolCommandAlertTests.swift */; };
+		4B8DEE5E3629D05D501C8388 /* ThermyxAnalogInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = F99ECDA89BAC7E61CBF2DFD1 /* ThermyxAnalogInput.swift */; };
+		D8D868DAD931512D221960B0 /* AnalogInputViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA426E18AF16119B051B71B7 /* AnalogInputViews.swift */; };
+		D71EC6B0EF4EB2E82BD6FA4C /* AnalogInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17A741DAAEE524EB56A0DAD0 /* AnalogInputTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -192,6 +195,9 @@
 		8DBE9CA25A2EB397CE570570 /* ThermyxAlertPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxAlertPolicy.swift; sourceTree = "<group>"; };
 		1B2C6485BEF4CBE47A54BBDC /* ThermalCommandTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermalCommandTracker.swift; sourceTree = "<group>"; };
 		1196E000141530EE7C755DAF /* ProtocolCommandAlertTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolCommandAlertTests.swift; sourceTree = "<group>"; };
+		F99ECDA89BAC7E61CBF2DFD1 /* ThermyxAnalogInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThermyxAnalogInput.swift; sourceTree = "<group>"; };
+		AA426E18AF16119B051B71B7 /* AnalogInputViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalogInputViews.swift; sourceTree = "<group>"; };
+		17A741DAAEE524EB56A0DAD0 /* AnalogInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalogInputTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -285,6 +291,7 @@
 		8172580AC610E376FDC2460A /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				F99ECDA89BAC7E61CBF2DFD1 /* ThermyxAnalogInput.swift */,
 				CDFE6B286F38CF7308427630 /* ThermyxProtocol.swift */,
 				9ECF5AE77D3658085A02292D /* PersonalBaseline.swift */,
 				F43BCD37280162949AF653C2 /* RiskExplanation.swift */,
@@ -342,6 +349,7 @@
 		B1A2A94A3E212D2F1E08CEC4 /* User */ = {
 			isa = PBXGroup;
 			children = (
+				AA426E18AF16119B051B71B7 /* AnalogInputViews.swift */,
 				141E29F46386BBDCE7B59D98 /* PrivacyViews.swift */,
 				BDEE10DA2D9131CDFEC34AF3 /* ExplainViews.swift */,
 				99537A5862C2CFDAC1E408E0 /* RelayViews.swift */,
@@ -419,6 +427,7 @@
 		4CCD5FF63852A14DC7E90B12 /* ThermyxAppTests */ = {
 			isa = PBXGroup;
 			children = (
+				17A741DAAEE524EB56A0DAD0 /* AnalogInputTests.swift */,
 				1196E000141530EE7C755DAF /* ProtocolCommandAlertTests.swift */,
 				2BBAEF8A007F498DD5842387 /* FormattingAndModelTests.swift */,
 				39D8203FAE3C1551BB3ABA81 /* RiskEngineTests.swift */,
@@ -533,6 +542,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D8D868DAD931512D221960B0 /* AnalogInputViews.swift in Sources */,
+				4B8DEE5E3629D05D501C8388 /* ThermyxAnalogInput.swift in Sources */,
 				0AAB63D0C414B6EA3320CE32 /* ThermalCommandTracker.swift in Sources */,
 				2781D83AB82D1F86877073DF /* ThermyxAlertPolicy.swift in Sources */,
 				5FA2762F3DD9D0EB2875CF67 /* ThermyxProtocol.swift in Sources */,
@@ -608,6 +619,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D71EC6B0EF4EB2E82BD6FA4C /* AnalogInputTests.swift in Sources */,
 				3555643C39A1DCE1266B16B3 /* ProtocolCommandAlertTests.swift in Sources */,
 				C9936D8F2F0E27287FF57089 /* FormattingAndModelTests.swift in Sources */,
 				1260EC7EB22CECA34A50BFA0 /* RiskEngineTests.swift in Sources */,

@@ -15,6 +15,9 @@ final class ThermyxHistoryStore: ObservableObject {
     @Published private(set) var minuteSamples: [ThermyxHistorySample] = []
     @Published private(set) var hourSamples: [ThermyxHistorySample] = []
     @Published private(set) var events: [ThermyxRiskEvent] = []
+    /// Minute buckets from the test board's analog pin, kept apart from the
+    /// body readings so a knob can never land on a temperature chart.
+    @Published private(set) var analogSamples: [AnalogSample] = []
 
     private static let minuteRetention: TimeInterval = 7 * 24 * 3600
     private static let hourRetention: TimeInterval = 180 * 24 * 3600
@@ -29,6 +32,8 @@ final class ThermyxHistoryStore: ObservableObject {
         var minuteSamples: [ThermyxHistorySample]
         var hourSamples: [ThermyxHistorySample]
         var events: [ThermyxRiskEvent]
+        /// Optional so history saved by older builds still loads.
+        var analogSamples: [AnalogSample]?
     }
 
     private static var fileURL: URL {
@@ -54,6 +59,7 @@ final class ThermyxHistoryStore: ObservableObject {
         minuteSamples = archive.minuteSamples
         hourSamples = archive.hourSamples
         events = archive.events
+        analogSamples = archive.analogSamples ?? []
         prune()
     }
 
@@ -72,6 +78,27 @@ final class ThermyxHistoryStore: ObservableObject {
         // long. Once a minute is far more often than anything can expire.
         if Date.now.timeIntervalSince(lastPrune) > 60 { prune() }
         scheduleSave()
+    }
+
+    /// Folds one analog value into its minute. Changing what the pin is
+    /// wired to starts a fresh bucket rather than mixing the two.
+    func recordAnalog(_ analog: AnalogInput, at time: Date) {
+        let start = Date(timeIntervalSince1970: (time.timeIntervalSince1970 / 60).rounded(.down) * 60)
+        if let index = analogSamples.lastIndex(where: { $0.start == start && $0.kind == analog.kind }) {
+            analogSamples[index].add(analog.raw)
+        } else {
+            var sample = AnalogSample(start: start, kind: analog.kind)
+            sample.add(analog.raw)
+            analogSamples.append(sample)
+        }
+        if Date.now.timeIntervalSince(lastPrune) > 60 { prune() }
+        scheduleSave()
+    }
+
+    /// Analog minutes in a window, for the Test input chart.
+    func analogHistory(for range: InsightsRange, style: InsightsPeriodStyle = .standard, now: Date = .now) -> [AnalogSample] {
+        let window = range.window(style: style, now: now)
+        return analogSamples.filter { window.contains($0.start) }
     }
 
     private func append(
@@ -219,6 +246,7 @@ final class ThermyxHistoryStore: ObservableObject {
         minuteSamples.removeAll()
         hourSamples.removeAll()
         events.removeAll()
+        analogSamples.removeAll()
         openEvent.removeAll()
         scheduleSave()
     }
@@ -229,6 +257,7 @@ final class ThermyxHistoryStore: ObservableObject {
         minuteSamples.removeAll { $0.start < now.addingTimeInterval(-Self.minuteRetention) }
         hourSamples.removeAll { $0.start < now.addingTimeInterval(-Self.hourRetention) }
         events.removeAll { $0.timestamp < now.addingTimeInterval(-Self.eventRetention) }
+        analogSamples.removeAll { $0.start < now.addingTimeInterval(-Self.minuteRetention) }
     }
 
     private func scheduleSave() {
@@ -241,7 +270,7 @@ final class ThermyxHistoryStore: ObservableObject {
     }
 
     func save() async {
-        let archive = Archive(minuteSamples: minuteSamples, hourSamples: hourSamples, events: events)
+        let archive = Archive(minuteSamples: minuteSamples, hourSamples: hourSamples, events: events, analogSamples: analogSamples)
         let url = Self.fileURL
         await Task.detached(priority: .utility) {
             guard let data = try? JSONEncoder().encode(archive) else { return }
