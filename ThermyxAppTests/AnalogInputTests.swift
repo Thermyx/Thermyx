@@ -254,4 +254,30 @@ final class AnalogInputTests: XCTestCase {
         XCTAssertEqual(BoardLinkState.connected("Thermyx 1").label, "Connected · Thermyx 1")
         XCTAssertEqual(BoardLinkState.reconnecting("Thermyx").label, "Reconnecting…")
     }
+
+    // MARK: - Device list
+
+    private typealias Device = ThermyxBLEService.DiscoveredDevice
+
+    func testDeviceListOrderIgnoresSignalStrength() {
+        let board = Device(id: UUID(), name: "Thermyx 1", rssi: -90, advertisedFoot: nil, kind: .sensorBoard)
+        let insole = Device(id: UUID(), name: "thermyx-left-01", rssi: -40, advertisedFoot: .left, kind: .insole)
+        let namedThermyx = Device(id: UUID(), name: "Thermyx", rssi: -50, advertisedFoot: nil, kind: .other)
+        let speaker = Device(id: UUID(), name: "Speaker", rssi: -30, advertisedFoot: nil, kind: .other)
+        let unnamed = Device(id: UUID(), name: "Unnamed device", rssi: -20, advertisedFoot: nil, kind: .other, isNamed: false)
+        let sorted = [unnamed, speaker, namedThermyx, insole, board].sorted(by: Device.listOrder)
+        XCTAssertEqual(sorted.map(\.id), [board, insole, namedThermyx, speaker, unnamed].map(\.id))
+        XCTAssertTrue(namedThermyx.looksLikeThermyx, "A Thermyx name is listed with Thermyx devices")
+        XCTAssertFalse(speaker.looksLikeThermyx)
+    }
+
+    func testDeviceMergeKeepsNameAndKindAndSmoothsSignal() {
+        let id = UUID()
+        let seen = Device(id: id, name: "Thermyx", rssi: -60, advertisedFoot: nil, kind: .sensorBoard)
+        let bare = Device(id: id, name: "Unnamed device", rssi: -70, advertisedFoot: nil, kind: .other, isNamed: false)
+        let merged = seen.merged(with: bare)
+        XCTAssertEqual(merged.name, "Thermyx", "A packet without a name keeps the name")
+        XCTAssertEqual(merged.kind, .sensorBoard, "A packet without services keeps the kind")
+        XCTAssertEqual(merged.rssi, -63, "Signal strength is smoothed")
+    }
 }

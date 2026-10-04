@@ -50,8 +50,18 @@ struct ConnectDeviceView: View {
     @State private var scanning = false
     @State private var showAll = false
 
-    private var devices: [ThermyxBLEService.DiscoveredDevice] {
-        ble.discovered.filter { showAll || $0.kind != .other }
+    /// Thermyx devices: by service UUID, or named Thermyx.
+    private var thermyxDevices: [ThermyxBLEService.DiscoveredDevice] {
+        ble.discovered.filter(\.looksLikeThermyx)
+    }
+
+    /// Everything else with a name, only with "Show all Bluetooth devices".
+    private var otherDevices: [ThermyxBLEService.DiscoveredDevice] {
+        showAll ? ble.discovered.filter { !$0.looksLikeThermyx && $0.isNamed } : []
+    }
+
+    private var hiddenUnnamed: Int {
+        showAll ? ble.discovered.filter { !$0.looksLikeThermyx && !$0.isNamed }.count : 0
     }
 
     var body: some View {
@@ -134,23 +144,41 @@ struct ConnectDeviceView: View {
 
     @ViewBuilder
     private var deviceList: some View {
-        if devices.isEmpty {
-            Text(scanning ? "Looking for devices…" : "Tap Scan to look for nearby devices.")
-                .font(ThermyxFont.body)
-                .foregroundStyle(Thermyx.Ink.textMuted)
-        } else {
-            ThermyxGroupedCard {
-                ForEach(Array(devices.enumerated()), id: \.element.id) { index, device in
-                    if index > 0 { ThermyxDivider() }
-                    Button {
-                        viewModel.connect(to: device)
-                        scanning = false
-                    } label: {
-                        DeviceRow(device: device)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Connects to this device")
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Thermyx devices")
+            if thermyxDevices.isEmpty {
+                Text(scanning ? "Looking for Thermyx devices…" : "Tap Scan to look for nearby devices.")
+                    .font(ThermyxFont.body)
+                    .foregroundStyle(Thermyx.Ink.textMuted)
+            } else {
+                rows(thermyxDevices)
+            }
+
+            if showAll {
+                SectionLabel("Other Bluetooth devices")
+                    .padding(.top, Thermyx.Space.s)
+                if !otherDevices.isEmpty { rows(otherDevices) }
+                if hiddenUnnamed > 0 {
+                    Text(verbatim: "\(hiddenUnnamed) unnamed device\(hiddenUnnamed == 1 ? "" : "s") not listed")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
                 }
+            }
+        }
+    }
+
+    private func rows(_ list: [ThermyxBLEService.DiscoveredDevice]) -> some View {
+        ThermyxGroupedCard {
+            ForEach(Array(list.enumerated()), id: \.element.id) { index, device in
+                if index > 0 { ThermyxDivider() }
+                Button {
+                    viewModel.connect(to: device)
+                    scanning = false
+                } label: {
+                    DeviceRow(device: device)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Connects to this device")
             }
         }
     }
@@ -182,7 +210,7 @@ private struct DeviceRow: View {
     var body: some View {
         HStack(spacing: Thermyx.Space.m) {
             Image(systemName: icon)
-                .foregroundStyle(device.kind == .other ? Thermyx.Ink.textFaint : Thermyx.Ink.ice)
+                .foregroundStyle(device.looksLikeThermyx ? Thermyx.Ink.ice : Thermyx.Ink.textFaint)
                 .frame(width: 24)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: device.name)
@@ -221,7 +249,10 @@ private struct DeviceRow: View {
         switch device.kind {
         case .sensorBoard: return "Thermyx sensor"
         case .insole: return device.advertisedFoot.map { "Thermyx insole · \($0.label)" } ?? "Thermyx insole"
-        case .other: return "Other Bluetooth device"
+        case .other:
+            return device.looksLikeThermyx
+                ? "Named Thermyx · sensor service not advertised"
+                : "Other Bluetooth device"
         }
     }
 }

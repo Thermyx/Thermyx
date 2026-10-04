@@ -195,6 +195,14 @@ readings, so they never drive risk levels, alerts, or Apple Health writes.
   Safety → Advanced) scans for the board and insole service UUIDs and lists
   each device's advertised name and RSSI. "Show all Bluetooth devices" (off
   by default) lists everything nearby.
+- The list keeps a fixed order (Thermyx devices, then other named devices,
+  each by name) and does not re-sort as signal strength changes. Unnamed
+  devices are counted, not listed. Devices not heard for 12 s drop off.
+- The firmware should put the service UUID in its advertisement (ESP32
+  Arduino: `adv->addServiceUUID(SERVICE_UUID); adv->setScanResponse(true);`)
+  and restart advertising after a disconnect. A board that only advertises
+  its name still appears, under "Show all Bluetooth devices", grouped with
+  Thermyx devices.
 - The user taps a device to connect. The app reads the value once, then
   subscribes to notifications. A device without the sensor service is
   disconnected with a message.

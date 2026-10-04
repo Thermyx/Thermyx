@@ -60,7 +60,45 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         /// Declared by the peripheral name, when the firmware says so.
         let advertisedFoot: Foot?
         var kind: Kind = .insole
+        /// False when the device advertises no name at all.
+        var isNamed = true
         var isStrong: Bool { rssi > -75 }
+
+        /// Thermyx by service UUID, or a name that says Thermyx.
+        var looksLikeThermyx: Bool {
+            kind != .other || name.localizedCaseInsensitiveContains("thermyx")
+        }
+
+        /// Fixed list order, so rows don't jump as signal strength changes:
+        /// Thermyx devices first, then named, then unnamed; by name within.
+        static func listOrder(_ a: DiscoveredDevice, _ b: DiscoveredDevice) -> Bool {
+            func group(_ d: DiscoveredDevice) -> Int {
+                switch d.kind {
+                case .sensorBoard: return 0
+                case .insole: return 1
+                case .other: return d.looksLikeThermyx ? 2 : (d.isNamed ? 3 : 4)
+                }
+            }
+            if group(a) != group(b) { return group(a) < group(b) }
+            let byName = a.name.localizedCaseInsensitiveCompare(b.name)
+            if byName != .orderedSame { return byName == .orderedAscending }
+            return a.id.uuidString < b.id.uuidString
+        }
+
+        /// Merges a new advertisement into what is already listed. iOS
+        /// reports advertising and scan-response packets separately, so one
+        /// may lack the name or service list: never lose what was seen.
+        /// Signal strength is smoothed so the number doesn't flicker.
+        func merged(with update: DiscoveredDevice) -> DiscoveredDevice {
+            DiscoveredDevice(
+                id: id,
+                name: update.isNamed ? update.name : name,
+                rssi: Int((Double(rssi) * 0.7 + Double(update.rssi) * 0.3).rounded()),
+                advertisedFoot: update.advertisedFoot ?? advertisedFoot,
+                kind: update.kind != .other ? update.kind : kind,
+                isNamed: isNamed || update.isNamed
+            )
+        }
     }
 
     // MARK: Test board
@@ -81,6 +119,12 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     private var boardName = "Thermyx"
     /// Whether the running scan lists every device, not just Thermyx ones.
     private var scanShowsAll = false
+    /// When each listed device was last heard, to drop ones that left.
+    private var lastHeard: [UUID: Date] = [:]
+    /// When each row was last redrawn, to hold the list steady.
+    private var lastShown: [UUID: Date] = [:]
+    /// Devices not heard for this long leave the list.
+    nonisolated static let discoveredTimeout: TimeInterval = 12
 
     // MARK: Private
 
@@ -197,8 +241,21 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 
     private func startWatchdog() {
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.checkForStaleFeet() }
+            Task { @MainActor in
+                self?.checkForStaleFeet()
+                self?.pruneDiscovered()
+            }
         }
+    }
+
+    /// Drops devices that stopped advertising, so the list shows what is
+    /// actually nearby.
+    private func pruneDiscovered(now: Date = .now) {
+        guard simulator == nil, !lastHeard.isEmpty else { return }
+        let gone = Set(lastHeard.filter { now.timeIntervalSince($0.value) > Self.discoveredTimeout }.keys)
+        guard !gone.isEmpty else { return }
+        for id in gone { lastHeard[id] = nil; lastShown[id] = nil }
+        discovered.removeAll { gone.contains($0.id) }
     }
 
     /// A connected insole that stops sending keeps its link up, so a
@@ -282,6 +339,8 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         }
         errorMessage = nil
         discovered.removeAll()
+        lastHeard.removeAll()
+        lastShown.removeAll()
         scanShowsAll = showAll
         if boardPeripheral == nil { boardState = .scanning }
         central.scanForPeripherals(
@@ -585,9 +644,13 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        let name = peripheral.name
-            ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
-            ?? "Unknown device"
+        // The advertised name first: it is what the firmware sends now,
+        // where peripheral.name can be a name iOS cached earlier.
+        let advertisedName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
+            ?? peripheral.name
+        let trimmedName = advertisedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isNamed = !(trimmedName ?? "").isEmpty
+        let name = isNamed ? trimmedName! : "Unnamed device"
         let strength = RSSI.intValue
         let identifier = peripheral.identifier
         let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? [])
@@ -610,14 +673,27 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
                 name: name,
                 rssi: strength,
                 advertisedFoot: kind == .insole ? Self.foot(fromName: name) : nil,
-                kind: kind
+                kind: kind,
+                isNamed: isNamed
             )
+            let now = Date.now
+            self.lastHeard[identifier] = now
             if let index = self.discovered.firstIndex(where: { $0.id == identifier }) {
-                self.discovered[index] = device
+                let previous = self.discovered[index]
+                let next = previous.merged(with: device)
+                // Redraw a row at most once a second unless what it says
+                // changed, so the list stays readable.
+                let identityChanged = next.name != previous.name || next.kind != previous.kind
+                let recentlyShown = self.lastShown[identifier].map { now.timeIntervalSince($0) < 1 } ?? false
+                guard identityChanged || !recentlyShown else { return }
+                self.lastShown[identifier] = now
+                self.discovered[index] = next
+                if identityChanged { self.discovered.sort(by: DiscoveredDevice.listOrder) }
             } else {
+                self.lastShown[identifier] = now
                 self.discovered.append(device)
+                self.discovered.sort(by: DiscoveredDevice.listOrder)
             }
-            self.discovered.sort { $0.rssi > $1.rssi }
         }
     }
 
@@ -855,7 +931,7 @@ extension ThermyxBLEService {
 
 extension ThermyxBLEService {
     fileprivate func simSetDiscovered(_ devices: [DiscoveredDevice]) {
-        discovered = devices.sorted { $0.rssi > $1.rssi }
+        discovered = devices.sorted(by: DiscoveredDevice.listOrder)
     }
 
     fileprivate func simAttach(_ foot: Foot, name: String) {
