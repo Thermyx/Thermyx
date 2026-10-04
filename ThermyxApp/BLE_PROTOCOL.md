@@ -223,6 +223,9 @@ readings, so they never drive risk levels, alerts, or Apple Health writes.
   only temperature (TMP102 before NTC, then the lowest channel). Otherwise the
   main sensor in its own units, in the order FSR, KNOB, unknown. With nothing
   connected: "No sensor connected".
+- The insole model stays on Home. With only the board connected, its slot
+  (left) draws active and the other sole is dimmed. A pressed FSR lights the
+  heel in ice blue; temperature is never drawn on the model from the board.
 - **Insights:** one card per connected sensor with its live value, a 2-minute
   graph, and per-minute history, in its own units.
 
@@ -243,7 +246,8 @@ raw 2048 ≈ 25.0 °C.
 Wiring: 3.3 V → FSR402 → ADC node → 10 kΩ → GND, 12-bit ADC over 0–3.3 V.
 
 1. V = raw / 4095 × 3.3
-2. raw < 15 is no touch: 0 N
+2. raw < 250 is no touch: 0 N (the ESP32's ADC never reads a true 0, so a
+   lower cutoff would show a small force at rest)
 3. R_fsr = 10,000 × (3.3 − V) / V
 4. G = 1,000,000 / R_fsr µS (the app computes 100 × V / (3.3 − V), so
    raw 4095 gives an infinite conductance instead of dividing by zero)

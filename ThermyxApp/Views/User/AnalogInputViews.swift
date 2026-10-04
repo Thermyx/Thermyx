@@ -264,11 +264,14 @@ private struct DeviceRow: View {
 struct SensorHomeSwitch<Empty: View>: View {
     @ObservedObject var board: SensorBoardStore
     @ObservedObject var ble: ThermyxBLEService
+    let unit: TemperatureUnit
+    /// Tapping a sole scans for that foot's insole, as on the empty state.
+    var onScan: (Foot) -> Void
     @ViewBuilder var empty: Empty
 
     var body: some View {
         if ble.boardState.isConnected || !board.table.connected.isEmpty {
-            SensorMainView(board: board, ble: ble)
+            SensorMainView(board: board, ble: ble, unit: unit, onScan: onScan)
         } else {
             empty
         }
@@ -277,10 +280,16 @@ struct SensorHomeSwitch<Empty: View>: View {
 
 /// The main page rule: temperature only if any temperature sensor is
 /// connected (TMP102 before NTC, then the lowest channel); otherwise FSR,
-/// then KNOB, then unknown; otherwise "No sensor connected".
+/// then KNOB, then unknown; otherwise "No sensor connected". The insole
+/// model sits below the reading: the board's slot active, the other dimmed.
 struct SensorMainView: View {
     @ObservedObject var board: SensorBoardStore
     @ObservedObject var ble: ThermyxBLEService
+    let unit: TemperatureUnit
+    var onScan: (Foot) -> Void
+
+    /// The slot the board fills on the model.
+    static let boardFoot: Foot = .left
 
     var body: some View {
         VStack(spacing: Thermyx.Space.l) {
@@ -323,6 +332,18 @@ struct SensorMainView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            let press = SensorReadout.fsrPress(board.table.connected, calibration: board.calibration)
+            BilateralSoleView(
+                unit: unit,
+                onScan: onScan,
+                boardFoot: Self.boardFoot,
+                boardPressedZone: press == nil ? nil : SensorReadout.fsrZone,
+                boardPressStrength: press ?? 0
+            )
+            .padding(.horizontal, Thermyx.Space.screen - Thermyx.Space.wide)
+            .frame(maxHeight: .infinity)
+            .animation(.easeOut(duration: 0.2), value: press)
 
             if ble.isDemoMode {
                 Text("Simulated — not live sensor data")

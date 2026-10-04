@@ -229,12 +229,13 @@ enum NTCThermistor {
 
 /// FSR402 wired 3.3 V → FSR → ADC → 10 kΩ → GND.
 ///
-/// V = raw/4095 × 3.3; raw < 15 is 0 N; R = 10 kΩ × (3.3 − V)/V;
+/// V = raw/4095 × 3.3; raw < 250 is 0 N (the ESP32 ADC never reads a true
+/// 0, so a lower cutoff shows a false force at rest); R = 10 kΩ × (3.3 − V)/V;
 /// G = 1,000,000 / R µS; F = G / 80 N, clamped to 0–20 N, × scale;
 /// kPa = F / 0.1267 (12.7 mm round pad). Approximations from the datasheet.
 enum FSR402 {
     static let fixedOhms = 10_000.0
-    static let noTouchBelowRaw = 15
+    static let noTouchBelowRaw = 250
     static let microsiemensPerNewton = 80.0
     static let maxForceN = 20.0
     static let activeAreaFactor = 0.1267
@@ -349,6 +350,21 @@ enum SensorReadout {
         guard !channel.ntcWindow.isEmpty else { return nil }
         let mean = channel.ntcWindow.reduce(0, +) / Double(channel.ntcWindow.count) + calibration.ntcOffsetC
         return NTCThermistor.displayRange.contains(mean) ? mean : nil
+    }
+
+    /// The zone a board FSR lights on the Home sole. The board doesn't say
+    /// where its pad sits; the heel is where a single test pad usually goes.
+    static let fsrZone: FootZone = .heel
+
+    /// How hard the strongest connected FSR is pressed, 0…1 of its full
+    /// scale, or nil when none is pressed (below the no-touch cutoff).
+    static func fsrPress(_ channels: [SensorChannel], calibration: SensorCalibration) -> Double? {
+        let forces = channels
+            .filter { $0.key.type == .fsr }
+            .compactMap { $0.value.raw }
+            .map { FSR402.forceNewtons(raw: $0, scale: calibration.fsrScale) }
+        guard let strongest = forces.max(), strongest > 0 else { return nil }
+        return min(strongest / (FSR402.maxForceN * calibration.fsrScale), 1)
     }
 
     private static func temperature(_ c: Double, title: String) -> SensorDisplay {

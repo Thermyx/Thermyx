@@ -18,6 +18,12 @@ struct BilateralSoleView: View {
     let unit: TemperatureUnit
     /// Called when the user asks to pair a specific foot.
     var onScan: (Foot) -> Void
+    /// The slot a single-sensor test board occupies while no insole is
+    /// connected. That sole draws active; the other stays dimmed.
+    var boardFoot: Foot?
+    /// The zone an FSR on the board is pressing, and how hard (0…1).
+    var boardPressedZone: FootZone?
+    var boardPressStrength: Double = 0
 
     private var connected: [Foot] { viewModel.connectedFeet }
 
@@ -32,7 +38,16 @@ struct BilateralSoleView: View {
 
     @ViewBuilder
     private func sole(_ foot: Foot) -> some View {
-        if viewModel.isConnected(foot) {
+        if connected.isEmpty, let boardFoot {
+            if foot == boardFoot {
+                BoardSoleColumn(foot: foot, pressedZone: boardPressedZone, pressStrength: boardPressStrength)
+                    .frame(maxWidth: .infinity)
+            } else {
+                DormantSoleColumn(foot: foot, isCompact: false) { onScan(foot) }
+                    .opacity(0.45)
+                    .frame(maxWidth: .infinity)
+            }
+        } else if viewModel.isConnected(foot) {
             LiveSoleColumn(foot: foot, reading: viewModel.reading[foot], unit: unit)
                 .frame(maxWidth: .infinity)
         } else if connected.isEmpty {
@@ -65,6 +80,26 @@ private struct LiveSoleColumn: View {
                     .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
             }
             if foot == .right { SoleZoneReadouts(foot: foot, reading: reading, unit: unit) }
+        }
+    }
+}
+
+// MARK: - Test board
+
+/// The slot the single-sensor test board fills: a solid sole with no heat
+/// drawn, since the board doesn't report foot temperature.
+private struct BoardSoleColumn: View {
+    let foot: Foot
+    let pressedZone: FootZone?
+    let pressStrength: Double
+
+    var body: some View {
+        VStack(spacing: 6) {
+            SoleView(foot: foot, reading: nil, unit: .celsius, isActive: true,
+                     pressedZone: pressedZone, pressStrength: pressStrength)
+                .frame(maxHeight: 230)
+            Text("Sensor")
+                .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
         }
     }
 }

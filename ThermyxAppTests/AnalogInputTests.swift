@@ -127,10 +127,23 @@ final class AnalogInputTests: XCTestCase {
         XCTAssertEqual(shown.primary, "55")
     }
 
-    func testFSRBelowFifteenCountsIsNoTouch() {
+    func testFSRBelow250CountsIsNoTouch() {
+        // The ESP32 ADC rests above 0, so anything under 250 counts is 0 N.
         XCTAssertEqual(FSR402.forceNewtons(raw: 0, scale: 1), 0)
-        XCTAssertEqual(FSR402.forceNewtons(raw: 14, scale: 1), 0)
-        XCTAssertGreaterThan(FSR402.forceNewtons(raw: 15, scale: 1), 0)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 120, scale: 1), 0)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 249, scale: 1), 0)
+        XCTAssertGreaterThan(FSR402.forceNewtons(raw: 250, scale: 1), 0)
+    }
+
+    func testFSRPressLightsTheModelOnlyWhenPressed() throws {
+        var table = SensorTable()
+        table.ingest(SensorPacket(key: key(.fsr), value: .raw(200)), at: .now, calibration: .init())
+        XCTAssertNil(SensorReadout.fsrPress(table.connected, calibration: .init()), "At rest: nothing lit")
+        table.ingest(SensorPacket(key: key(.fsr), value: .raw(4095)), at: .now, calibration: .init())
+        XCTAssertEqual(try XCTUnwrap(SensorReadout.fsrPress(table.connected, calibration: .init())), 1)
+        var knob = SensorTable()
+        knob.ingest(SensorPacket(key: key(.knob), value: .raw(4095)), at: .now, calibration: .init())
+        XCTAssertNil(SensorReadout.fsrPress(knob.connected, calibration: .init()), "Only FSR presses")
     }
 
     func testFSRFollowsTheDocumentedFormula() {

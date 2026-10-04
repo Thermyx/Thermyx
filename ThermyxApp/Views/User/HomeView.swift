@@ -31,7 +31,10 @@ struct HomeView: View {
                 live
             } else {
                 // No insole live: the test board's main sensor, if any.
-                SensorHomeSwitch(board: viewModel.board, ble: viewModel.ble) { empty }
+                SensorHomeSwitch(board: viewModel.board, ble: viewModel.ble, unit: unit, onScan: { foot in
+                    viewModel.scanFor(foot)
+                    showingPairing = true
+                }) { empty }
             }
         }
         .background(Thermyx.Ink.midnight)

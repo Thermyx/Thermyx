@@ -13,6 +13,13 @@ struct SoleView: View {
     let reading: ThermyxReading?
     let unit: TemperatureUnit
     var showsSensorSites = false
+    /// A connected test board with no foot temperature: drawn solid, like a
+    /// live sole, but with no heat, so nothing implies a reading it lacks.
+    var isActive = false
+    /// A zone being pressed (FSR on the test board), 0…1 strength. Drawn in
+    /// ice, never in the temperature colours.
+    var pressedZone: FootZone?
+    var pressStrength: Double = 0
 
     private var zones: FootZoneTemperatures? { reading?.zones }
     private var averageC: Double? { reading?.footTemperatureC }
@@ -31,6 +38,30 @@ struct SoleView: View {
                         .mask { SoleShape(foot: foot).fill(.black) }
 
                     if showsSensorSites { sensorSites(in: rect) }
+
+                    SoleShape(foot: foot)
+                        .stroke(
+                            LinearGradient(
+                                colors: [Thermyx.Ink.ember, Thermyx.Ink.signal, Thermyx.Ink.ice],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            style: StrokeStyle(lineWidth: 2.4)
+                        )
+                } else if isActive {
+                    SoleShape(foot: foot)
+                        .fill(Thermyx.Ink.deck)
+
+                    if let pressedZone, pressStrength > 0 {
+                        bloom(
+                            tint: Thermyx.Ink.ice,
+                            centre: SoleGeometry.zoneCentre(pressedZone),
+                            radius: SoleGeometry.zoneRadius(pressedZone),
+                            intensity: 0.35 + 0.5 * min(max(pressStrength, 0), 1),
+                            in: rect
+                        )
+                        .mask { SoleShape(foot: foot).fill(.black) }
+                    }
 
                     SoleShape(foot: foot)
                         .stroke(
@@ -122,6 +153,11 @@ struct SoleView: View {
     }
 
     private var accessibilitySummary: String {
+        if reading == nil, isActive {
+            return pressedZone != nil && pressStrength > 0
+                ? "Test board connected, \(pressedZone!.label.lowercased()) pressed"
+                : "Test board connected"
+        }
         guard let reading else { return "Not connected" }
         if let zones {
             return FootZone.allCases
