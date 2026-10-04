@@ -316,7 +316,7 @@ final class ThermyxViewModel: ObservableObject {
         // the analog history.
         if let analog = entry.analogInput, entry.timestamp > (lastAnalogAt[foot] ?? .distantPast) {
             lastAnalogAt[foot] = entry.timestamp
-            recentAnalog.append(AnalogPoint(time: entry.timestamp, raw: analog.raw, kind: analog.kind))
+            recentAnalog.append(AnalogPoint(time: entry.timestamp, raw: analog.raw, kind: analog.kind, forceN: analog.forceN))
             let cutoff = entry.timestamp.addingTimeInterval(-Self.analogTraceSeconds)
             recentAnalog.removeAll { $0.time < cutoff }
             if !ble.isDemoMode { history.recordAnalog(analog, at: entry.timestamp) }

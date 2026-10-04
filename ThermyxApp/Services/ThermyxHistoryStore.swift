@@ -85,10 +85,10 @@ final class ThermyxHistoryStore: ObservableObject {
     func recordAnalog(_ analog: AnalogInput, at time: Date) {
         let start = Date(timeIntervalSince1970: (time.timeIntervalSince1970 / 60).rounded(.down) * 60)
         if let index = analogSamples.lastIndex(where: { $0.start == start && $0.kind == analog.kind }) {
-            analogSamples[index].add(analog.raw)
+            analogSamples[index].add(analog.raw, forceN: analog.forceN)
         } else {
             var sample = AnalogSample(start: start, kind: analog.kind)
-            sample.add(analog.raw)
+            sample.add(analog.raw, forceN: analog.forceN)
             analogSamples.append(sample)
         }
         if Date.now.timeIntervalSince(lastPrune) > 60 { prune() }

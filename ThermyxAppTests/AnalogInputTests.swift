@@ -89,4 +89,48 @@ final class AnalogInputTests: XCTestCase {
         XCTAssertEqual(SensorLinkStatus.connected("Thermyx").label, "Connected · Thermyx")
         XCTAssertEqual(SensorLinkStatus.disconnected(reconnecting: true).label, "Disconnected · reconnecting…")
     }
+
+    // MARK: - FSR402 force
+
+    func testFSRBelowFifteenCountsIsNoTouch() {
+        XCTAssertEqual(FSR402.forceNewtons(raw: 0, scale: 1), 0)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 14, scale: 1), 0)
+        XCTAssertGreaterThan(FSR402.forceNewtons(raw: 15, scale: 1), 0)
+    }
+
+    func testFSRFollowsTheDocumentedFormula() {
+        // raw 2048: V = 1.6504, R = 9,995 Ω, G = 100.05 µS, F = 1.2506 N.
+        let force = FSR402.forceNewtons(raw: 2048, scale: 1)
+        XCTAssertEqual(force, 1.2506, accuracy: 0.0005)
+        XCTAssertEqual(FSR402.pressureKPa(forceN: force), 9.8706, accuracy: 0.005)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 1000, scale: 1), 0.4039, accuracy: 0.0005)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 3000, scale: 1), 3.4247, accuracy: 0.0005)
+    }
+
+    func testFSRFullScaleClampsInsteadOfDividingByZero() {
+        let force = FSR402.forceNewtons(raw: 4095, scale: 1)
+        XCTAssertTrue(force.isFinite)
+        XCTAssertEqual(force, 20)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 4000, scale: 1), 20, "Clamped at 20 N")
+        XCTAssertEqual(FSR402.conductanceMicrosiemens(raw: 0), 0)
+        XCTAssertEqual(FSR402.conductanceMicrosiemens(raw: 4095), .infinity)
+    }
+
+    func testFSRScaleMultipliesAfterTheClamp() {
+        XCTAssertEqual(FSR402.forceNewtons(raw: 2048, scale: 2), 2.5012, accuracy: 0.001)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 4095, scale: 1.5), 30)
+        XCTAssertEqual(FSR402.forceNewtons(raw: 10, scale: 3), 0)
+    }
+
+    func testOnlyFSRSourcesHaveAForce() {
+        XCTAssertNil(AnalogInput(raw: 2048, kind: .testInput).forceN)
+        XCTAssertNotNil(AnalogInput(raw: 2048, kind: .fsrLoad).forceN)
+    }
+
+    func testMinuteBucketsAverageForce() {
+        var sample = AnalogSample(start: .now, kind: .fsrLoad)
+        sample.add(2048, forceN: 1.0)
+        sample.add(3000, forceN: 3.0)
+        XCTAssertEqual(try XCTUnwrap(sample.forceMeanN), 2.0, accuracy: 0.0001)
+    }
 }

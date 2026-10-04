@@ -55,6 +55,8 @@ final class ThermyxSettingsStore: ObservableObject {
     /// What the test board's analog pin is wired to. Decides how its 0…4095
     /// value is labelled; see AnalogSourceKind.
     @Published var analogSourceKind: AnalogSourceKind { didSet { AnalogSourceKind.stored = analogSourceKind } }
+    /// Multiplier on the FSR402's approximate force, default 1.0.
+    @Published var fsrForceScale: Double { didSet { FSR402.scale = fsrForceScale } }
 
     /// Which foot the per-foot screens open on.
     @Published var preferredFoot: Foot { didSet { save() } }
@@ -101,6 +103,7 @@ final class ThermyxSettingsStore: ObservableObject {
         aiSuggestionsEnabled = defaults.object(forKey: "thermyx.aiSuggestionsEnabled") as? Bool ?? false
         preferredFoot = defaults.string(forKey: "thermyx.preferredFoot").flatMap(Foot.init(rawValue:)) ?? .left
         analogSourceKind = AnalogSourceKind.stored.isAvailable ? AnalogSourceKind.stored : .testInput
+        fsrForceScale = FSR402.scale
         let storedTarget = defaults.double(forKey: "thermyx.targetTemperatureC")
         targetTemperatureC = storedTarget == 0 ? 31 : min(max(storedTarget, Self.targetRange.lowerBound), Self.targetRange.upperBound)
 

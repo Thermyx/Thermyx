@@ -173,8 +173,24 @@ handles each on its own path (`ThermyxSensorProtocol`,
   there) and takes no commands; Cool / Auto / Heat need a full insole.
 - **What the value means is set in the app, never assumed** (Safety →
   Advanced → Test board): *Test input* (raw + percent, the default),
-  *FSR pressure* (load %), or *Temperature*, which only appears once a
+  *FSR402 pressure* (approximate force in N and pressure in kPa; see below), or *Temperature*, which only appears once a
   calibration is set in code (`AnalogTemperatureCalibration.current`, with
   ready-made `.ntcDivider()` and `.linear(…)` options). A test input or FSR
   value is kept in its own history and never feeds temperature charts, risk
   levels, alerts, or Apple Health.
+
+### FSR402 conversion
+
+Wiring: 3.3 V → FSR402 → ADC node → 10 kΩ → GND, 12-bit ADC over 0–3.3 V.
+
+1. V = raw / 4095 × 3.3
+2. raw < 15 is no touch: 0 N
+3. R_fsr = 10,000 × (3.3 − V) / V
+4. G = 1,000,000 / R_fsr µS (the app computes 100 × V / (3.3 − V), so
+   raw 4095 gives an infinite conductance instead of dividing by zero)
+5. F = G / 80 N, clamped to 0–20 N, × the calibration scale
+   (Safety → Advanced → Test board, default 1.00)
+6. Pressure = F / 0.1267 kPa (12.7 mm round active area)
+
+Force is the main value and kPa is secondary, both labelled "approx.". The
+raw ADC count appears only as a debug line on Safety → Advanced.
