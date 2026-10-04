@@ -12,12 +12,6 @@ final class ThermyxViewModel: ObservableObject {
     /// pair: a wearer asking for cooling means both feet.
     @Published private(set) var thermalSetting: ThermalSetting = .auto
     @Published var commandError: String?
-    /// The last two minutes of test-board values, newest last, for the live
-    /// trace on Insights. Kept in memory, so it works in Demo Mode too.
-    @Published private(set) var recentAnalog: [AnalogPoint] = []
-    static let analogTraceSeconds: TimeInterval = 120
-    private var lastAnalogAt: [Foot: Date] = [:]
-
     /// Whether the last Cool / Auto / Heat tap actually took effect.
     @Published private(set) var command = ThermalCommandTracker()
     /// A short explanation shown on the control bar when the app changes the
@@ -31,6 +25,10 @@ final class ThermyxViewModel: ObservableObject {
     let ble = ThermyxBLEService()
     let history = ThermyxHistoryStore()
     let baseline = PersonalBaselineStore()
+    /// The single-sensor test board's live table. Fed only by
+    /// `ble.boardPackets`, never by insole readings, and never read by the
+    /// risk engine, alerts, or Apple Health.
+    private(set) lazy var board = SensorBoardStore(packets: ble.boardPackets.eraseToAnyPublisher(), history: history)
 
     weak var healthService: ThermyxHealthService?
 
@@ -51,6 +49,17 @@ final class ThermyxViewModel: ObservableObject {
     private var noticeTask: Task<Void, Never>?
 
     init() {
+        // Demo Mode writes no history, board values included.
+        let ble = self.ble
+        board.recordsHistory = { !ble.isDemoMode }
+        ble.$boardState
+            .removeDuplicates()
+            .sink { [weak self] state in
+                // Disconnected or gone: nothing stays on screen looking live.
+                if state == .notConnected { self?.board.clear() }
+            }
+            .store(in: &cancellables)
+
         ble.$readings
             .receive(on: RunLoop.main)
             .sink { [weak self] readings in
@@ -180,12 +189,10 @@ final class ThermyxViewModel: ObservableObject {
     var connectedFeet: [Foot] { Foot.allCases.filter(ble.isConnected) }
     var disconnectedFeet: [Foot] { Foot.allCases.filter { !ble.isConnected($0) } }
 
-    /// Cool / Auto / Heat need a full insole; a test board takes no commands.
-    var isControlAvailable: Bool { !ble.controllableFeet.isEmpty }
+    var isControlAvailable: Bool { ble.anyConnected }
     var isHeatLockedOut: Bool { assessment.level.locksOutHeating }
 
     var connectionLabel: String {
-        if !ble.sensorFeet.isEmpty, ble.controllableFeet.isEmpty { return "Test board connected" }
         switch connectedFeet.count {
         case 2: return "Both insoles connected"
         case 1: return "\(connectedFeet[0].label) insole connected"
@@ -248,7 +255,7 @@ final class ThermyxViewModel: ObservableObject {
     }
 
     func connect(to device: ThermyxBLEService.DiscoveredDevice, as foot: Foot? = nil) {
-        ble.connect(to: device, as: foot)
+        ble.connectDevice(device, as: foot)
         isScanning = false
     }
 
@@ -269,7 +276,7 @@ final class ThermyxViewModel: ObservableObject {
     /// Starts following a command, and re-checks once the timeout has passed
     /// in case the insole has gone quiet and no packet arrives to do it.
     private func track(_ setting: ThermalSetting) {
-        command.begin(setting, feet: ble.controllableFeet)
+        command.begin(setting, feet: Set(connectedFeet))
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(ThermalCommandTracker.timeout + 0.5))
             self?.updateCommand()
@@ -310,21 +317,6 @@ final class ThermyxViewModel: ObservableObject {
 
     private func ingest(_ entry: ThermyxReading) {
         let foot = entry.foot
-
-        // A test-board value: once per packet (readings republish whenever
-        // either foot updates), into the live trace and, outside Demo Mode,
-        // the analog history.
-        if let analog = entry.analogInput, entry.timestamp > (lastAnalogAt[foot] ?? .distantPast) {
-            lastAnalogAt[foot] = entry.timestamp
-            recentAnalog.append(AnalogPoint(time: entry.timestamp, raw: analog.raw, kind: analog.kind, forceN: analog.forceN))
-            let cutoff = entry.timestamp.addingTimeInterval(-Self.analogTraceSeconds)
-            recentAnalog.removeAll { $0.time < cutoff }
-            if !ble.isDemoMode { history.recordAnalog(analog, at: entry.timestamp) }
-        }
-        // A board that only sends a test input has no body reading: no
-        // session, no Health workout, no risk history.
-        guard entry.hasSensorData else { return }
-
         let pairAssessment = assessment
 
         // Safety override: if the pair escalates while Heat is selected — or

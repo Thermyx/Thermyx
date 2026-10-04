@@ -151,33 +151,84 @@ empty state, and no value from one foot is ever shown for the other.
 ## Single-sensor test board (XIAO ESP32-C3)
 
 A second, much simpler firmware is supported alongside the insole protocol
-above, for bench tests with one analog input. The app scans for both and
-handles each on its own path (`ThermyxSensorProtocol`,
-`Models/ThermyxAnalogInput.swift`).
+above, for bench tests. It can carry several sensors at once. The app handles
+it on its own path (`ThermyxSensorProtocol`, `SensorTable`,
+`Models/ThermyxAnalogInput.swift`); its readings never become insole
+readings, so they never drive risk levels, alerts, or Apple Health writes.
 
 | Item | Value |
 |---|---|
-| Device name | `Thermyx` |
-| Service UUID | `7a1b0001-3c5d-4e6f-8a9b-0c1d2e3f4a5b` |
+| Device name | Anything (`Thermyx`, `Thermyx 1`, …). The app matches the service UUID, never the name |
+| Service UUID | `7a1b0001-3c5d-4e6f-8a9b-0c1d2e3f4a5b` (advertised) |
 | Characteristic UUID | `7a1b0002-3c5d-4e6f-8a9b-0c1d2e3f4a5b` (READ, NOTIFY) |
-| Value | UTF-8 text of an integer `0`–`4095` (12-bit ADC, 0–3.3 V), e.g. `2048` |
-| Rate | About every 500 ms |
+| Value | One UTF-8 text line per notification: `TYPE,CHANNEL,VALUE` |
+| Rate | About every 500 ms per sensor; each sensor needs at least one line every 5 s |
 
-- The app connects to the board **by itself** whenever Bluetooth is on and no
-  board is connected: no list, no tap. It reads the value once on connect,
-  then subscribes to notifications. A dropped board is reconnected
-  automatically; a board the user disconnects stays disconnected until the
-  next scan.
-- Anything that is not a whole number in 0–4095 is rejected, not clamped.
-- The board occupies one foot slot (left, unless a full insole is remembered
-  there) and takes no commands; Cool / Auto / Heat need a full insole.
-- **What the value means is set in the app, never assumed** (Safety →
-  Advanced → Test board): *Test input* (raw + percent, the default),
-  *FSR402 pressure* (approximate force in N and pressure in kPa; see below), or *Temperature*, which only appears once a
-  calibration is set in code (`AnalogTemperatureCalibration.current`, with
-  ready-made `.ntcDivider()` and `.linear(…)` options). A test input or FSR
-  value is kept in its own history and never feeds temperature charts, risk
-  levels, alerts, or Apple Health.
+### Payload
+
+`TYPE,CHANNEL,VALUE`, for example `NTC,0,2410`, `FSR,1,812`, `TMP102,0,23.50`.
+
+| TYPE | VALUE | Shown as |
+|---|---|---|
+| `NTC` | integer 0–4095 (4095 = 3.3 V) | °C (primary) and °F |
+| `TMP102` | decimal °C, e.g. `23.50` (−55 to 150 accepted) | °C (primary) and °F |
+| `FSR` | integer 0–4095 | force in N, pressure in kPa "approx." |
+| `KNOB` | integer 0–4095 | "Test input": raw count and volts, no conversion |
+| anything else | integer or decimal | "Unknown sensor (TYPE)": the raw value |
+
+- `CHANNEL` is an integer from 0 (up to 255). TYPE is case-insensitive.
+- **Legacy firmware:** a bare integer with no commas (e.g. `2048`) is read as
+  `KNOB,0,2048`.
+- Lines that are malformed (wrong number of fields, non-numeric channel,
+  exponents, non-ASCII digits) or out of range (raw outside 0–4095) are
+  discarded, never clamped.
+- The app keeps a live table keyed by (TYPE, CHANNEL). A sensor is connected
+  while a line for it arrived within the last 5 seconds; after that it is
+  removed from every screen.
+- An override on Safety → Advanced → Test board sensors (default **Auto**)
+  can relabel raw readings as NTC, FSR, or KNOB for firmware that only sends
+  bare numbers. It never relabels a TMP102's °C.
+
+### Connecting
+
+- Nothing connects on its own the first time. Connect a device (Home, or
+  Safety → Advanced) scans for the board and insole service UUIDs and lists
+  each device's advertised name and RSSI. "Show all Bluetooth devices" (off
+  by default) lists everything nearby.
+- The user taps a device to connect. The app reads the value once, then
+  subscribes to notifications. A device without the sensor service is
+  disconnected with a message.
+- Reconnect rules:
+  1. A board connected by hand is remembered (`BoardMemory`).
+  2. If its link drops unexpectedly, the app reconnects to it automatically.
+  3. Tapping Disconnect stops automatic reconnection until the user connects
+     again from the scan list.
+  4. On relaunch the app reconnects to the remembered board only if the user
+     did not disconnect it last time.
+- Status: `Not connected`, `Scanning…`, `Connecting…`, `Connected · <name>`,
+  `Reconnecting…`.
+- The board never takes an insole's foot slot and takes no commands.
+
+### What shows where
+
+- **Home**, while no insole is live: if any temperature sensor is connected,
+  only temperature (TMP102 before NTC, then the lowest channel). Otherwise the
+  main sensor in its own units, in the order FSR, KNOB, unknown. With nothing
+  connected: "No sensor connected".
+- **Insights:** one card per connected sensor with its live value, a 2-minute
+  graph, and per-minute history, in its own units.
+
+### NTC conversion
+
+Wiring: 3.3 V → 10 kΩ NTC (B = 3950) → ADC node → 10 kΩ → GND, so the raw
+count rises as it warms.
+
+1. R_therm = 10,000 × (4095 / raw − 1)
+2. 1/T = 1/298.15 + ln(R_therm / 10,000) / 3950, T in kelvin
+3. Average the last 5 samples, add the °C offset (Safety → Advanced, default 0.0)
+4. Outside −20 to 100 °C, or raw 0 / 4095 (open or short), shows `--`
+
+raw 2048 ≈ 25.0 °C.
 
 ### FSR402 conversion
 
@@ -189,8 +240,8 @@ Wiring: 3.3 V → FSR402 → ADC node → 10 kΩ → GND, 12-bit ADC over 0–3.
 4. G = 1,000,000 / R_fsr µS (the app computes 100 × V / (3.3 − V), so
    raw 4095 gives an infinite conductance instead of dividing by zero)
 5. F = G / 80 N, clamped to 0–20 N, × the calibration scale
-   (Safety → Advanced → Test board, default 1.00)
-6. Pressure = F / 0.1267 kPa (12.7 mm round active area)
+   (Safety → Advanced, default 1.00)
+6. Pressure = F / 0.1267 kPa (12.7 mm round active area), labelled "approx."
 
-Force is the main value and kPa is secondary, both labelled "approx.". The
-raw ADC count appears only as a debug line on Safety → Advanced.
+No percentages. The raw ADC counts appear only as debug lines on
+Safety → Advanced.

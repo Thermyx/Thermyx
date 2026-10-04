@@ -1,76 +1,411 @@
 import Charts
 import SwiftUI
 
-// MARK: - Link status
+// Views for the single-sensor XIAO test board: connecting by hand, the Home
+// readout, one Insights card per sensor, and its Advanced settings. Board
+// values never feed risk levels, alerts, or Apple Health.
 
-/// Searching / connected / disconnected for the XIAO test board.
-struct SensorLinkStatusPill: View {
+// MARK: - Status
+
+/// "Not connected", "Scanning…", "Connecting…", "Connected · Thermyx",
+/// "Reconnecting…".
+struct BoardStatusPill: View {
     @ObservedObject var ble: ThermyxBLEService
 
     var body: some View {
-        let status = ble.linkStatus
+        let state = ble.boardState
         HStack(spacing: 6) {
-            if status == .searching {
-                ProgressView().controlSize(.mini).tint(Thermyx.Ink.textSupporting)
-            } else {
-                Circle().fill(tint(status)).frame(width: 7, height: 7)
+            switch state {
+            case .scanning, .connecting, .reconnecting:
+                ProgressView().controlSize(.mini).tint(tint(state))
+            default:
+                Circle().fill(tint(state)).frame(width: 7, height: 7)
             }
-            Text(status.label)
-                .narrowLabel(ThermyxFont.statusPill, tracking: 0.6, color: tint(status))
+            Text(state.label)
+                .narrowLabel(ThermyxFont.statusPill, tracking: 0.6, color: tint(state))
                 .lineLimit(1)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Test board: \(status.label)")
+        .accessibilityLabel("Sensor: \(state.label)")
     }
 
-    private func tint(_ status: SensorLinkStatus) -> Color {
-        switch status {
+    private func tint(_ state: BoardLinkState) -> Color {
+        switch state {
         case .connected: return Thermyx.Ink.ice
-        case .searching: return Thermyx.Ink.textSupporting
-        case .disconnected(let reconnecting): return reconnecting ? Thermyx.Ink.amber : Thermyx.Ink.textFaint
-        case .bluetoothUnavailable: return Thermyx.Ink.amber
+        case .reconnecting: return Thermyx.Ink.amber
+        case .scanning, .connecting: return Thermyx.Ink.textSupporting
+        case .notConnected: return Thermyx.Ink.textFaint
         }
     }
 }
 
-// MARK: - Insights card
+// MARK: - Connect a device
 
-/// The test board's live value: raw count and percent, a two-minute trace,
-/// and minute history for the selected range. It sits beside the body
-/// charts and never feeds them, so a knob is never shown as a temperature.
-struct AnalogInputCard: View {
+/// Scan, pick, connect. Nothing connects until the user taps it; after that
+/// the board is remembered and reconnects by itself until they tap
+/// Disconnect.
+struct ConnectDeviceView: View {
     @EnvironmentObject private var viewModel: ThermyxViewModel
     @ObservedObject var ble: ThermyxBLEService
+    @State private var scanning = false
+    @State private var showAll = false
+
+    private var devices: [ThermyxBLEService.DiscoveredDevice] {
+        ble.discovered.filter { showAll || $0.kind != .other }
+    }
+
+    var body: some View {
+        ThermyxDetailScreen(title: "Connect a device") {
+            statusCard
+
+            HStack(spacing: Thermyx.Space.m) {
+                Button(scanning ? "Stop" : "Scan") {
+                    scanning ? stop() : start()
+                }
+                .buttonStyle(ThermyxPrimaryButtonStyle())
+                .fixedSize(horizontal: true, vertical: false)
+                .disabled(ble.state != .poweredOn)
+                if scanning {
+                    ProgressView().tint(Thermyx.Ink.textSupporting)
+                }
+                Spacer(minLength: 0)
+            }
+
+            ThermyxGroupedCard {
+                Toggle(isOn: $showAll) {
+                    Text("Show all Bluetooth devices")
+                        .font(ThermyxFont.body)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                }
+                .tint(Thermyx.Ink.ice)
+                .padding(.horizontal, Thermyx.Space.xl)
+                .padding(.vertical, Thermyx.Space.m)
+                .frame(minHeight: Thermyx.minimumTapTarget)
+            }
+            .onChange(of: showAll) { _, _ in
+                if scanning { start() }
+            }
+
+            if let problem = bluetoothProblem {
+                Text(problem)
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.amber)
+            }
+
+            deviceList
+
+            if let error = ble.errorMessage {
+                Text(error)
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Text("Thermyx devices are found by their Bluetooth service, so any name shows up. The sensor you connect is remembered and reconnects by itself if it drops out. After you tap Disconnect it stays disconnected until you connect it again here.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onDisappear { if scanning { stop() } }
+        .onChange(of: ble.boardState) { _, state in
+            if case .connecting = state { scanning = false }
+        }
+    }
+
+    private var statusCard: some View {
+        ThermyxCard {
+            HStack(spacing: Thermyx.Space.m) {
+                VStack(alignment: .leading, spacing: 4) {
+                    SectionLabel("Sensor")
+                    BoardStatusPill(ble: ble)
+                }
+                Spacer(minLength: Thermyx.Space.xs)
+                switch ble.boardState {
+                case .connected, .connecting, .reconnecting:
+                    Button("Disconnect") { ble.disconnectBoard() }
+                        .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
+                        .fixedSize()
+                default:
+                    EmptyView()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var deviceList: some View {
+        if devices.isEmpty {
+            Text(scanning ? "Looking for devices…" : "Tap Scan to look for nearby devices.")
+                .font(ThermyxFont.body)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+        } else {
+            ThermyxGroupedCard {
+                ForEach(Array(devices.enumerated()), id: \.element.id) { index, device in
+                    if index > 0 { ThermyxDivider() }
+                    Button {
+                        viewModel.connect(to: device)
+                        scanning = false
+                    } label: {
+                        DeviceRow(device: device)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Connects to this device")
+                }
+            }
+        }
+    }
+
+    private var bluetoothProblem: String? {
+        switch ble.state {
+        case .poweredOn: return nil
+        case .poweredOff: return "Bluetooth is off. Turn it on in Control Center."
+        case .unauthorized: return "Bluetooth isn't allowed. Turn it on in Settings → Thermyx."
+        case .unsupported: return "This device has no Bluetooth. Use a real iPhone."
+        default: return "Starting Bluetooth…"
+        }
+    }
+
+    private func start() {
+        ble.scan(showAll: showAll)
+        scanning = true
+    }
+
+    private func stop() {
+        ble.stopScan()
+        scanning = false
+    }
+}
+
+private struct DeviceRow: View {
+    let device: ThermyxBLEService.DiscoveredDevice
+
+    var body: some View {
+        HStack(spacing: Thermyx.Space.m) {
+            Image(systemName: icon)
+                .foregroundStyle(device.kind == .other ? Thermyx.Ink.textFaint : Thermyx.Ink.ice)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: device.name)
+                    .font(ThermyxFont.rowTitle)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                    .lineLimit(1)
+                Text(kindLabel)
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textSupporting)
+            }
+            Spacer(minLength: Thermyx.Space.xs)
+            Text(verbatim: "\(device.rssi) dBm")
+                .font(ThermyxFont.captionSmall)
+                .monospacedDigit()
+                .foregroundStyle(device.isStrong ? Thermyx.Ink.textSecondary : Thermyx.Ink.amber)
+            Image(systemName: "chevron.right")
+                .foregroundStyle(Thermyx.Ink.textFaint)
+        }
+        .padding(.horizontal, Thermyx.Space.xl)
+        .padding(.vertical, Thermyx.Space.m)
+        .frame(minHeight: Thermyx.minimumTapTarget)
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(device.name), \(kindLabel), signal \(device.rssi) decibel-milliwatts")
+    }
+
+    private var icon: String {
+        switch device.kind {
+        case .sensorBoard: return "sensor"
+        case .insole: return "shoeprints.fill"
+        case .other: return "dot.radiowaves.left.and.right"
+        }
+    }
+
+    private var kindLabel: String {
+        switch device.kind {
+        case .sensorBoard: return "Thermyx sensor"
+        case .insole: return device.advertisedFoot.map { "Thermyx insole · \($0.label)" } ?? "Thermyx insole"
+        case .other: return "Other Bluetooth device"
+        }
+    }
+}
+
+// MARK: - Home
+
+/// Home while no insole is live: the board's main sensor when one is
+/// reporting, otherwise the regular empty state.
+struct SensorHomeSwitch<Empty: View>: View {
+    @ObservedObject var board: SensorBoardStore
+    @ObservedObject var ble: ThermyxBLEService
+    @ViewBuilder var empty: Empty
+
+    var body: some View {
+        if ble.boardState.isConnected || !board.table.connected.isEmpty {
+            SensorMainView(board: board, ble: ble)
+        } else {
+            empty
+        }
+    }
+}
+
+/// The main page rule: temperature only if any temperature sensor is
+/// connected (TMP102 before NTC, then the lowest channel); otherwise FSR,
+/// then KNOB, then unknown; otherwise "No sensor connected".
+struct SensorMainView: View {
+    @ObservedObject var board: SensorBoardStore
+    @ObservedObject var ble: ThermyxBLEService
+
+    var body: some View {
+        VStack(spacing: Thermyx.Space.l) {
+            Spacer(minLength: 0)
+            BoardStatusPill(ble: ble)
+
+            if let channel = board.mainChannel {
+                let display = board.display(channel)
+                VStack(spacing: Thermyx.Space.s) {
+                    Text(display.title)
+                        .narrowLabel(ThermyxFont.statusPillLarge, tracking: ThermyxTracking.sectionLabel, color: Thermyx.Ink.textSupporting)
+                    Text(verbatim: display.primary)
+                        .font(ThermyxFont.heroNumeral)
+                        .tracking(ThermyxTracking.heroNumeral)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    if let secondary = display.secondary {
+                        Text(verbatim: secondary)
+                            .font(ThermyxFont.metricNumeral)
+                            .monospacedDigit()
+                            .foregroundStyle(Thermyx.Ink.textSecondary)
+                    }
+                    if channel.key.channel > 0 || board.table.connected.count > 1 {
+                        Text(verbatim: "Channel \(channel.key.channel)")
+                            .font(ThermyxFont.captionSmall)
+                            .foregroundStyle(Thermyx.Ink.textFaint)
+                    }
+                }
+                .accessibilityElement(children: .combine)
+            } else {
+                Text("No sensor connected")
+                    .font(ThermyxFont.featureHeadline)
+                    .tracking(-0.8)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                Text("The board is connected but no sensor has reported in the last 5 seconds.")
+                    .font(ThermyxFont.body)
+                    .foregroundStyle(Thermyx.Ink.textSupporting)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if ble.isDemoMode {
+                Text("Simulated — not live sensor data")
+                    .narrowLabel(ThermyxFont.statusPill, tracking: 0.6, color: Thermyx.Ink.amber)
+            }
+            Text("Test board reading. Not used for risk levels, alerts, or Apple Health. Every sensor is on Insights.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, Thermyx.Space.wide)
+    }
+}
+
+// MARK: - Insights
+
+/// One card per connected board sensor.
+struct BoardSensorCards: View {
+    @ObservedObject var board: SensorBoardStore
     @ObservedObject var history: ThermyxHistoryStore
-    @ObservedObject var settings: ThermyxSettingsStore
+    @ObservedObject var ble: ThermyxBLEService
 
-    /// Shown once a board has been seen, or while one is connecting.
-    static func isRelevant(ble: ThermyxBLEService, viewModel: ThermyxViewModel, history: ThermyxHistoryStore) -> Bool {
-        !ble.sensorFeet.isEmpty || ble.sensorReconnecting || !viewModel.recentAnalog.isEmpty || !history.analogSamples.isEmpty
+    var body: some View {
+        ForEach(board.table.connected) { channel in
+            SensorCard(channel: channel, display: board.display(channel), calibration: board.calibration,
+                       minutes: history.sensorHistory(key: channel.key.id), isDemo: ble.isDemoMode)
+        }
     }
+}
 
-    private var latest: AnalogPoint? {
-        guard let last = viewModel.recentAnalog.last, Date.now.timeIntervalSince(last.time) < 5 else { return nil }
-        return last
-    }
-
-    private var kind: AnalogSourceKind { latest?.kind ?? settings.analogSourceKind }
+/// A sensor's live value, its last two minutes, and per-minute history,
+/// all in its own units.
+struct SensorCard: View {
+    let channel: SensorChannel
+    let display: SensorDisplay
+    let calibration: SensorCalibration
+    let minutes: [SensorMinute]
+    let isDemo: Bool
 
     var body: some View {
         ThermyxCard {
             VStack(alignment: .leading, spacing: Thermyx.Space.m) {
-                HStack(alignment: .firstTextBaseline) {
-                    SectionLabel(kind.title)
-                    Spacer(minLength: Thermyx.Space.xs)
-                    SensorLinkStatusPill(ble: ble)
+                SectionLabel(display.title) {
+                    Text(verbatim: "CH \(channel.key.channel)")
+                        .narrowLabel(ThermyxFont.statusPill, tracking: 0.6, color: Thermyx.Ink.textFaint)
                 }
 
-                readout
+                HStack(alignment: .firstTextBaseline, spacing: Thermyx.Space.m) {
+                    Text(verbatim: display.primary)
+                        .font(ThermyxFont.statNumeral)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    if let secondary = display.secondary {
+                        Text(verbatim: secondary)
+                            .font(ThermyxFont.rowTitleRegular)
+                            .foregroundStyle(Thermyx.Ink.textSecondary)
+                    }
+                }
+                .monospacedDigit()
+                .accessibilityElement(children: .combine)
 
-                liveTrace
+                if channel.trace.count >= 2 {
+                    Chart(channel.trace) { point in
+                        LineMark(x: .value("Time", point.time), y: .value(display.chartUnit, point.value))
+                            .foregroundStyle(Thermyx.Ink.ice)
+                            .interpolationMethod(.monotone)
+                    }
+                    .chartYScale(domain: domain(channel.trace.map(\.value)))
+                    .chartYAxis { axis }
+                    .chartXAxis(.hidden)
+                    .frame(height: 90)
+                    .accessibilityLabel("Last two minutes of \(display.title)")
+                    Text(verbatim: "Last 2 minutes · live · \(display.chartUnit)")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
 
-                historyChart
+                if minutes.count >= 2 {
+                    Chart(minutes) { minute in
+                        LineMark(x: .value("Minute", minute.start), y: .value(display.chartUnit, minute.mean))
+                            .foregroundStyle(Thermyx.Ink.signal)
+                        PointMark(x: .value("Minute", minute.start), y: .value(display.chartUnit, minute.mean))
+                            .foregroundStyle(Thermyx.Ink.signal)
+                            .symbolSize(12)
+                    }
+                    .chartYScale(domain: domain(minutes.map(\.mean)))
+                    .chartYAxis { axis }
+                    .frame(height: 90)
+                    .accessibilityLabel("\(display.title), one point per minute")
+                }
+                if let last = minutes.last {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Per-minute average")
+                            .font(ThermyxFont.captionSmall)
+                            .foregroundStyle(Thermyx.Ink.textFaint)
+                        ForEach(Array(minutes.suffix(3).reversed())) { minute in
+                            HStack {
+                                Text(minute.start, format: .dateTime.hour().minute())
+                                Spacer()
+                                Text(verbatim: SensorFormat.value(minute.mean, unit: display.chartUnit))
+                            }
+                            .font(ThermyxFont.captionSmall)
+                            .monospacedDigit()
+                            .foregroundStyle(minute.id == last.id ? Thermyx.Ink.textSecondary : Thermyx.Ink.textSupporting)
+                        }
+                    }
+                }
 
+                if isDemo {
+                    Text("Simulated — not live sensor data")
+                        .narrowLabel(ThermyxFont.statusPill, tracking: 0.6, color: Thermyx.Ink.amber)
+                }
                 Text(footnote)
                     .font(ThermyxFont.captionSmall)
                     .foregroundStyle(Thermyx.Ink.textFaint)
@@ -79,182 +414,124 @@ struct AnalogInputCard: View {
         }
     }
 
-    @ViewBuilder
-    private var readout: some View {
-        if let latest {
-            let input = AnalogInput(raw: latest.raw, kind: latest.kind)
-            if latest.kind == .fsrLoad {
-                // FSR: physical units only. The raw count lives on Advanced.
-                let force = latest.forceN ?? input.forceN ?? 0
-                HStack(alignment: .firstTextBaseline, spacing: Thermyx.Space.m) {
-                    Text(verbatim: String(format: "%.2f N", force))
-                        .font(ThermyxFont.statNumeral)
-                        .foregroundStyle(Thermyx.Ink.textPrimary)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(verbatim: String(format: "%.1f kPa", FSR402.pressureKPa(forceN: force)))
-                            .font(ThermyxFont.rowTitleRegular)
-                            .foregroundStyle(Thermyx.Ink.textSecondary)
-                        Text("approx.")
-                            .font(ThermyxFont.captionSmall)
-                            .foregroundStyle(Thermyx.Ink.textSupporting)
-                    }
-                }
-                .monospacedDigit()
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(String(format: "Force approximately %.2f newtons, pressure approximately %.1f kilopascals", force, FSR402.pressureKPa(forceN: force)))
-            } else {
-                HStack(alignment: .firstTextBaseline, spacing: Thermyx.Space.m) {
-                    if let celsius = input.temperatureC {
-                        Text(TemperatureFormat.degrees(celsius, in: settings.temperatureUnit))
-                            .font(ThermyxFont.statNumeral)
-                            .foregroundStyle(Thermyx.Ink.textPrimary)
-                    } else {
-                        Text("\(Int(input.percent.rounded()))%")
-                            .font(ThermyxFont.statNumeral)
-                            .foregroundStyle(Thermyx.Ink.textPrimary)
-                    }
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(verbatim: "Raw \(latest.raw) / \(ThermyxSensorProtocol.maxRaw)")
-                            .font(ThermyxFont.rowTitleRegular)
-                            .foregroundStyle(Thermyx.Ink.textSecondary)
-                        Text(String(format: "%.2f V", input.volts))
-                            .font(ThermyxFont.captionSmall)
-                            .foregroundStyle(Thermyx.Ink.textSupporting)
-                    }
-                    .monospacedDigit()
-                }
-                .accessibilityElement(children: .combine)
-            }
-        } else {
-            Text("No live value")
-                .font(ThermyxFont.rowTitleRegular)
-                .foregroundStyle(Thermyx.Ink.textMuted)
+    private func domain(_ values: [Double]) -> ClosedRange<Double> {
+        switch channel.key.type {
+        case .fsr:
+            return 0...max(FSR402.maxForceN * calibration.fsrScale, values.max() ?? 0)
+        case .knob:
+            return 0...Double(ThermyxSensorProtocol.maxRaw)
+        default:
+            let low = values.min() ?? 0
+            let high = values.max() ?? 1
+            let pad = max((high - low) * 0.2, channel.key.type.isTemperature ? 0.5 : 1)
+            return (low - pad)...(high + pad)
         }
     }
 
-    /// Top of the force axis: the 20 N clamp times the calibration scale.
-    private var forceAxisMax: Double { FSR402.maxForceN * settings.fsrForceScale }
-
-    @ViewBuilder
-    private var liveTrace: some View {
-        let points = viewModel.recentAnalog.filter { $0.kind == kind }
-        if points.count >= 2 {
-            Group {
-                if kind == .fsrLoad {
-                    Chart(points) { point in
-                        LineMark(x: .value("Time", point.time), y: .value("Force (N)", point.forceN ?? 0))
-                            .foregroundStyle(Thermyx.Ink.ice)
-                            .interpolationMethod(.monotone)
-                    }
-                    .chartYScale(domain: 0...max(forceAxisMax, points.compactMap(\.forceN).max() ?? 0))
-                    .chartYAxis { newtonAxis }
-                } else {
-                    Chart(points) { point in
-                        LineMark(x: .value("Time", point.time), y: .value("Percent", point.percent))
-                            .foregroundStyle(Thermyx.Ink.ice)
-                            .interpolationMethod(.monotone)
-                    }
-                    .chartYScale(domain: 0...100)
-                    .chartYAxis { percentAxis }
-                }
-            }
-            .chartXAxis(.hidden)
-            .frame(height: 90)
-            .accessibilityLabel("Last two minutes of \(kind.title.lowercased())")
-            Text("Last 2 minutes · live")
-                .font(ThermyxFont.captionSmall)
-                .foregroundStyle(Thermyx.Ink.textFaint)
-        }
-    }
-
-    @ViewBuilder
-    private var historyChart: some View {
-        let samples = history.analogHistory(for: settings.insightsRange, style: settings.periodStyle)
-            .filter { $0.kind == kind && (kind != .fsrLoad || $0.forceMeanN != nil) }
-        if samples.count >= 2 {
-            Group {
-                if kind == .fsrLoad {
-                    Chart(samples) { sample in
-                        LineMark(x: .value("Time", sample.start), y: .value("Mean force (N)", sample.forceMeanN ?? 0))
-                            .foregroundStyle(Thermyx.Ink.signal)
-                    }
-                    .chartYScale(domain: 0...max(forceAxisMax, samples.compactMap(\.forceMeanN).max() ?? 0))
-                    .chartYAxis { newtonAxis }
-                } else {
-                    Chart(samples) { sample in
-                        LineMark(x: .value("Time", sample.start), y: .value("Mean", sample.percentMean))
-                            .foregroundStyle(Thermyx.Ink.signal)
-                    }
-                    .chartYScale(domain: 0...100)
-                    .chartYAxis { percentAxis }
-                }
-            }
-            .frame(height: 90)
-            .accessibilityLabel("\(kind.title) history, one point per minute")
-            Text("\(settings.insightsRange.caption(style: settings.periodStyle)) · minute averages")
-                .font(ThermyxFont.captionSmall)
-                .foregroundStyle(Thermyx.Ink.textFaint)
-        }
-    }
-
-    private var percentAxis: some AxisContent {
-        AxisMarks(values: [0, 50, 100]) { value in
+    private var axis: some AxisContent {
+        AxisMarks(position: .leading, values: .automatic(desiredCount: 3)) { value in
             AxisGridLine().foregroundStyle(Thermyx.Ink.divider)
-            AxisValueLabel { if let v = value.as(Int.self) { Text("\(v)%") } }
-        }
-    }
-
-    private var newtonAxis: some AxisContent {
-        AxisMarks(values: [0, forceAxisMax / 2, forceAxisMax]) { value in
-            AxisGridLine().foregroundStyle(Thermyx.Ink.divider)
-            AxisValueLabel { if let v = value.as(Double.self) { Text(verbatim: String(format: "%g N", (v * 10).rounded() / 10)) } }
+            AxisValueLabel {
+                if let v = value.as(Double.self) { Text(verbatim: SensorFormat.axis(v, unit: display.chartUnit)) }
+            }
         }
     }
 
     private var footnote: String {
-        switch kind {
-        case .testInput:
-            return "A test input from the XIAO board's analog pin, shown as a share of 0–3.3 V. It is not a body reading and never feeds temperature, alerts, or Apple Health."
-        case .fsrLoad:
-            return "Approximate force from the FSR402's typical curve (F ≈ G / 80, clamped to 20 N, × your calibration scale). Pressure assumes the full 12.7 mm sensing area. Not a calibrated scale, and never used for alerts or Apple Health."
-        case .temperature:
-            return AnalogTemperatureCalibration.current == nil
-                ? "Temperature needs a calibration before the app will show °C."
-                : "Temperature from the analog sensor, converted with its calibration."
+        switch channel.key.type {
+        case .ntc:
+            return "10 kΩ NTC (B 3950), 5-sample average, plus your offset. Shows -- outside -20 to 100 °C. Not a body reading: never used for alerts or Apple Health."
+        case .tmp102:
+            return "TMP102 digital sensor, °C as sent by the board. Not used for alerts or Apple Health."
+        case .fsr:
+            return "Approximate force from the FSR402's typical curve (G / 80, clamped to 20 N, × your scale). Pressure assumes the 12.7 mm pad. Not a calibrated scale."
+        case .knob:
+            return "Test input from the board's analog pin: raw 0–4095 and volts (4095 = 3.3 V). No conversion."
+        case .unknown:
+            return "The board sent a sensor type this app doesn't know, so only its raw value is shown."
         }
     }
 }
 
-// MARK: - Advanced: what the pin is wired to
+enum SensorFormat {
+    static func value(_ value: Double, unit: String) -> String {
+        switch unit {
+        case "°C": return String(format: "%.1f °C", value)
+        case "N": return String(format: "%.2f N", value)
+        default: return String(format: "%.0f", value)
+        }
+    }
 
-/// Lets the team switch the analog pin between test knob, FSR402 force, and
-/// (once calibrated) temperature without changing code.
-struct AnalogSourceSection: View {
-    @EnvironmentObject private var viewModel: ThermyxViewModel
-    @ObservedObject var settings: ThermyxSettingsStore
+    static func axis(_ value: Double, unit: String) -> String {
+        switch unit {
+        case "°C": return String(format: "%.1f°", value)
+        case "N": return String(format: "%g N", (value * 10).rounded() / 10)
+        default: return String(format: "%.0f", value)
+        }
+    }
+}
+
+// MARK: - Advanced
+
+/// Detection is automatic; the override is for a board whose firmware still
+/// sends bare numbers. Calibration and the raw counts for wiring checks.
+struct BoardSettingsSection: View {
+    @ObservedObject var board: SensorBoardStore
     @ObservedObject var ble: ThermyxBLEService
+    @State private var connecting = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Test board (XIAO analog pin)") {
-                SensorLinkStatusPill(ble: ble)
+            SectionLabel("Test board sensors") {
+                BoardStatusPill(ble: ble)
             }
             ThermyxGroupedCard {
-                Picker("Wired to", selection: $settings.analogSourceKind) {
-                    ForEach(AnalogSourceKind.allCases.filter(\.isAvailable)) { kind in
-                        Text(kind.settingLabel).tag(kind)
+                Button {
+                    connecting = true
+                } label: {
+                    HStack {
+                        Text("Connect a device")
+                            .font(ThermyxFont.body)
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(Thermyx.Ink.textFaint)
+                    }
+                    .padding(.horizontal, Thermyx.Space.xl)
+                    .frame(minHeight: Thermyx.minimumTapTarget)
+                    .contentShape(.rect)
+                }
+                .buttonStyle(.plain)
+
+                ThermyxDivider()
+                row {
+                    Picker("Sensor type", selection: $board.typeOverride) {
+                        ForEach(SensorTypeOverride.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                    .tint(Thermyx.Ink.ice)
+                }
+
+                ThermyxDivider()
+                row {
+                    Stepper(value: $board.calibration.ntcOffsetC, in: -10...10, step: 0.1) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: String(format: "NTC offset %+.1f °C", board.calibration.ntcOffsetC))
+                                .font(ThermyxFont.body)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text("Added to every NTC temperature. 0.0 = no correction.")
+                                .font(ThermyxFont.captionSmall)
+                                .foregroundStyle(Thermyx.Ink.textSupporting)
+                        }
                     }
                 }
-                .tint(Thermyx.Ink.ice)
-                .padding(.horizontal, Thermyx.Space.xl)
-                .padding(.vertical, Thermyx.Space.m)
-                .frame(minHeight: Thermyx.minimumTapTarget)
 
-                if settings.analogSourceKind == .fsrLoad {
-                    ThermyxDivider()
-                    Stepper(value: $settings.fsrForceScale, in: FSR402.scaleRange, step: 0.05) {
+                ThermyxDivider()
+                row {
+                    Stepper(value: $board.calibration.fsrScale, in: FSR402.scaleRange, step: 0.05) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: String(format: "Calibration scale × %.2f", settings.fsrForceScale))
+                            Text(verbatim: String(format: "FSR scale × %.2f", board.calibration.fsrScale))
                                 .font(ThermyxFont.body)
                                 .foregroundStyle(Thermyx.Ink.textPrimary)
                             Text("Multiplies the approximate force. 1.00 = the datasheet curve.")
@@ -262,60 +539,34 @@ struct AnalogSourceSection: View {
                                 .foregroundStyle(Thermyx.Ink.textSupporting)
                         }
                     }
-                    .padding(.horizontal, Thermyx.Space.xl)
-                    .padding(.vertical, Thermyx.Space.m)
-                    .frame(minHeight: Thermyx.minimumTapTarget)
                 }
             }
 
-            // The raw ADC count, for debugging the wiring. Nowhere else
-            // shows it in FSR mode.
-            if let last = viewModel.recentAnalog.last, Date.now.timeIntervalSince(last.time) < 5 {
-                Text(verbatim: String(format: "Debug · raw ADC %d / 4095 · %.3f V", last.raw, AnalogInput(raw: last.raw, kind: last.kind).volts))
-                    .font(ThermyxFont.captionSmall)
-                    .monospacedDigit()
-                    .foregroundStyle(Thermyx.Ink.textFaint)
+            ForEach(board.table.connected) { channel in
+                if let raw = channel.value.raw {
+                    Text(verbatim: String(format: "Debug · %@ ch %d · raw %d / 4095 · %.3f V",
+                                          channel.key.type.code, channel.key.channel, raw, AnalogPin.volts(raw: raw)))
+                        .font(ThermyxFont.captionSmall)
+                        .monospacedDigit()
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
             }
-            Text("The board connects by itself when it's on and in range. Temperature appears here only once a calibration is set in code (AnalogTemperatureCalibration), so a test knob is never shown as a temperature.")
+            Text("Sensors are detected from what the board sends (TYPE,CHANNEL,VALUE). Use the override only for older firmware that sends a bare number. Board readings never change risk levels, send alerts, or write to Apple Health.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
         }
-    }
-}
-
-// MARK: - Home
-
-/// What Home says while a test board, rather than an insole, is connected.
-struct TestBoardHomeNote: View {
-    @EnvironmentObject private var viewModel: ThermyxViewModel
-    @ObservedObject var ble: ThermyxBLEService
-
-    var body: some View {
-        VStack(spacing: Thermyx.Space.m) {
-            Text("Test board connected")
-                .font(ThermyxFont.featureHeadline)
-                .tracking(-0.8)
-                .foregroundStyle(Thermyx.Ink.textPrimary)
-            if let last = viewModel.recentAnalog.last {
-                Text(verbatim: homeValue(last))
-                    .font(ThermyxFont.metricNumeral)
-                    .monospacedDigit()
-                    .foregroundStyle(Thermyx.Ink.ice)
-            }
-            Text("It sends a test input, not temperature or movement, so Home stays empty. Its live value and history are on Insights.")
-                .font(ThermyxFont.body)
-                .foregroundStyle(Thermyx.Ink.textSupporting)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
+        .sheet(isPresented: $connecting) {
+            NavigationStack { ConnectDeviceView(ble: ble) }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 
-    private func homeValue(_ point: AnalogPoint) -> String {
-        if point.kind == .fsrLoad {
-            let force = point.forceN ?? FSR402.forceNewtons(raw: point.raw)
-            return String(format: "%.2f N · %.1f kPa approx.", force, FSR402.pressureKPa(forceN: force))
-        }
-        return String(format: "%.0f%% · raw %d", AnalogInput(raw: point.raw, kind: point.kind).percent, point.raw)
+    private func row<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(.horizontal, Thermyx.Space.xl)
+            .padding(.vertical, Thermyx.Space.m)
+            .frame(minHeight: Thermyx.minimumTapTarget)
     }
 }

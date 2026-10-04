@@ -6,6 +6,7 @@ struct HomeView: View {
     @ObservedObject var settings: ThermyxSettingsStore
 
     @State private var showingWhy = false
+    @State private var showingConnect = false
     @State private var showingPairing: Bool = {
         #if DEBUG
         return ThermyxPreviewHarness.opensProfileSheet
@@ -29,13 +30,19 @@ struct HomeView: View {
             if heroTemperatureC != nil {
                 live
             } else {
-                empty
+                // No insole live: the test board's main sensor, if any.
+                SensorHomeSwitch(board: viewModel.board, ble: viewModel.ble) { empty }
             }
         }
         .background(Thermyx.Ink.midnight)
         .thermyxTopScrim()
         .sheet(isPresented: $showingPairing) {
             DeviceProfileSheet(roles: roles, settings: settings)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $showingConnect) {
+            NavigationStack { ConnectDeviceView(ble: viewModel.ble) }
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
@@ -297,29 +304,23 @@ struct HomeView: View {
             }
             .padding(.horizontal, Thermyx.Space.screen)
 
-            if !viewModel.ble.sensorFeet.isEmpty {
-                TestBoardHomeNote(ble: viewModel.ble)
-            } else {
-                VStack(spacing: Thermyx.Space.m) {
-                    Text("No insoles connected")
-                        .font(ThermyxFont.featureHeadline)
-                        .tracking(-0.8)
-                        .foregroundStyle(Thermyx.Ink.textPrimary)
-                        .multilineTextAlignment(.center)
+            VStack(spacing: Thermyx.Space.m) {
+                Text("No sensor connected")
+                    .font(ThermyxFont.featureHeadline)
+                    .tracking(-0.8)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                    .multilineTextAlignment(.center)
 
-                    Text("Thermyx shows no estimated readings. Pair a left or right insole — or both — and live temperature, pressure, and movement start here.")
-                        .font(ThermyxFont.body)
-                        .foregroundStyle(Thermyx.Ink.textSupporting)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text("Thermyx shows no estimated readings. Connect a sensor or pair a left or right insole — or both — and live readings start here.")
+                    .font(ThermyxFont.body)
+                    .foregroundStyle(Thermyx.Ink.textSupporting)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             VStack(spacing: Thermyx.Space.m) {
-                SensorLinkStatusPill(ble: viewModel.ble)
-
-                Button(viewModel.isScanning ? "Stop scanning" : "Scan for Thermyx") {
-                    viewModel.toggleScan()
+                Button("Connect a device") {
+                    showingConnect = true
                 }
                 .buttonStyle(ThermyxPrimaryButtonStyle())
                 .fixedSize(horizontal: true, vertical: false)
@@ -327,7 +328,7 @@ struct HomeView: View {
                 Button {
                     showingPairing = true
                 } label: {
-                    Text("Pair manually")
+                    Text("Pair insoles")
                         .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.ice)
                         .frame(minHeight: Thermyx.minimumTapTarget)
                         .contentShape(.rect)

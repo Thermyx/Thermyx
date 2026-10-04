@@ -31,11 +31,6 @@ struct ThermyxReading: Equatable {
     /// True while the firmware's own burn cutoff is holding the heater off
     /// (flags bit 4).
     var burnCutoff = false
-    /// A value from the single-sensor test firmware (ThermyxSensorProtocol).
-    /// Kept apart from the body readings above: a test knob or FSR fills only
-    /// this, and a temperature source fills `footTemperatureC` only through an
-    /// explicit calibration.
-    var analogInput: AnalogInput?
 
     init(
         foot: Foot,
