@@ -43,6 +43,9 @@ struct InsightsHubView: View {
                     availableFeet: digest.feet
                 )
 
+                // Test-board sensors, beside (never inside) the body charts.
+                BoardSensorCards(board: viewModel.board, history: viewModel.history, ble: viewModel.ble)
+
                 if digest.hasAny {
                     heatExposureCard(digest)
                     if digest.hasBoth { balanceCard(digest) }

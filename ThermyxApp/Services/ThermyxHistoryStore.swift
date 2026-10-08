@@ -15,6 +15,10 @@ final class ThermyxHistoryStore: ObservableObject {
     @Published private(set) var minuteSamples: [ThermyxHistorySample] = []
     @Published private(set) var hourSamples: [ThermyxHistorySample] = []
     @Published private(set) var events: [ThermyxRiskEvent] = []
+    /// Per-minute history of the single-sensor test board, in each sensor's
+    /// own units. Kept apart from the body samples: it never feeds risk,
+    /// trends, alerts, or Apple Health.
+    @Published private(set) var sensorMinutes: [SensorMinute] = []
 
     private static let minuteRetention: TimeInterval = 7 * 24 * 3600
     private static let hourRetention: TimeInterval = 180 * 24 * 3600
@@ -29,6 +33,8 @@ final class ThermyxHistoryStore: ObservableObject {
         var minuteSamples: [ThermyxHistorySample]
         var hourSamples: [ThermyxHistorySample]
         var events: [ThermyxRiskEvent]
+        /// Optional so archives written before the test board still load.
+        var sensorMinutes: [SensorMinute]?
     }
 
     private static var fileURL: URL {
@@ -54,6 +60,7 @@ final class ThermyxHistoryStore: ObservableObject {
         minuteSamples = archive.minuteSamples
         hourSamples = archive.hourSamples
         events = archive.events
+        sensorMinutes = archive.sensorMinutes ?? []
         prune()
     }
 
@@ -135,6 +142,27 @@ final class ThermyxHistoryStore: ObservableObject {
         } else {
             events.append(event)
         }
+    }
+
+    /// Folds one test-board value into its minute bucket. `key` is
+    /// `TYPE#CHANNEL`; `value` is already in the sensor's units.
+    func recordSensor(key: String, value: Double, at time: Date = .now) {
+        guard value.isFinite else { return }
+        let start = Date(timeIntervalSince1970: (time.timeIntervalSince1970 / 60).rounded(.down) * 60)
+        if let index = sensorMinutes.lastIndex(where: { $0.key == key && $0.start == start }) {
+            sensorMinutes[index].add(value)
+        } else {
+            var minute = SensorMinute(key: key, start: start)
+            minute.add(value)
+            sensorMinutes.append(minute)
+        }
+        if Date.now.timeIntervalSince(lastPrune) > 60 { prune() }
+        scheduleSave()
+    }
+
+    /// One sensor's minutes, oldest first, newest `limit`.
+    func sensorHistory(key: String, limit: Int = 60) -> [SensorMinute] {
+        Array(sensorMinutes.filter { $0.key == key }.suffix(limit))
     }
 
     // MARK: - Reading
@@ -219,6 +247,7 @@ final class ThermyxHistoryStore: ObservableObject {
         minuteSamples.removeAll()
         hourSamples.removeAll()
         events.removeAll()
+        sensorMinutes.removeAll()
         openEvent.removeAll()
         scheduleSave()
     }
@@ -229,6 +258,7 @@ final class ThermyxHistoryStore: ObservableObject {
         minuteSamples.removeAll { $0.start < now.addingTimeInterval(-Self.minuteRetention) }
         hourSamples.removeAll { $0.start < now.addingTimeInterval(-Self.hourRetention) }
         events.removeAll { $0.timestamp < now.addingTimeInterval(-Self.eventRetention) }
+        sensorMinutes.removeAll { $0.start < now.addingTimeInterval(-Self.minuteRetention) }
     }
 
     private func scheduleSave() {
@@ -241,7 +271,12 @@ final class ThermyxHistoryStore: ObservableObject {
     }
 
     func save() async {
-        let archive = Archive(minuteSamples: minuteSamples, hourSamples: hourSamples, events: events)
+        let archive = Archive(
+            minuteSamples: minuteSamples,
+            hourSamples: hourSamples,
+            events: events,
+            sensorMinutes: sensorMinutes
+        )
         let url = Self.fileURL
         await Task.detached(priority: .utility) {
             guard let data = try? JSONEncoder().encode(archive) else { return }

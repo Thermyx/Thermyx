@@ -25,6 +25,10 @@ final class ThermyxViewModel: ObservableObject {
     let ble = ThermyxBLEService()
     let history = ThermyxHistoryStore()
     let baseline = PersonalBaselineStore()
+    /// The single-sensor test board's live table. Fed only by
+    /// `ble.boardPackets`, never by insole readings, and never read by the
+    /// risk engine, alerts, or Apple Health.
+    private(set) lazy var board = SensorBoardStore(packets: ble.boardPackets.eraseToAnyPublisher(), history: history)
 
     weak var healthService: ThermyxHealthService?
 
@@ -45,6 +49,17 @@ final class ThermyxViewModel: ObservableObject {
     private var noticeTask: Task<Void, Never>?
 
     init() {
+        // Demo Mode writes no history, board values included.
+        let ble = self.ble
+        board.recordsHistory = { !ble.isDemoMode }
+        ble.$boardState
+            .removeDuplicates()
+            .sink { [weak self] state in
+                // Disconnected or gone: nothing stays on screen looking live.
+                if state == .notConnected { self?.board.clear() }
+            }
+            .store(in: &cancellables)
+
         ble.$readings
             .receive(on: RunLoop.main)
             .sink { [weak self] readings in
@@ -240,7 +255,7 @@ final class ThermyxViewModel: ObservableObject {
     }
 
     func connect(to device: ThermyxBLEService.DiscoveredDevice, as foot: Foot? = nil) {
-        ble.connect(to: device, as: foot)
+        ble.connectDevice(device, as: foot)
         isScanning = false
     }
 

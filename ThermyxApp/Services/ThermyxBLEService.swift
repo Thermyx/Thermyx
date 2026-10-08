@@ -16,6 +16,9 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     nonisolated static let serviceUUID = CBUUID(string: "7B7E0001-7A3B-4D2D-9C9E-000000000001")
     nonisolated static let telemetryUUID = CBUUID(string: "7B7E0002-7A3B-4D2D-9C9E-000000000001")
     nonisolated static let commandUUID = CBUUID(string: "7B7E0003-7A3B-4D2D-9C9E-000000000001")
+    // The single-sensor XIAO test board (see ThermyxSensorProtocol).
+    nonisolated static let sensorServiceUUID = CBUUID(string: ThermyxSensorProtocol.serviceUUIDString)
+    nonisolated static let sensorValueUUID = CBUUID(string: ThermyxSensorProtocol.valueUUIDString)
 
     // MARK: Published state
 
@@ -42,13 +45,86 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     }
 
     struct DiscoveredDevice: Identifiable, Equatable {
+        enum Kind: Equatable {
+            /// Advertises the two-insole service.
+            case insole
+            /// Advertises the single-sensor test-board service.
+            case sensorBoard
+            /// Anything else, listed only with "Show all Bluetooth devices".
+            case other
+        }
+
         let id: UUID
         let name: String
         let rssi: Int
         /// Declared by the peripheral name, when the firmware says so.
         let advertisedFoot: Foot?
+        var kind: Kind = .insole
+        /// False when the device advertises no name at all.
+        var isNamed = true
         var isStrong: Bool { rssi > -75 }
+
+        /// Thermyx by service UUID, or a name that says Thermyx.
+        var looksLikeThermyx: Bool {
+            kind != .other || name.localizedCaseInsensitiveContains("thermyx")
+        }
+
+        /// Fixed list order, so rows don't jump as signal strength changes:
+        /// Thermyx devices first, then named, then unnamed; by name within.
+        static func listOrder(_ a: DiscoveredDevice, _ b: DiscoveredDevice) -> Bool {
+            func group(_ d: DiscoveredDevice) -> Int {
+                switch d.kind {
+                case .sensorBoard: return 0
+                case .insole: return 1
+                case .other: return d.looksLikeThermyx ? 2 : (d.isNamed ? 3 : 4)
+                }
+            }
+            if group(a) != group(b) { return group(a) < group(b) }
+            let byName = a.name.localizedCaseInsensitiveCompare(b.name)
+            if byName != .orderedSame { return byName == .orderedAscending }
+            return a.id.uuidString < b.id.uuidString
+        }
+
+        /// Merges a new advertisement into what is already listed. iOS
+        /// reports advertising and scan-response packets separately, so one
+        /// may lack the name or service list: never lose what was seen.
+        /// Signal strength is smoothed so the number doesn't flicker.
+        func merged(with update: DiscoveredDevice) -> DiscoveredDevice {
+            DiscoveredDevice(
+                id: id,
+                name: update.isNamed ? update.name : name,
+                rssi: Int((Double(rssi) * 0.7 + Double(update.rssi) * 0.3).rounded()),
+                advertisedFoot: update.advertisedFoot ?? advertisedFoot,
+                kind: update.kind != .other ? update.kind : kind,
+                isNamed: isNamed || update.isNamed
+            )
+        }
     }
+
+    // MARK: Test board
+
+    /// Every parsed line from the test board, in arrival order. The board
+    /// never becomes a `ThermyxReading`, so it can't reach risk levels,
+    /// alerts, or Apple Health.
+    let boardPackets = PassthroughSubject<SensorPacket, Never>()
+    @Published private(set) var boardState: BoardLinkState = .notConnected
+    /// The board the user last connected by hand, and whether they then
+    /// disconnected it. Persisted.
+    private(set) var boardMemory = BoardMemory.load()
+    /// The board's peripheral while connecting or connected.
+    private var boardPeripheral: CBPeripheral?
+    /// True while the current board connection was started by a tap, so it
+    /// is remembered once it proves to be a board.
+    private var boardManualConnect = false
+    private var boardName = "Thermyx"
+    /// Whether the running scan lists every device, not just Thermyx ones.
+    private var scanShowsAll = false
+    /// When each listed device was last heard, to drop ones that left.
+    private var lastHeard: [UUID: Date] = [:]
+    /// When each row was last redrawn, to hold the list steady.
+    private var lastShown: [UUID: Date] = [:]
+    /// Devices not heard for this long leave the list.
+    nonisolated static let discoveredTimeout: TimeInterval = 12
 
     // MARK: Private
 
@@ -119,7 +195,15 @@ final class ThermyxBLEService: NSObject, ObservableObject {
                 tearDown(id)
             }
             pendingFoot.removeAll()
+            // Drop a real test board too, without forgetting it.
+            if let board = boardPeripheral {
+                userDisconnects.insert(board.identifier)
+                central.cancelPeripheralConnection(board)
+            }
         }
+        boardPeripheral = nil
+        boardManualConnect = false
+        boardState = .notConnected
         readings.removeAll()
         discovered.removeAll()
         simulator = ThermyxInsoleSimulator(ble: self)
@@ -132,9 +216,11 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     func stopDemoMode() {
         guard let simulator else { return }
         for foot in Foot.allCases { simulator.disconnect(foot) }
+        simulator.disconnectBoard()
         simulator.shutdown()
         self.simulator = nil
         isDemoMode = false
+        boardState = .notConnected
         readings.removeAll()
         discovered.removeAll()
         userDisconnects.removeAll()
@@ -147,6 +233,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         } else {
             state = central.state
             reconnectKnownInsoles()
+            reconnectRememberedBoard()
         }
     }
 
@@ -154,8 +241,21 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 
     private func startWatchdog() {
         watchdogTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.checkForStaleFeet() }
+            Task { @MainActor in
+                self?.checkForStaleFeet()
+                self?.pruneDiscovered()
+            }
         }
+    }
+
+    /// Drops devices that stopped advertising, so the list shows what is
+    /// actually nearby.
+    private func pruneDiscovered(now: Date = .now) {
+        guard simulator == nil, !lastHeard.isEmpty else { return }
+        let gone = Set(lastHeard.filter { now.timeIntervalSince($0.value) > Self.discoveredTimeout }.keys)
+        guard !gone.isEmpty else { return }
+        for id in gone { lastHeard[id] = nil; lastShown[id] = nil }
+        discovered.removeAll { gone.contains($0.id) }
     }
 
     /// A connected insole that stops sending keeps its link up, so a
@@ -222,11 +322,15 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 
     // MARK: Scanning
 
-    func scan() {
+    /// Lists nearby Thermyx devices: insoles and test boards, matched by
+    /// service UUID, never by name. `showAll` lists every Bluetooth device.
+    /// Scanning never connects anything by itself.
+    func scan(showAll: Bool = false) {
         if let simulator {
             errorMessage = nil
             discovered.removeAll()
             simulator.startScan()
+            if !boardState.isConnected, boardPeripheral == nil { boardState = .scanning }
             return
         }
         guard state == .poweredOn else {
@@ -235,20 +339,128 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         }
         errorMessage = nil
         discovered.removeAll()
+        lastHeard.removeAll()
+        lastShown.removeAll()
+        scanShowsAll = showAll
+        if boardPeripheral == nil { boardState = .scanning }
         central.scanForPeripherals(
-            withServices: [Self.serviceUUID],
+            withServices: showAll ? nil : [Self.serviceUUID, Self.sensorServiceUUID],
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
         )
     }
 
     func stopScan() {
+        if case .scanning = boardState { boardState = .notConnected }
         if let simulator { simulator.stopScan(); return }
+        guard central != nil else { return }
         central.stopScan()
+    }
+
+    // MARK: Test board link
+
+    /// Connects to a device the user tapped in the list. Only ever called
+    /// from a tap: the app never picks a board by itself the first time.
+    func connectBoard(_ device: DiscoveredDevice) {
+        boardName = device.name
+        if let simulator {
+            simulator.stopScan()
+            boardState = .connecting(device.name)
+            simulator.connectBoard()
+            return
+        }
+        guard let target = peripherals[device.id] else { return }
+        central.stopScan()
+        // One board at a time: let go of the previous one first.
+        if let current = boardPeripheral, current.identifier != device.id {
+            userDisconnects.insert(current.identifier)
+            central.cancelPeripheralConnection(current)
+        }
+        boardPeripheral = target
+        boardManualConnect = true
+        userDisconnects.remove(device.id)
+        boardState = .connecting(device.name)
+        central.connect(target, options: nil)
+    }
+
+    /// The user's Disconnect. Stops automatic reconnection until they
+    /// connect again from the scan list, including across launches.
+    func disconnectBoard() {
+        if let simulator {
+            simulator.disconnectBoard()
+            boardState = .notConnected
+            return
+        }
+        boardMemory = BoardReconnectPolicy.afterUserDisconnect(boardMemory)
+        boardMemory.save()
+        boardManualConnect = false
+        boardState = .notConnected
+        guard let peripheral = boardPeripheral else { return }
+        boardPeripheral = nil
+        userDisconnects.insert(peripheral.identifier)
+        central.cancelPeripheralConnection(peripheral)
+    }
+
+    /// Rule 4: on launch (and when Bluetooth comes back on), reconnect to the
+    /// remembered board unless the user disconnected it.
+    fileprivate func reconnectRememberedBoard() {
+        guard simulator == nil, central != nil, state == .poweredOn, boardPeripheral == nil,
+              let id = BoardReconnectPolicy.boardToReconnectOnLaunch(boardMemory),
+              let peripheral = central.retrievePeripherals(withIdentifiers: [id]).first
+        else { return }
+        boardPeripheral = peripheral
+        boardManualConnect = false
+        boardName = boardMemory.name ?? peripheral.name ?? "Thermyx"
+        boardState = .reconnecting(boardName)
+        central.connect(peripheral, options: nil)
+    }
+
+    fileprivate func isBoard(_ id: UUID) -> Bool { boardPeripheral?.identifier == id }
+
+    /// The board's value characteristic is subscribed: it is a board.
+    fileprivate func boardReady(_ peripheral: CBPeripheral) {
+        guard isBoard(peripheral.identifier) else { return }
+        if boardManualConnect {
+            // Rule 1: remember a board the user connected by hand.
+            boardMemory = BoardReconnectPolicy.afterManualConnect(id: peripheral.identifier, name: boardName)
+            boardMemory.save()
+            boardManualConnect = false
+        }
+        boardState = .connected(boardName)
+        errorMessage = nil
+    }
+
+    /// Not a test board after all (no sensor service).
+    fileprivate func rejectBoard(_ peripheral: CBPeripheral) {
+        guard isBoard(peripheral.identifier) else { return }
+        boardPeripheral = nil
+        boardManualConnect = false
+        boardState = .notConnected
+        userDisconnects.insert(peripheral.identifier)
+        central.cancelPeripheralConnection(peripheral)
+        errorMessage = "\(boardName) isn't a Thermyx sensor (no Thermyx sensor service)."
+    }
+
+    fileprivate func decodeBoardValue(_ data: Data, from peripheralID: UUID) {
+        guard isBoard(peripheralID) else { return }
+        // Malformed or out-of-range lines are dropped.
+        guard let packet = ThermyxSensorProtocol.parse(data) else { return }
+        boardPackets.send(packet)
+    }
+
+    /// Connect to a discovered device: insoles go through the pairing flow,
+    /// everything else is tried as a test board.
+    func connectDevice(_ device: DiscoveredDevice, as foot: Foot? = nil) {
+        if device.kind == .insole {
+            connect(to: device, as: foot)
+        } else {
+            connectBoard(device)
+        }
     }
 
     /// Connect to a discovered device. `foot` is used when the firmware did
     /// not declare one; otherwise the declared foot wins.
     func connect(to device: DiscoveredDevice, as foot: Foot? = nil) {
+        if case .scanning = boardState { boardState = .notConnected }
         if let simulator { simulator.connect(device, as: foot); return }
         guard let target = peripherals[device.id] else { return }
         let assigned = device.advertisedFoot ?? foot
@@ -385,7 +597,16 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
         let newState = central.state
         Task { @MainActor in
             self.state = newState
-            if newState == .poweredOn { self.reconnectKnownInsoles() }
+            if newState == .poweredOn {
+                self.reconnectKnownInsoles()
+                self.reconnectRememberedBoard()
+            } else if self.simulator == nil {
+                // Links are gone with the radio; rule 4 brings the board back
+                // when Bluetooth returns.
+                self.boardPeripheral = nil
+                self.boardManualConnect = false
+                self.boardState = .notConnected
+            }
         }
     }
 
@@ -397,6 +618,14 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
             let known = self.knownInsoles
             for peripheral in restored {
                 self.peripherals[peripheral.identifier] = peripheral
+                if let id = BoardReconnectPolicy.boardToReconnectOnLaunch(self.boardMemory), id == peripheral.identifier {
+                    self.boardPeripheral = peripheral
+                    self.boardName = self.boardMemory.name ?? peripheral.name ?? "Thermyx"
+                    self.boardState = peripheral.state == .connected ? .connecting(self.boardName) : .reconnecting(self.boardName)
+                    peripheral.delegate = self
+                    if peripheral.state == .connected { peripheral.discoverServices([Self.sensorServiceUUID]) }
+                    continue
+                }
                 if let foot = known.first(where: { $0.value == peripheral.identifier })?.key {
                     self.pendingFoot[peripheral.identifier] = foot
                 }
@@ -415,25 +644,56 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        let name = peripheral.name
-            ?? (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
-            ?? "Unknown device"
+        // The advertised name first: it is what the firmware sends now,
+        // where peripheral.name can be a name iOS cached earlier.
+        let advertisedName = (advertisementData[CBAdvertisementDataLocalNameKey] as? String)
+            ?? peripheral.name
+        let trimmedName = advertisedName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isNamed = !(trimmedName ?? "").isEmpty
+        let name = isNamed ? trimmedName! : "Unnamed device"
         let strength = RSSI.intValue
         let identifier = peripheral.identifier
+        let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? [])
+            + (advertisementData[CBAdvertisementDataOverflowServiceUUIDsKey] as? [CBUUID] ?? [])
         Task { @MainActor in
+            // 127 means iOS couldn't measure it; keep the last real value.
+            guard strength != 127 else { return }
             self.peripherals[identifier] = peripheral
+            let kind: DiscoveredDevice.Kind
+            if services.contains(Self.serviceUUID) {
+                kind = .insole
+            } else if services.contains(Self.sensorServiceUUID) || !self.scanShowsAll {
+                // A filtered scan only reports the two Thermyx services.
+                kind = .sensorBoard
+            } else {
+                kind = .other
+            }
             let device = DiscoveredDevice(
                 id: identifier,
                 name: name,
                 rssi: strength,
-                advertisedFoot: Self.foot(fromName: name)
+                advertisedFoot: kind == .insole ? Self.foot(fromName: name) : nil,
+                kind: kind,
+                isNamed: isNamed
             )
+            let now = Date.now
+            self.lastHeard[identifier] = now
             if let index = self.discovered.firstIndex(where: { $0.id == identifier }) {
-                self.discovered[index] = device
+                let previous = self.discovered[index]
+                let next = previous.merged(with: device)
+                // Redraw a row at most once a second unless what it says
+                // changed, so the list stays readable.
+                let identityChanged = next.name != previous.name || next.kind != previous.kind
+                let recentlyShown = self.lastShown[identifier].map { now.timeIntervalSince($0) < 1 } ?? false
+                guard identityChanged || !recentlyShown else { return }
+                self.lastShown[identifier] = now
+                self.discovered[index] = next
+                if identityChanged { self.discovered.sort(by: DiscoveredDevice.listOrder) }
             } else {
+                self.lastShown[identifier] = now
                 self.discovered.append(device)
+                self.discovered.sort(by: DiscoveredDevice.listOrder)
             }
-            self.discovered.sort { $0.rssi > $1.rssi }
         }
     }
 
@@ -455,6 +715,10 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
             }
             self.errorMessage = nil
             peripheral.delegate = self
+            if self.isBoard(peripheral.identifier) {
+                peripheral.discoverServices([Self.sensorServiceUUID])
+                return
+            }
             peripheral.discoverServices([Self.serviceUUID])
             self.startRSSIPolling()
         }
@@ -463,6 +727,19 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
     nonisolated func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
         let identifier = peripheral.identifier
         Task { @MainActor in
+            if self.isBoard(identifier) {
+                if !self.boardManualConnect,
+                   BoardReconnectPolicy.shouldReconnectAfterDrop(self.boardMemory, peripheral: identifier) {
+                    self.boardState = .reconnecting(self.boardName)
+                    central.connect(peripheral, options: nil)
+                } else {
+                    self.boardPeripheral = nil
+                    self.boardManualConnect = false
+                    self.boardState = .notConnected
+                    self.errorMessage = error?.localizedDescription ?? "Could not connect to \(self.boardName)."
+                }
+                return
+            }
             self.tearDown(identifier)
             self.errorMessage = error?.localizedDescription ?? "Could not connect to the insole."
         }
@@ -475,6 +752,26 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
     ) {
         let identifier = peripheral.identifier
         Task { @MainActor in
+            if self.userDisconnects.contains(identifier), !self.isBoard(identifier),
+               self.footFor(identifier) == nil, self.pendingFoot[identifier] == nil {
+                // A board the user disconnected, or a device that wasn't one.
+                self.userDisconnects.remove(identifier)
+                return
+            }
+            if self.isBoard(identifier) {
+                if self.userDisconnects.remove(identifier) == nil,
+                   BoardReconnectPolicy.shouldReconnectAfterDrop(self.boardMemory, peripheral: identifier) {
+                    // Rule 2: out of range or power loss. iOS holds the
+                    // request open until the board is back.
+                    self.boardState = .reconnecting(self.boardName)
+                    self.central.connect(peripheral, options: nil)
+                } else {
+                    self.boardPeripheral = nil
+                    self.boardManualConnect = false
+                    self.boardState = .notConnected
+                }
+                return
+            }
             let foot = self.footFor(identifier) ?? self.pendingFoot[identifier]
             self.tearDown(identifier)
             if self.connected.isEmpty { self.stopRSSIPolling() }
@@ -524,7 +821,14 @@ extension ThermyxBLEService: CBPeripheralDelegate {
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
-        guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else { return }
+        if let board = peripheral.services?.first(where: { $0.uuid == Self.sensorServiceUUID }) {
+            peripheral.discoverCharacteristics([Self.sensorValueUUID], for: board)
+            return
+        }
+        guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
+            Task { @MainActor in self.rejectBoard(peripheral) }
+            return
+        }
         peripheral.discoverCharacteristics([Self.telemetryUUID, Self.commandUUID], for: service)
     }
 
@@ -548,6 +852,12 @@ extension ThermyxBLEService: CBPeripheralDelegate {
             if characteristic.uuid == Self.telemetryUUID {
                 peripheral.setNotifyValue(true, for: characteristic)
             }
+            if characteristic.uuid == Self.sensorValueUUID {
+                // Subscribe, and read once so a value shows straight away.
+                peripheral.setNotifyValue(true, for: characteristic)
+                peripheral.readValue(for: characteristic)
+                Task { @MainActor in self.boardReady(peripheral) }
+            }
         }
     }
 
@@ -558,9 +868,14 @@ extension ThermyxBLEService: CBPeripheralDelegate {
     ) {
         guard let data = characteristic.value else { return }
         let identifier = peripheral.identifier
+        let isBoardValue = characteristic.uuid == Self.sensorValueUUID
         Task { @MainActor in
             guard self.simulator == nil else { return }
-            self.decodeTelemetry(data, from: identifier)
+            if isBoardValue {
+                self.decodeBoardValue(data, from: identifier)
+            } else {
+                self.decodeTelemetry(data, from: identifier)
+            }
         }
     }
 
@@ -616,7 +931,7 @@ extension ThermyxBLEService {
 
 extension ThermyxBLEService {
     fileprivate func simSetDiscovered(_ devices: [DiscoveredDevice]) {
-        discovered = devices.sorted { $0.rssi > $1.rssi }
+        discovered = devices.sorted(by: DiscoveredDevice.listOrder)
     }
 
     fileprivate func simAttach(_ foot: Foot, name: String) {
@@ -633,6 +948,16 @@ extension ThermyxBLEService {
         stamps.append(.now)
         if stamps.count > 32 { stamps.removeFirst(stamps.count - 32) }
         packetTimestamps[reading.foot] = stamps
+    }
+
+    fileprivate func simBoardAttached(_ attached: Bool) {
+        boardState = attached ? .connected(boardName) : .notConnected
+    }
+
+    /// Simulated board lines go through the same parser as real ones.
+    fileprivate func simBoardLine(_ line: String) {
+        guard simulator != nil, boardState.isConnected, let packet = ThermyxSensorProtocol.parse(line: line) else { return }
+        boardPackets.send(packet)
     }
 
     fileprivate func simDetach(_ foot: Foot) {
@@ -653,6 +978,26 @@ final class ThermyxInsoleSimulator: ObservableObject {
     /// Simulates a failed Peltier and fan: the insole can neither cool nor
     /// heat, and heat builds up in the shoe. Used to demonstrate Critical.
     @Published var coolingFault = false
+    /// A simulated test board: what its one sensor reports, and the knob
+    /// that drives it (0…1), so every board card can be tried without one.
+    @Published var boardSensor: SimulatedBoardSensor = .knob
+    @Published var knob: Double = 0.5
+    private var boardConnected = false
+
+    enum SimulatedBoardSensor: String, CaseIterable, Identifiable {
+        case knob, ntc, fsr, tmp102
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .knob: return "Test knob"
+            case .ntc: return "NTC"
+            case .fsr: return "FSR402"
+            case .tmp102: return "TMP102"
+            }
+        }
+    }
+
+    static let boardID = UUID(uuidString: "5E1A0000-0000-4000-8000-0000000000B0")!
 
     private struct Insole {
         var contactC: Double
@@ -697,6 +1042,51 @@ final class ThermyxInsoleSimulator: ObservableObject {
             scanWork.append(work)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.8 + Double(index) * 0.7, execute: work)
         }
+        if !boardConnected {
+            let work = DispatchWorkItem { [weak self] in
+                Task { @MainActor in self?.advertiseBoard() }
+            }
+            scanWork.append(work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2, execute: work)
+        }
+    }
+
+    private func advertiseBoard() {
+        guard let ble, !boardConnected else { return }
+        var devices = ble.discovered.filter { $0.id != Self.boardID }
+        devices.append(.init(id: Self.boardID, name: "Thermyx (simulated)", rssi: -52 + Int.random(in: -3...3),
+                             advertisedFoot: nil, kind: .sensorBoard))
+        ble.simSetDiscovered(devices)
+    }
+
+    func connectBoard() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            Task { @MainActor in
+                guard let self, let ble = self.ble else { return }
+                self.boardConnected = true
+                ble.simSetDiscovered(ble.discovered.filter { $0.id != Self.boardID })
+                ble.simBoardAttached(true)
+                self.publishBoard()
+            }
+        }
+    }
+
+    func disconnectBoard() {
+        boardConnected = false
+        ble?.simBoardAttached(false)
+    }
+
+    /// One `TYPE,CHANNEL,VALUE` line, as the firmware would send it.
+    private func publishBoard() {
+        guard boardConnected, let ble else { return }
+        let raw = min(max(Int((knob * Double(ThermyxSensorProtocol.maxRaw)).rounded()) + Int.random(in: -6...6), 0), ThermyxSensorProtocol.maxRaw)
+        let line: String = switch boardSensor {
+        case .knob: "KNOB,0,\(raw)"
+        case .ntc: "NTC,0,\(raw)"
+        case .fsr: "FSR,0,\(raw)"
+        case .tmp102: String(format: "TMP102,0,%.2f", 15 + knob * 25 + Double.random(in: -0.05...0.05))
+        }
+        ble.simBoardLine(line)
     }
 
     func stopScan() {
@@ -769,6 +1159,7 @@ final class ThermyxInsoleSimulator: ObservableObject {
 
     private func step() {
         tick += 1
+        publishBoard()
         for foot in Foot.allCases {
             guard var insole = insoles[foot], insole.isConnected else { continue }
             let natural = naturalContact(foot)

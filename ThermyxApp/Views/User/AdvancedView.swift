@@ -19,6 +19,7 @@ struct AdvancedView: View {
     var body: some View {
         ThermyxDetailScreen(title: "Advanced") {
             DemoModeSection(ble: viewModel.ble, unit: unit)
+            BoardSettingsSection(board: viewModel.board, ble: viewModel.ble)
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 DeviceHealthStrip(now: context.date)
             }
@@ -539,6 +540,25 @@ private struct SimulatedConditionsCard: View {
                         }
                     }
                     .tint(Thermyx.Ink.amber)
+
+                    VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+                        Text("Simulated test board")
+                            .font(ThermyxFont.rowTitle)
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                        Picker("Board sensor", selection: $simulator.boardSensor) {
+                            ForEach(ThermyxInsoleSimulator.SimulatedBoardSensor.allCases) { sensor in
+                                Text(sensor.label).tag(sensor)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        Slider(value: $simulator.knob, in: 0...1)
+                            .tint(Thermyx.Ink.amber)
+                            .accessibilityLabel("Simulated board input")
+                        Text("Connect \"Thermyx (simulated)\" from Connect a device. The slider drives the board's one sensor.")
+                            .font(ThermyxFont.caption)
+                            .foregroundStyle(Thermyx.Ink.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     Text("Hot air is Caution; add a tiring wearer for High; add an insole fault for Critical. The foot hitting 40° while heating is High on its own.")
                         .font(ThermyxFont.caption)
