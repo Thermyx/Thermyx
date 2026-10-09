@@ -1,5 +1,13 @@
 # Thermyx insole firmware
 
+Two builds of the same firmware:
+
+- `thermyx_insole/` for the **Seeed XIAO ESP32-C3** (pin map below).
+- `thermyx_insole_esp32/` for an **ESP32-WROOM-32 dev board** (e.g. ELEGOO
+  ESP-32): GPIO pin map in the file header, TMP102 or TMP117 detected
+  automatically, FSRs and MPU-6050 optional, and a status line on the Serial
+  Monitor at 115200. Board: **ESP32 Dev Module**.
+
 `thermyx_insole/thermyx_insole.ino` runs on a **Seeed XIAO ESP32-C3** and
 implements [`ThermyxApp/BLE_PROTOCOL.md`](../ThermyxApp/BLE_PROTOCOL.md):
 v3 telemetry (22 bytes, once a second), mode commands, and the
