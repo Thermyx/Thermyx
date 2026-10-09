@@ -317,4 +317,46 @@ final class RiskEngineTests: XCTestCase {
                                                declaredFoot: .left, settingEcho: .auto)
         XCTAssertNil(try ThermyxProtocol.decode(ThermyxProtocol.encode(legacy)).get().footDetected, "Unknown, not 'no foot'")
     }
+
+    // MARK: Fake insole (TEMPORARY)
+
+    func testFakeInsoleScriptIsRepeatable() {
+        for activity in CalibrationActivity.allCases {
+            XCTAssertEqual(FakeInsoleScript.samples(activity: activity, outdoor: false, seconds: 30, start: .distantPast),
+                           FakeInsoleScript.samples(activity: activity, outdoor: false, seconds: 30, start: .distantPast))
+        }
+        XCTAssertGreaterThan(FakeInsoleScript.steadyFootC(activity: .walking, outdoor: false, foot: .left),
+                             FakeInsoleScript.steadyFootC(activity: .sitting, outdoor: false, foot: .left))
+    }
+
+    func testFakeInsoleRecordingTrainsAUsableModel() throws {
+        let segments = CalibrationPlan.steps.map {
+            CalibrationTrainer.Segment(activity: $0.activity, outdoor: $0.outdoor,
+                                       samples: FakeInsoleScript.samples(activity: $0.activity, outdoor: $0.outdoor,
+                                                                         seconds: CalibrationPlan.secondsPerStep))
+        }
+        let model = try XCTUnwrap(CalibrationTrainer.train(segments: segments, comfort: 0))
+        XCTAssertTrue(model.classifier.isUsable)
+        XCTAssertGreaterThanOrEqual(try XCTUnwrap(model.classifierAccuracy), 0.95)
+        XCTAssertTrue(model.outdoorDone)
+        XCTAssertEqual(try XCTUnwrap(model.footByActivity[.sitting]?.mean), 30.5, accuracy: 0.2, "Indoor only, right foot")
+        XCTAssertFalse(model.isTestData, "The trainer doesn't mark it; the session does")
+    }
+
+    func testTestDataFlagSurvivesSaving() throws {
+        var model = try XCTUnwrap(CalibrationTrainer.train(segments: indoorSegments, comfort: 0))
+        model.fromTestData = true
+        let decoded = try JSONDecoder().decode(PersonalThermalModel.self, from: JSONEncoder().encode(model))
+        XCTAssertTrue(decoded.isTestData)
+    }
+
+    func testFakeFirmwareFollowsCommandsAndBurnCutoff() {
+        let decide = ThermyxInsoleSimulator.scriptedDecision
+        XCTAssertEqual(decide(.cooling, 30, 31, .ventilation), .cooling)
+        XCTAssertEqual(decide(.heating, 40.2, 31, .heating), .ventilation, "Burn cutoff at 40 °C")
+        XCTAssertEqual(decide(.heating, 39, 31, .ventilation), .ventilation, "Stays off until below 38.5 °C")
+        XCTAssertEqual(decide(.heating, 38, 31, .ventilation), .heating)
+        XCTAssertEqual(decide(.ventilation, 31.5, 31, .ventilation), .ventilation, "Auto leaves a near-target foot alone")
+        XCTAssertEqual(decide(.ventilation, 33, 31, .ventilation), .cooling)
+    }
 }

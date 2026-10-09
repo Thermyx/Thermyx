@@ -18,8 +18,15 @@ struct OnboardingFlow: View {
     @State private var pairingCode = "THERMYX-01"
     @State private var calibrating = false
 
-    /// The wearer gets a fourth step, calibration; a watcher finishes at pairing.
-    private var lastStep: Int { selectedRole == .user ? 3 : 2 }
+    private enum Screen { case intro, role, profile, connect, calibrate }
+
+    /// The wearer: about you, connect the insole, then calibrate. A watcher
+    /// finishes at pairing.
+    private var screens: [Screen] {
+        selectedRole == .user ? [.intro, .role, .profile, .connect, .calibrate] : [.intro, .role, .connect]
+    }
+    private var lastStep: Int { screens.count - 1 }
+    private var screen: Screen { screens[min(step, lastStep)] }
 
     var body: some View {
         ZStack {
@@ -29,11 +36,12 @@ struct OnboardingFlow: View {
                 OnboardingHeader(step: step, total: lastStep + 1)
 
                 Group {
-                    switch step {
-                    case 0: OnboardingIntro()
-                    case 1: OnboardingRole(selection: $selectedRole)
-                    case 3: OnboardingCalibrate { calibrating = true }
-                    default:
+                    switch screen {
+                    case .intro: OnboardingIntro()
+                    case .role: OnboardingRole(selection: $selectedRole)
+                    case .profile: OnboardingProfile(name: $name, settings: settings)
+                    case .calibrate: OnboardingCalibrate(baseline: viewModel.baseline, unit: settings.temperatureUnit) { calibrating = true }
+                    case .connect:
                         OnboardingPair(
                             role: selectedRole,
                             name: $name,
@@ -48,7 +56,7 @@ struct OnboardingFlow: View {
                 // every screen rises in the same way.
                 .id(step)
 
-                Button(step == lastStep ? (step == 3 ? "Calibrate later" : "Enter Thermyx") : "Continue") { advance() }
+                Button(buttonTitle) { advance() }
                     .buttonStyle(ThermyxPrimaryButtonStyle())
                     .riseIn(delay: step == 0 ? 0.38 : 0.2)
             }
@@ -70,8 +78,14 @@ struct OnboardingFlow: View {
     /// Starts scanning as the pairing step appears, but only for the wearer —
     /// a watcher never touches the insole.
     private func startScanIfNeeded(for step: Int) {
-        guard step == 2, selectedRole == .user, !viewModel.anyConnected, !viewModel.isScanning else { return }
+        guard screens[min(step, lastStep)] == .connect, selectedRole == .user, !viewModel.anyConnected, !viewModel.isScanning else { return }
         viewModel.toggleScan()
+    }
+
+    private var buttonTitle: String {
+        guard step == lastStep else { return "Continue" }
+        if screen == .calibrate, viewModel.baseline.model == nil { return "Calibrate later" }
+        return "Enter Thermyx"
     }
 
     private func advance() {
@@ -256,9 +270,11 @@ private extension String {
 }
 
 
-/// Onboarding step 4 (wearer only): offer calibration now or later.
+/// Onboarding, wearer only, after connecting: offer calibration now or later.
 struct OnboardingCalibrate: View {
     @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var baseline: PersonalBaselineStore
+    let unit: TemperatureUnit
     let onStart: () -> Void
 
     var body: some View {
@@ -271,7 +287,13 @@ struct OnboardingCalibrate: View {
                 .font(ThermyxFont.body)
                 .foregroundStyle(Thermyx.Ink.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Button("Calibrate now") { onStart() }
+            if viewModel.ble.isFakeInsole {
+                FakeInsoleNote(text: "Fake insole connected. Calibration will use its test data, and you can skip the wait.")
+            }
+            if let model = baseline.model {
+                ThermyxCard { CalibrationNorms(model: model, unit: unit) }
+            }
+            Button(baseline.model == nil ? "Calibrate now" : "Calibrate again") { onStart() }
                 .buttonStyle(ThermyxPrimaryButtonStyle())
                 .disabled(!viewModel.anyConnected)
             if !viewModel.anyConnected {
@@ -281,5 +303,175 @@ struct OnboardingCalibrate: View {
             }
             Spacer(minLength: 0)
         }
+    }
+}
+
+
+/// Onboarding, wearer only: name and a few optional details. All of it stays
+/// on this phone.
+struct OnboardingProfile: View {
+    @Binding var name: String
+    @ObservedObject var settings: ThermyxSettingsStore
+
+    @State private var age = ""
+    @State private var height = ""
+    @State private var heightInches = ""
+    @State private var weight = ""
+
+    private var imperial: Bool { settings.temperatureUnit == .fahrenheit }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Thermyx.Space.xl) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                    Text("About you")
+                        .font(ThermyxFont.onboardingHeadline)
+                        .tracking(ThermyxTracking.onboardingHeadline)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                        .accessibilityAddTraits(.isHeader)
+                    Text("Only your name is needed. The rest helps Thermyx explain your data, and it never leaves this phone.")
+                        .font(ThermyxFont.body)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .riseIn(delay: 0)
+
+                VStack(alignment: .leading, spacing: Thermyx.Space.m) {
+                    field("Your name", text: $name, placeholder: "Name", keyboard: .default)
+                    HStack(spacing: Thermyx.Space.m) {
+                        field("Age", text: $age, placeholder: "Years", keyboard: .numberPad)
+                        field(imperial ? "Weight (lb)" : "Weight (kg)", text: $weight, placeholder: imperial ? "lb" : "kg", keyboard: .decimalPad)
+                    }
+                    if imperial {
+                        HStack(spacing: Thermyx.Space.m) {
+                            field("Height (ft)", text: $height, placeholder: "ft", keyboard: .numberPad)
+                            field("(in)", text: $heightInches, placeholder: "in", keyboard: .numberPad)
+                        }
+                    } else {
+                        field("Height (cm)", text: $height, placeholder: "cm", keyboard: .numberPad)
+                    }
+
+                    SectionLabel("Sex")
+                    Picker("Sex", selection: Binding(
+                        get: { settings.profile.sex },
+                        set: { settings.profile.sex = $0 }
+                    )) {
+                        Text("Not set").tag(UserProfile.Sex?.none)
+                        ForEach(UserProfile.Sex.allCases) { Text($0.label).tag(UserProfile.Sex?.some($0)) }
+                    }
+                    .pickerStyle(.segmented)
+
+                    SectionLabel("What should Insights focus on?")
+                    ForEach(UserProfile.Focus.allCases) { focus in
+                        focusRow(focus)
+                    }
+
+                    SectionLabel("Optional: anything that affects your feet")
+                    condition("Reduced feeling in my feet", \.reducedFeeling)
+                    condition("Poor circulation", \.poorCirculation)
+                    condition("Diabetes", \.diabetes)
+                }
+                .riseIn(delay: 0.1)
+            }
+            .padding(.bottom, Thermyx.Space.m)
+        }
+        .scrollIndicators(.hidden)
+        .scrollDismissesKeyboard(.interactively)
+        .onAppear(perform: load)
+        .onChange(of: age) { _, _ in store() }
+        .onChange(of: height) { _, _ in store() }
+        .onChange(of: heightInches) { _, _ in store() }
+        .onChange(of: weight) { _, _ in store() }
+    }
+
+    private func load() {
+        let p = settings.profile
+        age = p.age.map(String.init) ?? ""
+        if let cm = p.heightCm {
+            if imperial {
+                let inches = Int((cm / 2.54).rounded())
+                height = String(inches / 12)
+                heightInches = String(inches % 12)
+            } else {
+                height = String(Int(cm.rounded()))
+            }
+        }
+        if let kg = p.weightKg {
+            weight = String(Int((imperial ? kg / 0.453_592 : kg).rounded()))
+        }
+    }
+
+    /// Keeps only values in a sensible range, so a typo isn't saved.
+    private func store() {
+        var p = settings.profile
+        p.age = Int(age).flatMap { (5...120).contains($0) ? $0 : nil }
+        let cm: Double?
+        if imperial {
+            let feet = Double(height) ?? 0, inches = Double(heightInches) ?? 0
+            cm = feet + inches > 0 ? (feet * 12 + inches) * 2.54 : nil
+        } else {
+            cm = Double(height)
+        }
+        p.heightCm = cm.flatMap { (80...250).contains($0) ? $0 : nil }
+        let kg = Double(weight.replacingOccurrences(of: ",", with: ".")).map { imperial ? $0 * 0.453_592 : $0 }
+        p.weightKg = kg.flatMap { (20...300).contains($0) ? $0 : nil }
+        if p != settings.profile { settings.profile = p }
+    }
+
+    private func field(_ label: String, text: Binding<String>, placeholder: String, keyboard: UIKeyboardType) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionLabel(label)
+            TextField(placeholder, text: text)
+                .keyboardType(keyboard)
+                .font(ThermyxFont.bodyLarge)
+                .foregroundStyle(Thermyx.Ink.textPrimary)
+                .autocorrectionDisabled()
+                .padding(.horizontal, Thermyx.Space.xl)
+                .frame(minHeight: Thermyx.minimumTapTarget)
+                .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
+                        .strokeBorder(Thermyx.Tint.neutralBorder, lineWidth: Thermyx.Stroke.hairline)
+                }
+        }
+    }
+
+    private func focusRow(_ focus: UserProfile.Focus) -> some View {
+        let selected = settings.profile.focus == focus
+        return Button {
+            settings.profile.focus = selected ? nil : focus
+        } label: {
+            HStack(spacing: Thermyx.Space.m) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(focus.label).font(ThermyxFont.rowTitle).foregroundStyle(Thermyx.Ink.textPrimary)
+                    Text(focus.detail).font(ThermyxFont.caption).foregroundStyle(Thermyx.Ink.textMuted)
+                }
+                Spacer()
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 22))
+                    .foregroundStyle(selected ? Thermyx.Ink.signal : Thermyx.Ink.textSupporting.opacity(0.35))
+            }
+            .padding(Thermyx.Space.l)
+            .frame(maxWidth: .infinity, minHeight: Thermyx.minimumTapTarget, alignment: .leading)
+            .background(selected ? Thermyx.Tint.signalFill : Thermyx.Ink.deck,
+                        in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
+                    .strokeBorder(selected ? Thermyx.Ink.signal : Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private func condition(_ label: String, _ key: WritableKeyPath<UserProfile, Bool?>) -> some View {
+        Toggle(isOn: Binding(
+            get: { settings.profile[keyPath: key] == true },
+            set: { settings.profile[keyPath: key] = $0 ? true : nil }
+        )) {
+            Text(label).font(ThermyxFont.body).foregroundStyle(Thermyx.Ink.textPrimary)
+        }
+        .tint(Thermyx.Ink.ice)
     }
 }

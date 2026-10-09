@@ -294,8 +294,12 @@ final class ThermyxViewModel: ObservableObject {
     /// Saves a model trained in calibration and makes its comfort target
     /// Auto's hold temperature. Demo Mode readings never train anything.
     func applyCalibration(_ model: PersonalThermalModel, indoorSamples: [CalibrationSample], settings: ThermyxSettingsStore) {
-        guard !ble.isDemoMode else { return }
-        baseline.adopt(model, indoorSamples: indoorSamples)
+        // Demo Mode's random data never trains anything. The fake insole's
+        // scripted data may, but only as a labelled test model: it sets
+        // Auto's target so the flow can be tried, and never seeds the
+        // personal baseline.
+        guard !ble.isDemoMode || (ble.isFakeInsole && model.isTestData) else { return }
+        baseline.adopt(model, indoorSamples: model.isTestData ? [] : indoorSamples)
         if let target = model.comfortTargetC {
             settings.targetTemperatureC = target
             setTargetTemperature(target)

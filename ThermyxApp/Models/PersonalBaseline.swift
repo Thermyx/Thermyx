@@ -552,6 +552,12 @@ struct PersonalThermalModel: Codable, Equatable {
     var indoorDone: Bool
     var outdoorDone: Bool
     var trainedAt: Date
+    /// True when trained from the TEMPORARY fake insole's scripted data.
+    /// Such a model never seeds the baseline, and Home asks for a real
+    /// calibration once a real insole connects.
+    var fromTestData: Bool? = nil
+
+    var isTestData: Bool { fromTestData == true }
 
     static let targetRange: ClosedRange<Double> = 26...38
     /// Smallest spread used for warnings, so a short, steady calibration
