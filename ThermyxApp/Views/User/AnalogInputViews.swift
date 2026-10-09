@@ -145,7 +145,7 @@ struct ConnectDeviceView: View {
     @ViewBuilder
     private var insoleStatus: some View {
         let feet = Foot.allCases.filter { ble.isConnected($0) }
-        if !feet.isEmpty || ble.insoleStep != nil {
+        if !feet.isEmpty {
             ThermyxCard {
                 VStack(alignment: .leading, spacing: Thermyx.Space.s) {
                     SectionLabel("Insoles")
@@ -155,15 +155,6 @@ struct ConnectDeviceView: View {
                             Text(verbatim: "\(ble.names[foot] ?? foot.label) · \(ble.reading(for: foot) != nil ? "receiving readings" : "connected, no reading yet")")
                                 .font(ThermyxFont.caption)
                                 .foregroundStyle(Thermyx.Ink.textPrimary)
-                        }
-                    }
-                    if let step = ble.insoleStep {
-                        HStack(alignment: .top, spacing: 6) {
-                            ProgressView().controlSize(.mini).tint(Thermyx.Ink.textSupporting)
-                            Text(verbatim: step)
-                                .font(ThermyxFont.caption)
-                                .foregroundStyle(Thermyx.Ink.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -271,7 +262,7 @@ private struct DeviceRow: View {
                     .foregroundStyle(Thermyx.Ink.textSupporting)
             }
             Spacer(minLength: Thermyx.Space.xs)
-            Text(verbatim: device.isSystemConnected ? "On iPhone" : "\(device.rssi) dBm")
+            Text(verbatim: "\(device.rssi) dBm")
                 .font(ThermyxFont.captionSmall)
                 .monospacedDigit()
                 .foregroundStyle(device.isStrong ? Thermyx.Ink.textSecondary : Thermyx.Ink.amber)
@@ -283,9 +274,7 @@ private struct DeviceRow: View {
         .frame(minHeight: Thermyx.minimumTapTarget)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(device.isSystemConnected
-            ? "\(device.name), \(kindLabel), already connected to this iPhone"
-            : "\(device.name), \(kindLabel), signal \(device.rssi) decibel-milliwatts")
+        .accessibilityLabel("\(device.name), \(kindLabel), signal \(device.rssi) decibel-milliwatts")
     }
 
     private var icon: String {
