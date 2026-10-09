@@ -21,6 +21,9 @@
 //   SMS_REMINDER_MINUTES   repeat-text gap at the same level, default 5
 //   CONTACT_VERIFICATION_ENABLED  "true" to text trusted contacts a code that
 //                          confirms their number; also needs SMS_ENABLED. OFF by default.
+//   AI_SUMMARY_ENABLED     "true" to allow the daily AI summary. OFF by default.
+//   ANTHROPIC_API_KEY      needed when AI_SUMMARY_ENABLED
+//   AI_MODEL               default claude-haiku-4-5
 const http = require("node:http");
 const path = require("node:path");
 const { openStore } = require("./store");
@@ -58,6 +61,66 @@ function validateEvent(event) {
     }
   }
   return null;
+}
+
+const SUMMARY_NUMBERS = [
+  "wornMinutes", "heatingMinutes", "coolingMinutes", "averageFootC", "peakFootC", "lowFootC",
+  "averageAmbientC", "hotHours", "cadence", "standingMinutes", "gait", "events"
+];
+
+/// Keeps only the aggregate numbers a daily summary may use, so nothing
+/// else the app might send reaches the model. Returns null when invalid.
+function cleanSummaryRequest(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  if (typeof body.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(body.day)) return null;
+  const clean = { day: body.day };
+  for (const key of SUMMARY_NUMBERS) {
+    const v = body[key];
+    if (v === undefined || v === null) continue;
+    if (typeof v !== "number" || !Number.isFinite(v) || Math.abs(v) > 100_000) return null;
+    clean[key] = Math.round(v * 10) / 10;
+  }
+  if (body.peakRisk !== undefined && body.peakRisk !== null) {
+    if (!LEVELS.includes(body.peakRisk)) return null;
+    clean.peakRisk = body.peakRisk;
+  }
+  if (body.focus === "health" || body.focus === "performance") clean.focus = body.focus;
+  clean.unit = body.unit === "F" ? "F" : "C";
+  if (clean.wornMinutes === undefined) return null;
+  return clean;
+}
+
+const SUMMARY_SYSTEM = [
+  "You write a short daily summary for someone who wears Thermyx, a smart insole that senses foot temperature and movement and can heat or cool.",
+  "Use only the numbers given. Never invent a value, and skip anything that is missing.",
+  "Write 3 to 4 plain, friendly sentences in second person. No lists, no headings, no emoji.",
+  "Temperatures are given in Celsius; present them in the requested unit (C or F) with one decimal.",
+  "Do not diagnose or make medical claims. If something stands out (a lot of heat, a cold foot, a High risk or Critical level), suggest common-sense steps like resting, drinking water, or checking shoe fit, and suggest talking to a doctor if they're worried.",
+  "If the focus is performance, lead with movement (cadence, standing time); if health, lead with temperature and comfort."
+].join(" ");
+
+function anthropicSummarize(env) {
+  return async request => {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        model: env.AI_MODEL || "claude-haiku-4-5",
+        max_tokens: 300,
+        system: SUMMARY_SYSTEM,
+        messages: [{ role: "user", content: `Today's numbers:\n${JSON.stringify(request)}` }]
+      })
+    });
+    if (!response.ok) throw new Error(`Anthropic request failed: ${response.status}`);
+    const data = await response.json();
+    const text = (data.content || []).filter(part => part.type === "text").map(part => part.text).join("").trim();
+    if (!text) throw new Error("empty summary");
+    return text;
+  };
 }
 
 /// Normalises a phone number to E.164, or returns null.
@@ -112,6 +175,9 @@ function createRelay(options = {}) {
   const pairLimit = rateLimiter(10, 60_000, now);   // per IP: slows code guessing
   const apiLimit = rateLimiter(120, 60_000, now);   // per token
   const verifyLimit = rateLimiter(5, 60 * 60_000, now); // contact codes per wearer per hour
+  const aiSummary = env.AI_SUMMARY_ENABLED === "true";
+  const summarize = options.summarize || anthropicSummarize(env);
+  const summaryLimit = rateLimiter(20, 60 * 60_000, now); // AI summaries per wearer per hour
 
   store.purgeExpired();
   const purgeTimer = setInterval(() => store.purgeExpired(), 10 * 60_000);
@@ -194,7 +260,7 @@ function createRelay(options = {}) {
     const url = new URL(req.url, "http://relay.local");
     const route = `${req.method} ${url.pathname}`;
 
-    if (route === "GET /health") return json(res, 200, { ok: true, smsEnabled, contactVerification });
+    if (route === "GET /health") return json(res, 200, { ok: true, smsEnabled, contactVerification, aiSummary });
 
     // Pairing is the only unauthenticated write, and it is rate-limited per IP.
     if (route === "POST /v1/pair") {
@@ -229,6 +295,24 @@ function createRelay(options = {}) {
     // Wearer routes.
     if (route === "POST /v1/events") return readBody(req, res, body => handleEvent(identity, body, res));
     if (route === "GET /v1/watchers") return json(res, 200, { watchers: store.listWatchers(identity.deviceID) });
+    // Daily AI summary: the app sends one day's aggregate numbers (no
+    // readings, names, or locations); they are passed to the model and
+    // neither stored nor logged. Off unless AI_SUMMARY_ENABLED.
+    if (route === "POST /v1/summary") {
+      if (!aiSummary) return json(res, 403, { error: "ai_summary_disabled" });
+      if (!options.summarize && !env.ANTHROPIC_API_KEY) return json(res, 503, { error: "ai_summary_not_configured" });
+      if (!summaryLimit(identity.deviceID)) return json(res, 429, { error: "rate_limited" });
+      return readBody(req, res, async body => {
+        const request = cleanSummaryRequest(body);
+        if (!request) return json(res, 400, { error: "invalid_summary_request" });
+        try {
+          return json(res, 200, { summary: await summarize(request) });
+        } catch (error) {
+          log("AI summary failed:", error.message);
+          return json(res, 502, { error: "summary_failed" });
+        }
+      });
+    }
     if (route === "POST /v1/watchers/codes") return json(res, 201, store.createWatcherCode(identity.deviceID));
     // Contact confirmation: the relay texts a 6-digit code to the number; the
     // contact reads it back to the wearer, who enters it. Off by default.
@@ -295,7 +379,7 @@ function twilioSend(env) {
   };
 }
 
-module.exports = { createRelay, validateEvent, normalisePhone, composeMessage };
+module.exports = { createRelay, validateEvent, normalisePhone, composeMessage, cleanSummaryRequest };
 
 if (require.main === module) {
   const relay = createRelay();

@@ -27,6 +27,12 @@ struct ThermyxHistorySample: Codable, Equatable, Identifiable {
     var standingMean: Double?
     /// The most severe risk level seen during the bucket.
     var peakRisk: String?
+    /// Seconds of live readings in the bucket, and how many of them the
+    /// insole reported heating or cooling. Nil in buckets recorded before
+    /// these were tracked.
+    var trackedSeconds: Double?
+    var heatingSeconds: Double?
+    var coolingSeconds: Double?
 
     var id: String { "\(foot.rawValue)-\(start.timeIntervalSince1970)" }
 
@@ -46,7 +52,18 @@ struct ThermyxHistorySample: Codable, Equatable, Identifiable {
     }
 
     /// Fold a reading into this bucket as a running mean.
-    mutating func accumulate(_ reading: ThermyxReading, risk: ThermyxRiskLevel?) {
+    ///
+    /// `elapsed` is the time since this foot's previous reading (capped by
+    /// the store), credited to whatever the insole reports it is doing.
+    mutating func accumulate(_ reading: ThermyxReading, risk: ThermyxRiskLevel?, elapsed: TimeInterval = 0) {
+        if elapsed > 0 {
+            trackedSeconds = (trackedSeconds ?? 0) + elapsed
+            switch reading.thermalMode {
+            case .heating: heatingSeconds = (heatingSeconds ?? 0) + elapsed
+            case .cooling: coolingSeconds = (coolingSeconds ?? 0) + elapsed
+            case .ventilation, .off: break
+            }
+        }
         let n = Double(sampleCount)
         func mean(_ current: Double?, _ next: Double?) -> Double? {
             guard let next else { return current }

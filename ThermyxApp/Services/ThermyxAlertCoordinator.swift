@@ -20,6 +20,22 @@ final class ThermyxAlertCoordinator: ObservableObject {
     /// wearer's own notifications say they are simulated.
     var isDemoMode = false
 
+    /// Cold-foot and low-battery reminders, for the wearer only.
+    private var comfort = ThermyxComfortWatch()
+
+    /// Called on every reading alongside `evaluate`: notifies the wearer when
+    /// a foot stays cold or an insole battery runs low. Never sent to the
+    /// relay or the trusted circle.
+    func evaluateComfort(_ reading: BilateralReading, unit: TemperatureUnit, now: Date = .now) {
+        for notice in comfort.update(reading, now: now) {
+            let content = UNMutableNotificationContent()
+            content.title = isDemoMode ? "Thermyx demo — simulated, not live data" : notice.title
+            content.body = notice.body(unit: unit)
+            content.sound = .default
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil))
+        }
+    }
+
     func requestPermission() async {
         notificationsAuthorized = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
@@ -183,4 +199,88 @@ final class ThermyxLocationProvider: NSObject, ObservableObject, CLLocationManag
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+}
+
+
+/// Decides when to remind the wearer about a cold foot or a low battery.
+///
+/// - Cold: a foot at or below `ThermyxRiskEngine.coldFootC` for a minute.
+///   Once per 20 minutes per foot, and reset when the foot warms past 27 °C.
+/// - Battery: once at 20% and once at 10% per insole, reset after charging
+///   above 25%.
+struct ThermyxComfortWatch {
+    struct Notice: Equatable {
+        enum Kind: Equatable {
+            case cold(Double)
+            case battery(Int, critical: Bool)
+        }
+        let foot: Foot
+        let kind: Kind
+
+        var id: String {
+            switch kind {
+            case .cold: return "thermyx.cold.\(foot.rawValue)"
+            case .battery: return "thermyx.battery.\(foot.rawValue)"
+            }
+        }
+
+        var title: String {
+            switch kind {
+            case .cold: return "\(foot.label) foot is cold"
+            case .battery(_, let critical): return critical ? "\(foot.label) insole battery very low" : "\(foot.label) insole battery low"
+            }
+        }
+
+        func body(unit: TemperatureUnit) -> String {
+            switch kind {
+            case .cold(let c):
+                return "It's been at \(TemperatureFormat.degrees(c, in: unit)) for a minute. Switch to Auto or Heat to warm it up."
+            case .battery(let percent, let critical):
+                return critical
+                    ? "\(percent)% left. Charge it now or it will stop heating and cooling soon."
+                    : "\(percent)% left. Charge it soon."
+            }
+        }
+    }
+
+    static let coldHold: TimeInterval = 60
+    static let coldRepeat: TimeInterval = 20 * 60
+    static let warmResetC = 27.0
+    static let batteryLow = 20
+    static let batteryCritical = 10
+    static let batteryReset = 25
+
+    private var coldSince: [Foot: Date] = [:]
+    private var coldNotifiedAt: [Foot: Date] = [:]
+    private var batteryWarned: [Foot: Int] = [:]
+
+    mutating func update(_ reading: BilateralReading, now: Date) -> [Notice] {
+        var notices: [Notice] = []
+        for r in reading.present {
+            let foot = r.foot
+            if let c = r.footTemperatureC {
+                if c <= ThermyxRiskEngine.coldFootC {
+                    let since = coldSince[foot] ?? now
+                    coldSince[foot] = since
+                    let due = coldNotifiedAt[foot].map { now.timeIntervalSince($0) >= Self.coldRepeat } ?? true
+                    if now.timeIntervalSince(since) >= Self.coldHold, due {
+                        coldNotifiedAt[foot] = now
+                        notices.append(Notice(foot: foot, kind: .cold(c)))
+                    }
+                } else {
+                    coldSince[foot] = nil
+                    if c >= Self.warmResetC { coldNotifiedAt[foot] = nil }
+                }
+            }
+            if let b = r.batteryPercent {
+                if b > Self.batteryReset { batteryWarned[foot] = nil }
+                let threshold = b <= Self.batteryCritical ? Self.batteryCritical : b <= Self.batteryLow ? Self.batteryLow : nil
+                if let threshold, (batteryWarned[foot] ?? Int.max) > threshold {
+                    batteryWarned[foot] = threshold
+                    notices.append(Notice(foot: foot, kind: .battery(b, critical: threshold == Self.batteryCritical)))
+                }
+            }
+        }
+        return notices
+    }
 }

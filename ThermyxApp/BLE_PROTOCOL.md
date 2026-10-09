@@ -67,8 +67,11 @@ should keep sending telemetry at a defined interval, such as 1 Hz.
 | `[1, mode]` | Set the mode, using the mode values above. `3` (ventilation) is the app's **Auto**: the firmware regulates towards the target temperature and reports the mode it is actually running. |
 | `[2, lo, hi]` | Set Auto's target foot temperature: int16 °C × 100, little-endian. The app sends 26–38 °C; firmware should clamp to that range. Sent on connect and whenever the wearer moves the Advanced slider. Firmware that predates this command can ignore it. |
 
-The app's control bar sends `cooling` for Cool, `ventilation` for Auto, and
-`heating` for Heat. **The app will not send `heating` while its risk engine is
+The app's control bar sends `cooling` for Cool, `ventilation` for Auto,
+`heating` for Heat, and `off` (0) for Off. Off turns the Peltier and fan off;
+the insole keeps sensing and sending telemetry. Off has no setting-echo code,
+so the app confirms it from the reported mode byte being `0`. (Current ESP32
+firmware echoes Auto while off; the app ignores the echo for Off.) **The app will not send `heating` while its risk engine is
 at High Risk or Critical** — it locks the Heat control out and commands cooling
 instead. Firmware must still enforce its own independent cutoffs; the app-side
 lockout is a second layer, not the primary safety mechanism.

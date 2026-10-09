@@ -103,6 +103,7 @@ struct UserRoot: View {
             let assessment = viewModel.assessment
             alerts.isDemoMode = viewModel.ble.isDemoMode
             alerts.evaluate(assessment, reading: reading, settings: settings)
+            alerts.evaluateComfort(reading, unit: settings.temperatureUnit)
             if assessment.level == .critical {
                 let snoozed = criticalSnoozedUntil.map { Date.now < $0 } ?? false
                 if !snoozed, !showingCritical { showingCritical = true }

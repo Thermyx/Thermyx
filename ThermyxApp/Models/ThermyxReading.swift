@@ -156,6 +156,8 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
     case cool
     case auto
     case heat
+    /// Peltier and fan off. The insole keeps sensing and reporting.
+    case off
 
     var id: String { rawValue }
 
@@ -164,6 +166,7 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
         case .cool: return "Cool"
         case .auto: return "Auto"
         case .heat: return "Heat"
+        case .off: return "Off"
         }
     }
 
@@ -172,6 +175,7 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
         case .cool: return "snowflake"
         case .auto: return "a.circle"
         case .heat: return "flame.fill"
+        case .off: return "power"
         }
     }
 
@@ -180,6 +184,7 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
         case .cool: return .cooling
         case .auto: return .ventilation
         case .heat: return .heating
+        case .off: return .off
         }
     }
 }

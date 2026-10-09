@@ -128,6 +128,7 @@ struct HomeView: View {
                 .padding(.horizontal, Thermyx.Space.screen)
                 .padding(.top, Thermyx.Space.m)
 
+            LowBatteryCard(reading: reading)
             CalibrationPromptCard(baseline: viewModel.baseline, settings: settings)
                 .padding(.horizontal, Thermyx.Space.screen)
                 .padding(.top, Thermyx.Space.s)
@@ -370,5 +371,35 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, Thermyx.Space.wide)
+    }
+}
+
+/// Home: shown while any connected insole is at or below 20%.
+struct LowBatteryCard: View {
+    let reading: BilateralReading
+
+    private var low: [ThermyxReading] {
+        reading.present.filter { ($0.batteryPercent ?? 100) <= ThermyxComfortWatch.batteryLow }
+    }
+
+    var body: some View {
+        if !low.isEmpty {
+            HStack(spacing: Thermyx.Space.m) {
+                Image(systemName: "battery.25percent")
+                    .foregroundStyle(Thermyx.Ink.amber)
+                Text(low.map { "\($0.foot.label) insole \($0.batteryPercent ?? 0)%" }.joined(separator: " · ") + ". Charge soon.")
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(Thermyx.Space.m)
+            .background(Thermyx.Tint.amberFill, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
+                    .strokeBorder(Thermyx.Tint.amberBorder, lineWidth: Thermyx.Stroke.hairline)
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 }

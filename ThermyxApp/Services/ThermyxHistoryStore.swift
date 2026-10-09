@@ -25,6 +25,10 @@ final class ThermyxHistoryStore: ObservableObject {
     private static let eventRetention: TimeInterval = 30 * 24 * 3600
 
     private var openEvent: [Foot: ThermyxRiskEvent] = [:]
+    /// Each foot's previous reading time, for crediting elapsed time.
+    private var lastReadingAt: [Foot: Date] = [:]
+    /// A gap longer than this is a disconnection, not time worn.
+    static let maxCreditedGap: TimeInterval = 5
     private var saveTask: Task<Void, Never>?
     private var isLoaded = false
     private var lastPrune: Date = .distantPast
@@ -70,9 +74,12 @@ final class ThermyxHistoryStore: ObservableObject {
     func record(_ reading: ThermyxReading, assessment: ThermyxRiskAssessment) {
         guard reading.hasSensorData else { return }
         let risk: ThermyxRiskLevel? = assessment.level == .unavailable ? nil : assessment.level
+        let gap = lastReadingAt[reading.foot].map { reading.timestamp.timeIntervalSince($0) } ?? 0
+        let elapsed = gap > 0 && gap <= Self.maxCreditedGap ? gap : 0
+        lastReadingAt[reading.foot] = reading.timestamp
 
-        append(reading, risk: risk, into: &minuteSamples, granularity: 60)
-        append(reading, risk: risk, into: &hourSamples, granularity: 3600)
+        append(reading, risk: risk, elapsed: elapsed, into: &minuteSamples, granularity: 60)
+        append(reading, risk: risk, elapsed: elapsed, into: &hourSamples, granularity: 3600)
         trackEvent(assessment, reading: reading)
         // Telemetry arrives several times a second; sweeping three arrays on
         // every packet is wasted work when the retention windows are days
@@ -84,6 +91,7 @@ final class ThermyxHistoryStore: ObservableObject {
     private func append(
         _ reading: ThermyxReading,
         risk: ThermyxRiskLevel?,
+        elapsed: TimeInterval,
         into samples: inout [ThermyxHistorySample],
         granularity: TimeInterval
     ) {
@@ -93,10 +101,10 @@ final class ThermyxHistoryStore: ObservableObject {
         // Two insoles interleave, so the matching bucket is not necessarily the
         // last one — find this foot's bucket for this interval.
         if let index = samples.lastIndex(where: { $0.foot == reading.foot && $0.start == bucketStart }) {
-            samples[index].accumulate(reading, risk: risk)
+            samples[index].accumulate(reading, risk: risk, elapsed: elapsed)
         } else {
             var sample = ThermyxHistorySample(foot: reading.foot, start: bucketStart)
-            sample.accumulate(reading, risk: risk)
+            sample.accumulate(reading, risk: risk, elapsed: elapsed)
             samples.append(sample)
         }
     }
@@ -249,6 +257,7 @@ final class ThermyxHistoryStore: ObservableObject {
         events.removeAll()
         sensorMinutes.removeAll()
         openEvent.removeAll()
+        lastReadingAt.removeAll()
         scheduleSave()
     }
 

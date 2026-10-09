@@ -359,4 +359,88 @@ final class RiskEngineTests: XCTestCase {
         XCTAssertEqual(decide(.ventilation, 31.5, 31, .ventilation), .ventilation, "Auto leaves a near-target foot alone")
         XCTAssertEqual(decide(.ventilation, 33, 31, .ventilation), .cooling)
     }
+
+    // MARK: Off, cold, battery, heating time, daily summaries
+
+    func testOffIsConfirmedByTheInsoleReportingOff() {
+        XCTAssertTrue(ThermalCommandTracker.confirms(.off, reading(mode: .off)))
+        XCTAssertFalse(ThermalCommandTracker.confirms(.off, reading(mode: .cooling)))
+        var echoedAuto = reading(mode: .off)
+        echoedAuto.settingEcho = .auto
+        XCTAssertTrue(ThermalCommandTracker.confirms(.off, echoedAuto), "Current firmware echoes Auto for Off")
+        XCTAssertEqual(ThermalSetting.off.command, .off)
+        XCTAssertEqual(ThermyxProtocol.command(.off), Data([1, 0]))
+    }
+
+    func testColdFootIsCautionButNeverLocksOutHeat() {
+        let cold = ThermyxRiskEngine.assess(reading(footC: 23))
+        XCTAssertEqual(cold.level, .caution)
+        XCTAssertTrue(cold.reasons.contains { $0.contains("low") })
+        let coldAndUnsteady = ThermyxRiskEngine.assess(reading(footC: 23, gait: 0.7))
+        XCTAssertEqual(coldAndUnsteady.level, .caution, "Cold doesn't add to the count toward High")
+        XCTAssertFalse(coldAndUnsteady.level.locksOutHeating)
+    }
+
+    func testColdNoticeAfterAMinuteThenQuiet() {
+        var watch = ThermyxComfortWatch()
+        let t0 = Date(timeIntervalSince1970: 1_000_000)
+        let pair = BilateralReading(left: reading(footC: 24), right: nil)
+        XCTAssertTrue(watch.update(pair, now: t0).isEmpty)
+        XCTAssertTrue(watch.update(pair, now: t0.addingTimeInterval(30)).isEmpty)
+        let notices = watch.update(pair, now: t0.addingTimeInterval(61))
+        XCTAssertEqual(notices.count, 1)
+        XCTAssertEqual(notices.first?.foot, .left)
+        XCTAssertTrue(watch.update(pair, now: t0.addingTimeInterval(120)).isEmpty, "No repeat inside 20 minutes")
+    }
+
+    func testBatteryNoticesOnceAtTwentyAndTen() {
+        var watch = ThermyxComfortWatch()
+        func at(_ percent: Int) -> BilateralReading {
+            var r = reading(footC: 32)
+            r = ThermyxReading(foot: .left, timestamp: .now, footTemperatureC: 32, ambientTemperatureC: 25, pressureBalance: 0.5,
+                               gaitStability: 0.9, batteryPercent: percent, thermalMode: .ventilation, zones: nil)
+            return BilateralReading(left: r, right: nil)
+        }
+        XCTAssertTrue(watch.update(at(30), now: .now).isEmpty)
+        XCTAssertEqual(watch.update(at(20), now: .now).count, 1)
+        XCTAssertTrue(watch.update(at(18), now: .now).isEmpty)
+        XCTAssertEqual(watch.update(at(10), now: .now).first?.kind, .battery(10, critical: true))
+        XCTAssertTrue(watch.update(at(9), now: .now).isEmpty)
+        XCTAssertTrue(watch.update(at(80), now: .now).isEmpty)
+        XCTAssertEqual(watch.update(at(19), now: .now).count, 1, "Warns again after charging")
+    }
+
+    func testHistoryCreditsHeatingAndCoolingTime() {
+        var sample = ThermyxHistorySample(foot: .left, start: .now)
+        sample.accumulate(reading(mode: .heating), risk: .normal, elapsed: 2)
+        sample.accumulate(reading(mode: .cooling), risk: .normal, elapsed: 3)
+        sample.accumulate(reading(mode: .ventilation), risk: .normal, elapsed: 1)
+        XCTAssertEqual(sample.trackedSeconds, 6)
+        XCTAssertEqual(sample.heatingSeconds, 2)
+        XCTAssertEqual(sample.coolingSeconds, 3)
+    }
+
+    func testDailySummaryGroupsByDayAndTakesTheWarmerFoot() {
+        let calendar = Calendar(identifier: .gregorian)
+        let day = calendar.date(from: DateComponents(year: 2026, month: 10, day: 9, hour: 10))!
+        var left = ThermyxHistorySample(foot: .left, start: day)
+        left.footMeanC = 31; left.footMaxC = 33; left.footMinC = 30
+        left.trackedSeconds = 1800; left.heatingSeconds = 300; left.coolingSeconds = 0
+        var right = ThermyxHistorySample(foot: .right, start: day)
+        right.footMeanC = 36; right.footMaxC = 37; right.footMinC = 35
+        right.trackedSeconds = 1200; right.heatingSeconds = 0; right.coolingSeconds = 600
+        var other = ThermyxHistorySample(foot: .left, start: day.addingTimeInterval(-86_400))
+        other.footMeanC = 30
+        let days = ThermyxDailySummary.days(hourSamples: [left, right, other], events: [], calendar: calendar)
+        XCTAssertEqual(days.count, 2)
+        let today = days[0]
+        XCTAssertEqual(today.wornSeconds, 1800)
+        XCTAssertEqual(today.heatingSeconds, 300)
+        XCTAssertEqual(today.coolingSeconds, 600)
+        XCTAssertEqual(today.averageFootC, 36, "The warmer foot for the hour")
+        XCTAssertEqual(today.peakFootC, 37)
+        XCTAssertEqual(today.lowFootC, 30)
+        XCTAssertEqual(today.feet, [.left, .right])
+        XCTAssertNil(days[1].heatingSeconds, "Old buckets didn't record it")
+    }
 }

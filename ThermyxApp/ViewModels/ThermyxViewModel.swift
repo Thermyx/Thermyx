@@ -212,6 +212,7 @@ final class ThermyxViewModel: ObservableObject {
             return "Heat locked · \(reading.thermalMode?.statusLabel ?? "mixed")"
         }
         guard let mode = reading.thermalMode else { return "Feet differ" }
+        if thermalSetting == .off, mode == .off { return "Off" }
         // Cool and Heat are explicit requests; when the insole reports
         // something else, say both rather than implying it obeyed.
         if thermalSetting != .auto, mode != thermalSetting.command {

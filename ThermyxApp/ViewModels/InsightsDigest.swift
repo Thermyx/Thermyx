@@ -130,6 +130,17 @@ struct InsightsDigest {
         return samples.compactMap(\.standingMean).reduce(0) { $0 + $1 * bucketLength }
     }
 
+    /// How long the insole reported heating and cooling in this window.
+    /// Nil when no bucket in the window recorded it.
+    var heatingSeconds: TimeInterval? {
+        let values = samples.compactMap(\.heatingSeconds)
+        return samples.contains { $0.trackedSeconds != nil } ? values.reduce(0, +) : nil
+    }
+    var coolingSeconds: TimeInterval? {
+        let values = samples.compactMap(\.coolingSeconds)
+        return samples.contains { $0.trackedSeconds != nil } ? values.reduce(0, +) : nil
+    }
+
     /// How long this window actually has data for.
     var trackedSeconds: TimeInterval {
         let bucketLength = range.usesHourlyTier ? TimeInterval(3600) : TimeInterval(60)
@@ -208,5 +219,75 @@ struct InsightsDigest {
         return (0..<count).map { index in
             formatter.string(from: first.addingTimeInterval(span * Double(index) / Double(count - 1)))
         }
+    }
+}
+
+/// One day of history, for the daily summary pages. Built from the hour
+/// buckets (kept six months), with left and right combined: temperatures
+/// take the warmer foot, durations the longer-worn foot.
+struct ThermyxDailySummary: Identifiable, Equatable {
+    let day: Date
+    var id: Date { day }
+
+    /// Time worn, from live-reading time where recorded, else whole hours.
+    var wornSeconds: TimeInterval
+    var heatingSeconds: TimeInterval?
+    var coolingSeconds: TimeInterval?
+    var averageFootC: Double?
+    var peakFootC: Double?
+    var lowFootC: Double?
+    var averageAmbientC: Double?
+    /// Hours whose average sat in the warm or hot band.
+    var hotHours: Int
+    var cadenceAverage: Double?
+    var standingSeconds: TimeInterval?
+    var gaitAverage: Double?
+    var peakRisk: ThermyxRiskLevel?
+    var events: Int
+    var feet: [Foot]
+
+    static func days(
+        hourSamples: [ThermyxHistorySample],
+        events: [ThermyxRiskEvent],
+        calendar: Calendar = .current
+    ) -> [ThermyxDailySummary] {
+        let byDay = Dictionary(grouping: hourSamples) { calendar.startOfDay(for: $0.start) }
+        return byDay.map { day, samples in
+            summary(day: day, samples: samples, events: events.filter { calendar.isDate($0.timestamp, inSameDayAs: day) })
+        }
+        .sorted { $0.day > $1.day }
+    }
+
+    static func summary(day: Date, samples: [ThermyxHistorySample], events: [ThermyxRiskEvent]) -> ThermyxDailySummary {
+        func mean(_ v: [Double]) -> Double? { v.isEmpty ? nil : v.reduce(0, +) / Double(v.count) }
+        let feet = Foot.allCases.filter { foot in samples.contains { $0.foot == foot } }
+        func perFoot(_ value: (ThermyxHistorySample) -> Double?) -> [Double] {
+            feet.map { foot in samples.filter { $0.foot == foot }.compactMap(value).reduce(0, +) }
+        }
+        let worn = perFoot { $0.trackedSeconds ?? 3600 }.max() ?? 0
+        let tracked = samples.contains { $0.trackedSeconds != nil }
+        // Warmer foot per hour, so a hot foot isn't averaged away.
+        let hours = Dictionary(grouping: samples, by: \.start).values
+        let hourFoot = hours.compactMap { $0.compactMap(\.footMeanC).max() }
+        let peak = samples.compactMap(\.peakRiskLevel).max { $0.severity < $1.severity }
+        let standing = samples.filter { $0.standingMean != nil }
+        return ThermyxDailySummary(
+            day: day,
+            wornSeconds: worn,
+            heatingSeconds: tracked ? perFoot(\.heatingSeconds).max() : nil,
+            coolingSeconds: tracked ? perFoot(\.coolingSeconds).max() : nil,
+            averageFootC: mean(hourFoot),
+            peakFootC: samples.compactMap(\.footMaxC).max(),
+            lowFootC: samples.compactMap(\.footMinC).min(),
+            averageAmbientC: mean(samples.compactMap(\.ambientMeanC)),
+            hotHours: hourFoot.filter { [.warm, .hot].contains(ThermyxTemperatureScale.band(for: $0)) }.count,
+            cadenceAverage: mean(samples.compactMap(\.cadenceMean).filter { $0 > 0 }),
+            standingSeconds: standing.isEmpty ? nil
+                : standing.reduce(0) { $0 + ($1.standingMean ?? 0) * ($1.trackedSeconds ?? 3600) } / Double(max(feet.count, 1)),
+            gaitAverage: mean(samples.compactMap(\.gaitMean)),
+            peakRisk: peak,
+            events: events.count,
+            feet: feet
+        )
     }
 }

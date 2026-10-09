@@ -111,6 +111,11 @@ enum ThermyxRiskEngine {
     /// Peltier's own rating is far higher, so the limit is set by the skin.
     static let burnLimitC = 40.0
 
+    /// Foot-contact temperature at or below which the foot counts as cold.
+    /// Cold raises Caution on its own but never more: High would lock out
+    /// heating, which is exactly what a cold foot needs.
+    static let coldFootC = 25.0
+
     /// How long a left/right gap must hold before it raises Caution on its own.
     /// Shorter gaps are ordinary walking noise.
     static let sustainedAsymmetrySeconds: TimeInterval = 120
@@ -140,6 +145,10 @@ enum ThermyxRiskEngine {
         if let hottest, hottest >= burnLimitC {
             reasons.insert("Foot contact has reached the burn-protection limit. Heating is off.", at: 0)
             if level.severity < ThermyxRiskLevel.high.severity { level = .high }
+        }
+        if let foot, foot <= coldFootC {
+            reasons.append("Foot-contact temperature is low. Warm up with Auto or Heat.")
+            if level == .normal { level = .caution }
         }
         return ThermyxRiskAssessment(level: level, reasons: reasons, foot: reading.foot)
     }

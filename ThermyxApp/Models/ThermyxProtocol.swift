@@ -156,6 +156,8 @@ enum ThermyxProtocol {
             case .cool: echoBits = 1
             case .auto: echoBits = 2
             case .heat: echoBits = 3
+            // Off has no echo code; the active mode byte (0) confirms it.
+            case .off: echoBits = 0
             }
         }
         let footSense: UInt8 = footDetected.map { $0 ? 0b110_0000 : 0b10_0000 } ?? 0
