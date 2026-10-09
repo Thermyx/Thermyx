@@ -147,7 +147,7 @@ enum ThermyxPreviewHarness {
     static var initialOnboardingStep: Int {
         switch state {
         case .onboardingRole: return 1
-        case .onboardingPair: return 2
+        case .onboardingPair: return 3
         default: return 0
         }
     }

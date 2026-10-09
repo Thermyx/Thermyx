@@ -64,7 +64,12 @@ struct OnboardingFlow: View {
             .padding(.top, Thermyx.Space.m)
             .padding(.bottom, 32)
         }
-        .onAppear { startScanIfNeeded(for: step) }
+        .onAppear {
+            // Coming back through onboarding keeps what was entered before.
+            if name.isEmpty { name = roles.profileName }
+            if let role = roles.role { selectedRole = role }
+            startScanIfNeeded(for: step)
+        }
         .onChange(of: step) { _, newValue in
             startScanIfNeeded(for: newValue)
         }
