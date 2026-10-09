@@ -9,7 +9,16 @@
 // mode and target-temperature commands), so the app connects to it as an
 // insole and Cool / Auto / Heat work.
 //
-// Wiring (change the pin constants below if yours differs):
+// LED TEST RIG (LED_TEST_RIG 1, the default): no Peltier yet. Two LEDs stand
+// in for it, each through a 220 Ohm resistor to GND, active-high:
+//
+//   GPIO25 -> BLUE LED  = cooling
+//   GPIO26 -> RED LED   = heating
+//   both off            = Auto holding / fan only / off
+//
+// Set LED_TEST_RIG 0 once the DRV8833 and Peltier are wired as below.
+//
+// Full build wiring (change the pin constants below if yours differs):
 //
 //   TMP102 or TMP117 (foot)   SDA GPIO21, SCL GPIO22, 3V3, GND, address 0x48
 //   2nd sensor (ambient)      same bus, address 0x49 (optional)
@@ -44,6 +53,7 @@
 // ---------------------------------------------------------------- settings
 
 #define THERMYX_FOOT 1            // 1 = left, 2 = right (protocol byte 11)
+#define LED_TEST_RIG 1            // 1 = LEDs stand in for the Peltier; 0 = DRV8833 + Peltier + fan
 #define HAS_FSR 0                 // 1 once the three FSR402 dividers are wired
 #define HAS_BATTERY_SENSE 0       // 1 once a battery divider is wired to PIN_BATTERY
 
@@ -58,6 +68,8 @@ static const int PIN_PELTIER_IN1 = 25;   // DRV8833 AIN1
 static const int PIN_PELTIER_IN2 = 26;   // DRV8833 AIN2
 static const int PIN_FAN = 27;           // DRV8833 BIN1; wire BIN2 to GND
 static const int PIN_DRIVER_SLEEP = 14;  // DRV8833 nSLEEP (high = enabled)
+static const int PIN_LED_COOL = 25;      // LED test rig: BLUE LED (cooling)
+static const int PIN_LED_HEAT = 26;      // LED test rig: RED LED (heating)
 
 // I2C addresses.
 static const uint8_t TEMP_FOOT = 0x48;
@@ -83,6 +95,19 @@ enum Mode : uint8_t { MODE_OFF = 0, MODE_HEATING = 1, MODE_COOLING = 2, MODE_VEN
 // Declared up here, before any function, because the Arduino IDE adds
 // function prototypes above the first function it finds.
 enum TempChip : uint8_t { CHIP_NONE, CHIP_TMP102, CHIP_TMP117 };
+
+static const char *modeName(uint8_t mode) {
+  switch (mode) {
+    case MODE_HEATING: return "HEAT";
+    case MODE_COOLING: return "COOL";
+    case MODE_VENTILATION: return "FAN";
+    default: return "OFF";
+  }
+}
+
+static const char *chipName(TempChip chip) {
+  return chip == CHIP_TMP117 ? "TMP117" : chip == CHIP_TMP102 ? "TMP102" : "missing";
+}
 
 static const int16_t NO_TEMPERATURE = INT16_MIN;   // outside -20..80 C: the app reads it as absent
 static const uint16_t NO_VALUE = 0xFFFF;           // gait / balance / cadence / standing unknown
@@ -207,6 +232,12 @@ static void driveBridge(int in1, int in2, int8_t direction, uint8_t duty) {
 
 static void applyMode(uint8_t mode) {
   activeMode = mode;
+#if LED_TEST_RIG
+  // Never both on: blue for cooling, red for heating, both off otherwise.
+  digitalWrite(PIN_LED_COOL, mode == MODE_COOLING ? HIGH : LOW);
+  digitalWrite(PIN_LED_HEAT, mode == MODE_HEATING ? HIGH : LOW);
+  return;
+#endif
   switch (mode) {
     case MODE_HEATING:
       driveBridge(PIN_PELTIER_IN1, PIN_PELTIER_IN2, +1, HEAT_DUTY);
@@ -278,6 +309,8 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
     if (value.length() >= 2 && (uint8_t)value[0] == 1) {
       uint8_t mode = (uint8_t)value[1];
       if (mode <= MODE_VENTILATION) commandedMode = mode;
+      Serial.printf("App command: mode %u (%s)\n", mode,
+                    mode == MODE_VENTILATION ? "AUTO" : modeName(mode));
     } else if (value.length() >= 3 && (uint8_t)value[0] == 2) {
       int16_t centi = (int16_t)((uint8_t)value[1] | ((uint8_t)value[2] << 8));
       float c = centi / 100.0f;
@@ -439,22 +472,15 @@ static float readFSR(int pin) {
 #endif
 }
 
-static const char *modeName(uint8_t mode) {
-  switch (mode) {
-    case MODE_HEATING: return "HEAT";
-    case MODE_COOLING: return "COOL";
-    case MODE_VENTILATION: return "FAN";
-    default: return "OFF";
-  }
-}
-
-static const char *chipName(TempChip chip) {
-  return chip == CHIP_TMP117 ? "TMP117" : chip == CHIP_TMP102 ? "TMP102" : "missing";
-}
 
 // ---------------------------------------------------------------- Arduino
 
 void setup() {
+#if LED_TEST_RIG
+  pinMode(PIN_LED_COOL, OUTPUT);
+  pinMode(PIN_LED_HEAT, OUTPUT);
+  applyMode(MODE_OFF);
+#else
   // Outputs low first, then wake the driver, so nothing is driven mid-boot.
   pinMode(PIN_PELTIER_IN1, OUTPUT);
   pinMode(PIN_PELTIER_IN2, OUTPUT);
@@ -462,6 +488,7 @@ void setup() {
   applyMode(MODE_OFF);
   pinMode(PIN_DRIVER_SLEEP, OUTPUT);
   digitalWrite(PIN_DRIVER_SLEEP, HIGH);
+#endif
 
   // Task watchdog (esp32 core 3.x). The core may already have one running;
   // reconfigure it if so.
@@ -475,8 +502,10 @@ void setup() {
   Wire.setClock(400000);
   initMPU();
   startBLE();
-  Serial.printf("Thermyx %s ready (ESP32). Foot sensor: %s\n",
-                THERMYX_FOOT == 1 ? "Left" : "Right", chipName(detectTempChip(TEMP_FOOT)));
+  Serial.printf("Thermyx %s ready (ESP32, %s). Foot sensor: %s\n",
+                THERMYX_FOOT == 1 ? "Left" : "Right",
+                LED_TEST_RIG ? "LED test rig: blue GPIO25 = cool, red GPIO26 = heat" : "Peltier build",
+                chipName(detectTempChip(TEMP_FOOT)));
 }
 
 void loop() {
@@ -503,8 +532,11 @@ void loop() {
   const char *asked = commandedMode == MODE_VENTILATION ? "AUTO" : modeName(commandedMode);
   if (haveFoot) Serial.printf("foot %.2f C (%s)", footC, chipName(footChip));
   else Serial.print("foot sensor missing (check SDA 21 / SCL 22 / 3V3 / GND)");
-  Serial.printf(" | asked %s, doing %s%s | %s\n", asked, modeName(activeMode),
-                burnCutoff ? " (40 C cutoff)" : "", connected ? "app connected" : "waiting for app");
+  Serial.printf(" | asked %s, doing %s%s", asked, modeName(activeMode), burnCutoff ? " (40 C cutoff)" : "");
+#if LED_TEST_RIG
+  Serial.print(activeMode == MODE_COOLING ? " | BLUE on" : activeMode == MODE_HEATING ? " | RED on" : " | LEDs off");
+#endif
+  Serial.printf(" | %s\n", connected ? "app connected" : "waiting for app");
 
   if (connected && telemetry) {
     sendTelemetry(haveFoot, footC, haveAmbient, ambientC, heel, arch, forefoot, now);
