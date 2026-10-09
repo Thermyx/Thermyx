@@ -80,6 +80,9 @@ static const uint8_t FAN_DUTY = 255;
 #define COMMAND_UUID   "7B7E0003-7A3B-4D2D-9C9E-000000000001"
 
 enum Mode : uint8_t { MODE_OFF = 0, MODE_HEATING = 1, MODE_COOLING = 2, MODE_VENTILATION = 3 };
+// Declared up here, before any function, because the Arduino IDE adds
+// function prototypes above the first function it finds.
+enum TempChip : uint8_t { CHIP_NONE, CHIP_TMP102, CHIP_TMP117 };
 
 static const int16_t NO_TEMPERATURE = INT16_MIN;   // outside -20..80 C: the app reads it as absent
 static const uint16_t NO_VALUE = 0xFFFF;           // gait / balance / cadence / standing unknown
@@ -123,8 +126,6 @@ static bool readRegister16(uint8_t address, uint8_t reg, int16_t &out) {
 
 // Which temperature chip answers at an address. A TMP117 reports 0x0117 in
 // its device-ID register (0x0F); a TMP102 has no such register.
-enum TempChip : uint8_t { CHIP_NONE, CHIP_TMP102, CHIP_TMP117 };
-
 static TempChip detectTempChip(uint8_t address) {
   Wire.beginTransmission(address);
   if (Wire.endTransmission() != 0) return CHIP_NONE;
