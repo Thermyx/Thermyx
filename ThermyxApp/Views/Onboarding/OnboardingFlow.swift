@@ -16,18 +16,23 @@ struct OnboardingFlow: View {
     @State private var name = ""
     @State private var watchedName = ""
     @State private var pairingCode = "THERMYX-01"
+    @State private var calibrating = false
+
+    /// The wearer gets a fourth step, calibration; a watcher finishes at pairing.
+    private var lastStep: Int { selectedRole == .user ? 3 : 2 }
 
     var body: some View {
         ZStack {
             AuroraBackground()
 
             VStack(spacing: Thermyx.Space.wide) {
-                OnboardingHeader(step: step, total: 3)
+                OnboardingHeader(step: step, total: lastStep + 1)
 
                 Group {
                     switch step {
                     case 0: OnboardingIntro()
                     case 1: OnboardingRole(selection: $selectedRole)
+                    case 3: OnboardingCalibrate { calibrating = true }
                     default:
                         OnboardingPair(
                             role: selectedRole,
@@ -43,7 +48,7 @@ struct OnboardingFlow: View {
                 // every screen rises in the same way.
                 .id(step)
 
-                Button(step == 2 ? "Enter Thermyx" : "Continue") { advance() }
+                Button(step == lastStep ? (step == 3 ? "Calibrate later" : "Enter Thermyx") : "Continue") { advance() }
                     .buttonStyle(ThermyxPrimaryButtonStyle())
                     .riseIn(delay: step == 0 ? 0.38 : 0.2)
             }
@@ -56,6 +61,10 @@ struct OnboardingFlow: View {
             startScanIfNeeded(for: newValue)
         }
         .onDisappear { if viewModel.isScanning { viewModel.toggleScan() } }
+        .fullScreenCover(isPresented: $calibrating, onDismiss: { advance() }) {
+            NavigationStack { CalibrationView(viewModel: viewModel, settings: settings) }
+                .environmentObject(viewModel)
+        }
     }
 
     /// Starts scanning as the pairing step appears, but only for the wearer —
@@ -66,7 +75,7 @@ struct OnboardingFlow: View {
     }
 
     private func advance() {
-        if step < 2 {
+        if step < lastStep {
             withAnimation(.easeOut(duration: 0.25)) { step += 1 }
             return
         }
@@ -244,4 +253,33 @@ struct OnboardingRole: View {
 
 private extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+
+/// Onboarding step 4 (wearer only): offer calibration now or later.
+struct OnboardingCalibrate: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    let onStart: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+            Text("Teach Thermyx your normal")
+                .font(ThermyxFont.onboardingHeadline)
+                .foregroundStyle(Thermyx.Ink.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Wear the insole for about 6 minutes: sit, stand and walk indoors, then the same outside (that half can wait). Thermyx learns how warm your feet usually run for each, sets Auto to what feels comfortable, and learns to tell what you're doing. It all stays on this phone.")
+                .font(ThermyxFont.body)
+                .foregroundStyle(Thermyx.Ink.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Calibrate now") { onStart() }
+                .buttonStyle(ThermyxPrimaryButtonStyle())
+                .disabled(!viewModel.anyConnected)
+            if !viewModel.anyConnected {
+                Text("Connect your insole first, or calibrate later from Home.")
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.textSupporting)
+            }
+            Spacer(minLength: 0)
+        }
+    }
 }

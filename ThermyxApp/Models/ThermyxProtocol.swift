@@ -25,6 +25,9 @@ enum ThermyxProtocol {
         var zones: FootZoneTemperatures?
         var cadenceStepsPerMinute: Double?
         var standingFraction: Double?
+        /// Flags bit 5 says the insole senses whether a foot is on it; bit 6
+        /// is whether one is. Nil from firmware that can't tell.
+        var footDetected: Bool? = nil
 
         func reading(for foot: Foot, at time: Date = .now) -> ThermyxReading {
             var reading = ThermyxReading(
@@ -42,6 +45,7 @@ enum ThermyxProtocol {
             )
             reading.settingEcho = settingEcho
             reading.burnCutoff = burnCutoff
+            reading.footDetected = footDetected
             return reading
         }
     }
@@ -100,6 +104,7 @@ enum ThermyxProtocol {
             settingEcho: setting(fromFlags: flags),
             burnCutoff: flags & 0b1_0000 != 0
         )
+        if flags & 0b10_0000 != 0 { telemetry.footDetected = flags & 0b100_0000 != 0 }
 
         if version >= 2, let forefoot = temperature(12), let arch = temperature(14), let heel = temperature(16) {
             // All three or none: a heat map off one broken channel would mislead.
@@ -142,7 +147,7 @@ enum ThermyxProtocol {
         }
     }
 
-    static func flags(foot: Foot?, echo: ThermalSetting?, burnCutoff: Bool) -> UInt8 {
+    static func flags(foot: Foot?, echo: ThermalSetting?, burnCutoff: Bool, footDetected: Bool? = nil) -> UInt8 {
         var footBits: UInt8 = 0
         if let foot { footBits = foot == .left ? 1 : 2 }
         var echoBits: UInt8 = 0
@@ -153,7 +158,8 @@ enum ThermyxProtocol {
             case .heat: echoBits = 3
             }
         }
-        return footBits | echoBits << 2 | (burnCutoff ? 0b1_0000 : 0)
+        let footSense: UInt8 = footDetected.map { $0 ? 0b110_0000 : 0b10_0000 } ?? 0
+        return footBits | echoBits << 2 | (burnCutoff ? 0b1_0000 : 0) | footSense
     }
 
     // MARK: Commands
@@ -182,7 +188,7 @@ enum ThermyxProtocol {
         putTemp(t.ambientTemperatureC, at: 5)
         putFraction(t.gaitStability, at: 7)
         putFraction(t.pressureBalance, at: 9)
-        bytes[11] = flags(foot: t.declaredFoot, echo: t.settingEcho, burnCutoff: t.burnCutoff)
+        bytes[11] = flags(foot: t.declaredFoot, echo: t.settingEcho, burnCutoff: t.burnCutoff, footDetected: t.footDetected)
         putTemp(t.zones?.forefootC, at: 12)
         putTemp(t.zones?.archC, at: 14)
         putTemp(t.zones?.heelC, at: 16)

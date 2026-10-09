@@ -220,4 +220,101 @@ final class RiskEngineTests: XCTestCase {
         store.deleteAll()
         XCTAssertEqual(store.baseline.minutesLearned, 0)
     }
+
+    // MARK: - Calibration model
+
+    /// One minute of samples for an activity, with a little deterministic noise.
+    private func minute(_ activity: CalibrationActivity, footC: Double, start: Date = Date(timeIntervalSince1970: 0)) -> [CalibrationSample] {
+        (0..<60).map { i in
+            let wobble = Double((i * 37) % 11 - 5) / 50   // −0.1…+0.1
+            switch activity {
+            case .sitting:
+                return CalibrationSample(time: start.addingTimeInterval(Double(i)), footC: footC + wobble, ambientC: 24,
+                                         load: 0.30 + wobble / 4, gait: nil, cadence: 0, standing: 0.05)
+            case .standing:
+                return CalibrationSample(time: start.addingTimeInterval(Double(i)), footC: footC + wobble, ambientC: 24,
+                                         load: 0.55 + wobble / 4, gait: nil, cadence: 0, standing: 0.95)
+            case .walking:
+                return CalibrationSample(time: start.addingTimeInterval(Double(i)), footC: footC + wobble, ambientC: 24,
+                                         load: 0.5 + (i % 2 == 0 ? 0.15 : -0.15), gait: 0.9 + wobble / 10, cadence: 105 + wobble * 20, standing: 0.1)
+            }
+        }
+    }
+
+    private var indoorSegments: [CalibrationTrainer.Segment] {
+        [
+            .init(activity: .sitting, outdoor: false, samples: minute(.sitting, footC: 30)),
+            .init(activity: .standing, outdoor: false, samples: minute(.standing, footC: 31)),
+            .init(activity: .walking, outdoor: false, samples: minute(.walking, footC: 32.5)),
+        ]
+    }
+
+    func testClassifierLearnsTheWearersActivities() throws {
+        let model = try XCTUnwrap(CalibrationTrainer.train(segments: indoorSegments, comfort: 0))
+        XCTAssertTrue(model.classifier.isUsable)
+        for activity in CalibrationActivity.allCases {
+            let window = Array(minute(activity, footC: 31).prefix(ActivityFeatures.windowSeconds))
+            let guess = try XCTUnwrap(model.classifier.predict(ActivityFeatures(window: window)))
+            XCTAssertEqual(guess.activity, activity)
+            XCTAssertGreaterThan(guess.confidence, 0.9)
+        }
+        XCTAssertEqual(try XCTUnwrap(model.classifierAccuracy), 1, accuracy: 0.001, "Leave-one-out on clean data")
+    }
+
+    func testClassifierStaysOffWithoutMovementSensors() throws {
+        // Temperature only, as on a board with no pressure or motion sensor.
+        let tempOnly = indoorSegments.map { seg in
+            CalibrationTrainer.Segment(activity: seg.activity, outdoor: false, samples: seg.samples.map {
+                CalibrationSample(time: $0.time, footC: $0.footC, ambientC: nil, load: nil, gait: nil, cadence: nil, standing: nil)
+            })
+        }
+        let model = try XCTUnwrap(CalibrationTrainer.train(segments: tempOnly, comfort: nil))
+        XCTAssertFalse(model.classifier.isUsable, "No made-up activity guesses")
+        XCTAssertNil(model.classifierAccuracy)
+        XCTAssertEqual(try XCTUnwrap(model.footByActivity[.walking]).mean, 32.5, accuracy: 0.05, "Thermal profile still learned")
+    }
+
+    func testComfortTargetFollowsRestingTempAndAnswer() throws {
+        XCTAssertEqual(try XCTUnwrap(CalibrationTrainer.train(segments: indoorSegments, comfort: 0)?.comfortTargetC), 30, accuracy: 0.05)
+        XCTAssertEqual(try XCTUnwrap(CalibrationTrainer.train(segments: indoorSegments, comfort: 1)?.comfortTargetC), 28.5, accuracy: 0.05,
+                       "Too warm lowers the target")
+        XCTAssertEqual(PersonalThermalModel.comfortTarget(restingC: 37.9, comfort: -1), 38, "Never above the firmware's 38 °C")
+        XCTAssertEqual(PersonalThermalModel.comfortTarget(restingC: 25, comfort: 1), 26, "Never below 26 °C")
+    }
+
+    func testOutdoorMinutesDontChangeTheUsualTemperature() throws {
+        var segments = indoorSegments
+        segments.append(.init(activity: .walking, outdoor: true, samples: minute(.walking, footC: 35.5)))
+        let model = try XCTUnwrap(CalibrationTrainer.train(segments: segments, comfort: 0))
+        XCTAssertTrue(model.outdoorDone)
+        XCTAssertEqual(try XCTUnwrap(model.footByActivity[.walking]).mean, 32.5, accuracy: 0.05)
+    }
+
+    func testCalibrationModelOnlyAddsCaution() throws {
+        let model = try XCTUnwrap(CalibrationTrainer.train(segments: indoorSegments, comfort: 0))
+        let sitting: [CalibrationActivity: Double] = [.sitting: 1]
+        func assess(_ footC: Double, base: ThermyxRiskLevel) -> ThermyxRiskLevel {
+            let r = ThermyxReading(foot: .left, timestamp: .now, footTemperatureC: footC, ambientTemperatureC: nil,
+                                   pressureBalance: nil, gaitStability: nil, batteryPercent: nil, thermalMode: .ventilation)
+            return PersonalLayer.apply(ThermyxRiskAssessment(level: base, reasons: []), reading: BilateralReading(left: r, right: nil),
+                                       baseline: nil, trend: TemperatureTrend(), unit: .celsius, model: model, activity: sitting).assessment.level
+        }
+        XCTAssertEqual(assess(30.5, base: .normal), .normal, "Within the usual for sitting")
+        XCTAssertEqual(assess(33.0, base: .normal), .caution, "3 °C over the usual while sitting")
+        XCTAssertEqual(assess(29.0, base: .high), .high, "Never lowers a level")
+    }
+
+    func testFootDetectedFlagRoundTrips() throws {
+        for state in [true, false] {
+            var t = ThermyxProtocol.Telemetry(version: 3, mode: .ventilation, batteryPercent: nil, footTemperatureC: 30,
+                                              ambientTemperatureC: nil, gaitStability: nil, pressureBalance: nil,
+                                              declaredFoot: .left, settingEcho: .auto)
+            t.footDetected = state
+            XCTAssertEqual(try ThermyxProtocol.decode(ThermyxProtocol.encode(t)).get().footDetected, state)
+        }
+        let legacy = ThermyxProtocol.Telemetry(version: 3, mode: .ventilation, batteryPercent: nil, footTemperatureC: 30,
+                                               ambientTemperatureC: nil, gaitStability: nil, pressureBalance: nil,
+                                               declaredFoot: .left, settingEcho: .auto)
+        XCTAssertNil(try ThermyxProtocol.decode(ThermyxProtocol.encode(legacy)).get().footDetected, "Unknown, not 'no foot'")
+    }
 }

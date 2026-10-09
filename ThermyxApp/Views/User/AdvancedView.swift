@@ -27,6 +27,7 @@ struct AdvancedView: View {
             targetTemperature
             RelayConnectionCard(settings: settings, role: "wearer")
             healthSection
+            CalibrationSettingsSection(baseline: viewModel.baseline, settings: settings)
             sensorLayout
             dataSection
             legalRow

@@ -146,7 +146,9 @@ final class ThermyxViewModel: ObservableObject {
             reading: reading,
             baseline: baseline.isEnabled ? baseline.baseline : nil,
             trend: baseline.isEnabled ? trend : TemperatureTrend(),
-            unit: unit
+            unit: unit,
+            model: baseline.isEnabled ? baseline.model : nil,
+            activity: baseline.activity
         )
     }
 
@@ -287,6 +289,17 @@ final class ThermyxViewModel: ObservableObject {
         guard command.isPending else { return }
         command.update(readings: ble.readings, connected: ble.connected)
         if let message = command.failureMessage { commandError = message }
+    }
+
+    /// Saves a model trained in calibration and makes its comfort target
+    /// Auto's hold temperature. Demo Mode readings never train anything.
+    func applyCalibration(_ model: PersonalThermalModel, indoorSamples: [CalibrationSample], settings: ThermyxSettingsStore) {
+        guard !ble.isDemoMode else { return }
+        baseline.adopt(model, indoorSamples: indoorSamples)
+        if let target = model.comfortTargetC {
+            settings.targetTemperatureC = target
+            setTargetTemperature(target)
+        }
     }
 
     /// Sends a new hold temperature to every connected insole.

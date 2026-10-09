@@ -111,7 +111,9 @@ enum PersonalLayer {
         reading: BilateralReading,
         baseline: PersonalBaseline?,
         trend: TemperatureTrend,
-        unit: TemperatureUnit
+        unit: TemperatureUnit,
+        model: PersonalThermalModel? = nil,
+        activity: [CalibrationActivity: Double]? = nil
     ) -> Result {
         guard assessment.level != .unavailable else { return Result(assessment: assessment, signals: []) }
 
@@ -156,6 +158,22 @@ enum PersonalLayer {
             }
         }
 
+        // Calibration model: usual temperature for what the wearer is doing.
+        if let model, let footC, let expected = model.expectedFoot(probabilities: activity) {
+            let over = footC - expected.mean
+            let margin = model.margin(expected)
+            let counts = over >= margin
+            let doing = activity?.max(by: { $0.value < $1.value })?.key.label.lowercased()
+            signals.append(.init(
+                kind: .personalBaseline,
+                title: doing.map { "Compared with your usual while \($0)" } ?? "Compared with your calibration",
+                value: (over >= 0 ? "+" : "−") + TemperatureFormat.delta(over, in: unit),
+                rule: "Caution at \(TemperatureFormat.delta(margin, in: unit)) or more above your usual \(TemperatureFormat.degrees(expected.mean, in: unit))",
+                contributes: counts
+            ))
+            if counts { raise("Foot temperature is well above your usual for this activity.") }
+        }
+
         if let d = trend.delta5 ?? trend.delta10 {
             let fast = trend.isRisingFast
             let recovering = trend.isRecovering
@@ -191,13 +209,21 @@ final class PersonalBaselineStore: ObservableObject {
         didSet { defaults.set(isEnabled, forKey: Self.enabledKey) }
     }
 
+    /// The model trained in calibration, if the wearer has calibrated.
+    @Published private(set) var model: PersonalThermalModel?
+    /// The classifier's view of what the wearer is doing now, from the last
+    /// 10 seconds of readings. Nil without a usable model or features.
+    @Published private(set) var activity: [CalibrationActivity: Double]?
+
     private let defaults: UserDefaults
+    private var recent: [CalibrationSample] = []
     private var minuteFoot: [Double] = []
     private var minuteGait: [Double] = []
     private var minuteCalm = true
     private var minuteStart: Date?
 
     private static let key = "thermyx.personalBaseline"
+    private static let modelKey = "thermyx.calibrationModel"
     private static let labelKey = "thermyx.sessionLabel"
     private static let enabledKey = "thermyx.personalBaselineEnabled"
 
@@ -213,12 +239,44 @@ final class PersonalBaselineStore: ObservableObject {
             baseline = PersonalBaseline()
             defaults.removeObject(forKey: Self.key)
         }
+        if let data = defaults.data(forKey: Self.modelKey) {
+            model = try? JSONDecoder().decode(PersonalThermalModel.self, from: data)
+        }
+    }
+
+    /// Stores a freshly trained model and teaches the baseline from the
+    /// calibration's indoor minutes, so personal warnings start right away
+    /// instead of after ten minutes of wear.
+    func adopt(_ model: PersonalThermalModel, indoorSamples: [CalibrationSample]) {
+        self.model = model
+        if let data = try? JSONEncoder().encode(model) { defaults.set(data, forKey: Self.modelKey) }
+        let minutes = stride(from: 0, to: indoorSamples.count, by: 60).map { Array(indoorSamples[$0..<min($0 + 60, indoorSamples.count)]) }
+        for minute in minutes where minute.count >= 30 {
+            let foot = minute.compactMap(\.footC)
+            let gait = minute.compactMap(\.gait)
+            baseline.learn(
+                footC: foot.isEmpty ? nil : foot.reduce(0, +) / Double(foot.count),
+                gait: gait.isEmpty ? nil : gait.reduce(0, +) / Double(gait.count),
+                now: minute.last?.time ?? .now
+            )
+        }
+        persist()
+    }
+
+    func clearModel() {
+        model = nil
+        activity = nil
+        defaults.removeObject(forKey: Self.modelKey)
     }
 
     /// Called with each pair reading. Readings are gathered per minute and a
     /// minute is learned only if every reading in it was calm.
     func observe(_ reading: BilateralReading, fixedLevel: ThermyxRiskLevel, now: Date = .now) {
         guard reading.hasAny else { return }
+        recent.append(CalibrationSample(reading, at: now))
+        if recent.count > ActivityFeatures.windowSeconds { recent.removeFirst(recent.count - ActivityFeatures.windowSeconds) }
+        let next = model.flatMap { $0.classifier.probabilities(ActivityFeatures(window: recent)) }
+        if next != activity { activity = next }
         let start = minuteStart ?? now
         if now.timeIntervalSince(start) >= 60 {
             if minuteCalm, !minuteFoot.isEmpty || !minuteGait.isEmpty {
@@ -254,6 +312,10 @@ final class PersonalBaselineStore: ObservableObject {
 
     func deleteAll() {
         reset()
+        clearModel()
+        // Saved calibration minutes and answers.
+        defaults.removeObject(forKey: "thermyx.calibration.indoor")
+        defaults.removeObject(forKey: "thermyx.calibration.comfort")
         sessionLabel = ""
         defaults.removeObject(forKey: Self.labelKey)
     }
@@ -265,4 +327,321 @@ final class PersonalBaselineStore: ObservableObject {
 
 private extension Double {
     func clamped(to range: ClosedRange<Double>) -> Double { Swift.min(Swift.max(self, range.lowerBound), range.upperBound) }
+}
+
+// MARK: - Calibration model
+//
+// A small model trained on this phone from the wearer's own calibration
+// session. Nothing is pre-trained and nothing leaves the phone.
+//
+// - An activity classifier (Gaussian naive Bayes) learns what sitting,
+//   standing and walking look like in this wearer's sensor data.
+// - A thermal profile learns their usual foot temperature for each activity
+//   and their comfortable resting temperature, which becomes Auto's target.
+//
+// Like the baseline, the model can only add caution. It never lowers a
+// level, never moves the fixed limits, and its Auto target stays inside the
+// 26–38 °C range the firmware accepts.
+
+/// What the wearer is doing during a calibration segment, and what the
+/// classifier predicts afterwards.
+enum CalibrationActivity: String, Codable, CaseIterable, Identifiable {
+    case sitting, standing, walking
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .sitting: return "Sitting"
+        case .standing: return "Standing"
+        case .walking: return "Walking"
+        }
+    }
+}
+
+/// One second of sensor data captured during calibration.
+struct CalibrationSample: Codable, Equatable {
+    var time: Date
+    var footC: Double?
+    var ambientC: Double?
+    var load: Double?
+    var gait: Double?
+    var cadence: Double?
+    var standing: Double?
+
+    init(time: Date, footC: Double?, ambientC: Double?, load: Double?, gait: Double?, cadence: Double?, standing: Double?) {
+        self.time = time
+        self.footC = footC
+        self.ambientC = ambientC
+        self.load = load
+        self.gait = gait
+        self.cadence = cadence
+        self.standing = standing
+    }
+
+    /// The pair's reading as one sample: the warmer foot's temperature, the
+    /// less steady foot's gait, and averages for the rest.
+    init(_ reading: BilateralReading, at time: Date = .now) {
+        let present = reading.present
+        func mean(_ values: [Double]) -> Double? { values.isEmpty ? nil : values.reduce(0, +) / Double(values.count) }
+        self.init(
+            time: time,
+            footC: present.compactMap(\.footTemperatureC).max(),
+            ambientC: mean(present.compactMap(\.ambientTemperatureC)),
+            load: mean(present.compactMap(\.pressureBalance)),
+            gait: present.compactMap(\.gaitStability).min(),
+            cadence: mean(present.compactMap(\.cadenceStepsPerMinute)),
+            standing: mean(present.compactMap(\.standingFraction))
+        )
+    }
+}
+
+/// The features the classifier sees for one window of samples. A feature is
+/// nil when the insole doesn't measure it; the model then simply ignores it.
+struct ActivityFeatures: Equatable {
+    static let count = 5
+    /// Mean steps per minute.
+    var cadence: Double?
+    /// Mean share of time loaded but not stepping.
+    var standing: Double?
+    /// Mean forefoot load share.
+    var load: Double?
+    /// Spread of the load share: shifting weight while walking moves it.
+    var loadSpread: Double?
+    /// Mean gait steadiness.
+    var gait: Double?
+
+    var values: [Double?] { [cadence, standing, load, loadSpread, gait] }
+
+    /// Seconds of data per window.
+    static let windowSeconds = 10
+
+    init(cadence: Double?, standing: Double?, load: Double?, loadSpread: Double?, gait: Double?) {
+        self.cadence = cadence
+        self.standing = standing
+        self.load = load
+        self.loadSpread = loadSpread
+        self.gait = gait
+    }
+
+    init(window: [CalibrationSample]) {
+        func mean(_ v: [Double]) -> Double? { v.isEmpty ? nil : v.reduce(0, +) / Double(v.count) }
+        let loads = window.compactMap(\.load)
+        var spread: Double?
+        if loads.count >= 3, let m = mean(loads) {
+            spread = (loads.map { ($0 - m) * ($0 - m) }.reduce(0, +) / Double(loads.count)).squareRoot()
+        }
+        self.init(
+            cadence: mean(window.compactMap(\.cadence)),
+            standing: mean(window.compactMap(\.standing)),
+            load: mean(loads),
+            loadSpread: spread,
+            gait: mean(window.compactMap(\.gait))
+        )
+    }
+
+    /// Splits a segment into consecutive windows of `windowSeconds` samples.
+    static func windows(_ samples: [CalibrationSample]) -> [ActivityFeatures] {
+        stride(from: 0, to: samples.count - windowSeconds + 1, by: windowSeconds).map {
+            ActivityFeatures(window: Array(samples[$0..<$0 + windowSeconds]))
+        }
+    }
+}
+
+/// Gaussian naive Bayes over `ActivityFeatures`, trained on labelled windows.
+/// Each feature is modelled per activity as a normal distribution; missing
+/// features are skipped at training and prediction time.
+struct ActivityClassifier: Codable, Equatable {
+    struct Gaussian: Codable, Equatable {
+        var mean: Double
+        var variance: Double
+    }
+
+    /// [activity: [feature index: distribution]]
+    private(set) var distributions: [CalibrationActivity: [Int: Gaussian]] = [:]
+
+    /// Variance floor per feature, so a perfectly still minute doesn't
+    /// produce an infinitely confident model.
+    static let varianceFloor: [Double] = [4, 0.0025, 0.0025, 0.0004, 0.0025]
+
+    /// Activities and features with enough data to use.
+    var activities: [CalibrationActivity] { CalibrationActivity.allCases.filter { distributions[$0] != nil } }
+
+    /// Usable when at least two activities share at least one feature.
+    var isUsable: Bool {
+        let learned = activities
+        guard learned.count >= 2 else { return false }
+        let shared = learned.map { Set(distributions[$0]!.keys) }.reduce(Set(0..<ActivityFeatures.count)) { $0.intersection($1) }
+        return !shared.isEmpty
+    }
+
+    init(training: [CalibrationActivity: [ActivityFeatures]]) {
+        for (activity, rows) in training {
+            var perFeature: [Int: Gaussian] = [:]
+            for index in 0..<ActivityFeatures.count {
+                let xs = rows.compactMap { $0.values[index] }
+                guard xs.count >= 2 else { continue }
+                let mean = xs.reduce(0, +) / Double(xs.count)
+                let variance = xs.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(xs.count - 1)
+                perFeature[index] = Gaussian(mean: mean, variance: max(variance, Self.varianceFloor[index]))
+            }
+            if !perFeature.isEmpty { distributions[activity] = perFeature }
+        }
+    }
+
+    /// Probability of each learned activity for these features, or nil when
+    /// the features share nothing with what the model learned.
+    func probabilities(_ features: ActivityFeatures) -> [CalibrationActivity: Double]? {
+        guard isUsable else { return nil }
+        let values = features.values
+        var logScores: [CalibrationActivity: Double] = [:]
+        var usedAny = false
+        for activity in activities {
+            var score = 0.0
+            for (index, g) in distributions[activity]! {
+                // Only features every learned activity has, so the scores
+                // stay comparable.
+                guard let x = values[index], activities.allSatisfy({ distributions[$0]?[index] != nil }) else { continue }
+                score += -0.5 * log(2 * .pi * g.variance) - (x - g.mean) * (x - g.mean) / (2 * g.variance)
+                usedAny = true
+            }
+            logScores[activity] = score
+        }
+        guard usedAny, let top = logScores.values.max() else { return nil }
+        let exps = logScores.mapValues { exp($0 - top) }
+        let total = exps.values.reduce(0, +)
+        return exps.mapValues { $0 / total }
+    }
+
+    func predict(_ features: ActivityFeatures) -> (activity: CalibrationActivity, confidence: Double)? {
+        guard let p = probabilities(features), let best = p.max(by: { $0.value < $1.value }) else { return nil }
+        return (best.key, best.value)
+    }
+
+    /// Leave-one-out accuracy on the training windows: an honest estimate of
+    /// how well the model tells this wearer's activities apart.
+    static func leaveOneOutAccuracy(_ training: [CalibrationActivity: [ActivityFeatures]]) -> Double? {
+        var correct = 0, total = 0
+        for (activity, rows) in training {
+            for i in rows.indices {
+                var rest = training
+                rest[activity]!.remove(at: i)
+                let model = ActivityClassifier(training: rest)
+                guard let guess = model.predict(rows[i]) else { continue }
+                total += 1
+                if guess.activity == activity { correct += 1 }
+            }
+        }
+        return total >= 6 ? Double(correct) / Double(total) : nil
+    }
+}
+
+/// The wearer's thermal profile from calibration.
+struct PersonalThermalModel: Codable, Equatable {
+    struct Stats: Codable, Equatable {
+        var mean: Double
+        var sd: Double
+    }
+
+    var classifier: ActivityClassifier
+    /// Usual indoor foot temperature per activity.
+    var footByActivity: [CalibrationActivity: Stats]
+    /// Auto's learned target, inside the firmware's 26–38 °C range.
+    var comfortTargetC: Double?
+    /// Leave-one-out accuracy of the classifier, when there was enough data.
+    var classifierAccuracy: Double?
+    var indoorDone: Bool
+    var outdoorDone: Bool
+    var trainedAt: Date
+
+    static let targetRange: ClosedRange<Double> = 26...38
+    /// Smallest spread used for warnings, so a short, steady calibration
+    /// doesn't make ordinary variation look alarming.
+    static let minimumSD = 0.75
+    /// How far above the usual temperature for the current activity counts:
+    /// three spreads, and never less than 2 °C.
+    static let marginSDs = 3.0
+    static let minimumMarginC = 2.0
+
+    /// Comfort answer: −1 "too cold" … 0 "just right" … +1 "too warm". A
+    /// "too warm" answer lowers the target, "too cold" raises it.
+    static let comfortAdjustmentC = 1.5
+
+    static func comfortTarget(restingC: Double, comfort: Double?) -> Double {
+        let adjusted = restingC - (comfort ?? 0) * comfortAdjustmentC
+        return min(max(adjusted, targetRange.lowerBound), targetRange.upperBound)
+    }
+
+    /// The temperature expected for the current activity mix, and its spread.
+    func expectedFoot(probabilities p: [CalibrationActivity: Double]?) -> Stats? {
+        let weights: [CalibrationActivity: Double]
+        if let p, !p.isEmpty {
+            weights = p.filter { footByActivity[$0.key] != nil }
+        } else {
+            // No activity estimate: compare with the warmest usual, so the
+            // warning stays conservative.
+            guard let warmest = footByActivity.max(by: { $0.value.mean < $1.value.mean }) else { return nil }
+            return warmest.value
+        }
+        let total = weights.values.reduce(0, +)
+        guard total > 0 else { return nil }
+        var mean = 0.0, second = 0.0
+        for (activity, w) in weights {
+            let s = footByActivity[activity]!
+            mean += w / total * s.mean
+            second += w / total * (s.sd * s.sd + s.mean * s.mean)
+        }
+        let sd = max((second - mean * mean).squareRoot(), Self.minimumSD)
+        return Stats(mean: mean, sd: sd)
+    }
+
+    /// Margin above the expected temperature that raises Caution.
+    func margin(_ expected: Stats) -> Double { max(Self.minimumMarginC, Self.marginSDs * expected.sd) }
+}
+
+/// Builds the model from a finished calibration session.
+enum CalibrationTrainer {
+    struct Segment: Equatable {
+        var activity: CalibrationActivity
+        var outdoor: Bool
+        var samples: [CalibrationSample]
+    }
+
+    static func train(segments: [Segment], comfort: Double?, now: Date = .now) -> PersonalThermalModel? {
+        let indoor = segments.filter { !$0.outdoor }
+        guard !indoor.isEmpty else { return nil }
+
+        // Activity classifier: every segment, indoor and out, labelled.
+        var training: [CalibrationActivity: [ActivityFeatures]] = [:]
+        for segment in segments {
+            training[segment.activity, default: []] += ActivityFeatures.windows(segment.samples)
+        }
+
+        // Thermal profile: indoor only, so a hot afternoon outside doesn't
+        // become the usual. Values are kept inside the baseline's bounds.
+        var foot: [CalibrationActivity: PersonalThermalModel.Stats] = [:]
+        for activity in CalibrationActivity.allCases {
+            let xs = indoor.filter { $0.activity == activity }
+                .flatMap(\.samples)
+                .compactMap(\.footC)
+                .map { min(max($0, PersonalBaseline.footClampC.lowerBound), PersonalBaseline.footClampC.upperBound) }
+            guard xs.count >= 10 else { continue }
+            let mean = xs.reduce(0, +) / Double(xs.count)
+            let sd = (xs.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(xs.count)).squareRoot()
+            foot[activity] = .init(mean: mean, sd: max(sd, PersonalThermalModel.minimumSD))
+        }
+        guard !foot.isEmpty else { return nil }
+
+        // Comfort target: resting temperature (sitting, else standing),
+        // nudged by how comfortable the wearer said it felt.
+        let resting = foot[.sitting]?.mean ?? foot[.standing]?.mean ?? foot.values.first!.mean
+        return PersonalThermalModel(
+            classifier: ActivityClassifier(training: training),
+            footByActivity: foot,
+            comfortTargetC: PersonalThermalModel.comfortTarget(restingC: resting, comfort: comfort),
+            classifierAccuracy: ActivityClassifier.leaveOneOutAccuracy(training),
+            indoorDone: true,
+            outdoorDone: segments.contains { $0.outdoor },
+            trainedAt: now
+        )
+    }
 }

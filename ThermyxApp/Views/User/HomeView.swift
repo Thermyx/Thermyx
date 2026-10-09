@@ -128,6 +128,10 @@ struct HomeView: View {
                 .padding(.horizontal, Thermyx.Space.screen)
                 .padding(.top, Thermyx.Space.m)
 
+            CalibrationPromptCard(baseline: viewModel.baseline, settings: settings)
+                .padding(.horizontal, Thermyx.Space.screen)
+                .padding(.top, Thermyx.Space.s)
+
             BilateralSoleView(unit: unit) { foot in
                 viewModel.scanFor(foot)
                 showingPairing = true
@@ -166,6 +170,7 @@ struct HomeView: View {
                     Text(heroLabel)
                         .narrowLabel(ThermyxFont.zoneLabel, tracking: 2, color: Thermyx.Ink.textSupporting)
                     trendChip
+                    ActivityGuessLabel(baseline: viewModel.baseline)
                 }
                 .padding(.bottom, 6)
 

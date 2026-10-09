@@ -31,6 +31,9 @@ struct ThermyxReading: Equatable {
     /// True while the firmware's own burn cutoff is holding the heater off
     /// (flags bit 4).
     var burnCutoff = false
+    /// Whether a foot is on the insole (flags bits 5–6), from firmware that
+    /// senses it. Nil when the insole can't tell.
+    var footDetected: Bool?
 
     init(
         foot: Foot,
