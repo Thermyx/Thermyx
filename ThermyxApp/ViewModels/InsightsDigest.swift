@@ -300,10 +300,10 @@ struct ThermyxDailySummary: Identifiable, Equatable {
         let hourFoot = hours.compactMap { $0.compactMap(\.footMeanC).max() }
         let peak = samples.compactMap(\.peakRiskLevel).max { $0.severity < $1.severity }
         let standing = samples.filter { $0.standingMean != nil }
-        func tracked(_ value: (ThermyxHistorySample) -> Double?) -> Double? {
+        func recorded(_ value: (ThermyxHistorySample) -> Double?) -> Double? {
             samples.contains { value($0) != nil } ? perFoot(value).max() : nil
         }
-        let trackedStanding = tracked(\.standingSeconds)
+        let trackedStanding = recorded(\.standingSeconds)
         var summary = ThermyxDailySummary(
             day: day,
             wornSeconds: worn,
@@ -322,9 +322,9 @@ struct ThermyxDailySummary: Identifiable, Equatable {
             events: events.count,
             feet: feet
         )
-        summary.steps = tracked(\.steps)
-        summary.sittingSeconds = tracked(\.sittingSeconds)
-        summary.walkingSeconds = tracked(\.walkingSeconds)
+        summary.steps = recorded(\.steps)
+        summary.sittingSeconds = recorded(\.sittingSeconds)
+        summary.walkingSeconds = recorded(\.walkingSeconds)
         if let trackedStanding { summary.standingSeconds = trackedStanding }
         return summary
     }
