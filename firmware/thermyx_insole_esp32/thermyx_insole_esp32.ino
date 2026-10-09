@@ -129,6 +129,11 @@ static const uint32_t WATCHDOG_MS = 4000;
 
 static BLECharacteristic *telemetry = nullptr;
 static volatile bool connected = false;
+// Centrals currently connected. iOS may hold its own link to the board
+// (after a pairing in Settings, or another app such as LightBlue); the board
+// keeps advertising and accepts a second connection so the Thermyx app can
+// still connect.
+static volatile int clientCount = 0;
 
 // Gait tracking.
 static const int STEP_HISTORY = 12;
@@ -293,12 +298,19 @@ static uint8_t decideMode(bool haveFoot, float footC) {
 // ------------------------------------------------------------------ BLE
 
 class ServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *) override { connected = true; }
+  void onConnect(BLEServer *server) override {
+    clientCount++;
+    connected = true;
+    // Keep advertising so another central (the app) can still find and
+    // connect to the board while iOS or another app holds a link.
+    server->getAdvertising()->start();
+  }
   void onDisconnect(BLEServer *server) override {
-    connected = false;
-    // Unsupervised heating is not allowed: drop back to Auto without heat
-    // until the app reconnects, then advertise again.
-    if (commandedMode == MODE_HEATING) commandedMode = MODE_VENTILATION;
+    if (clientCount > 0) clientCount--;
+    connected = clientCount > 0;
+    // Unsupervised heating is not allowed: with nobody connected, drop back
+    // to Auto without heat until the app reconnects.
+    if (!connected && commandedMode == MODE_HEATING) commandedMode = MODE_VENTILATION;
     server->getAdvertising()->start();
   }
 };
@@ -536,7 +548,8 @@ void loop() {
 #if LED_TEST_RIG
   Serial.print(activeMode == MODE_COOLING ? " | BLUE on" : activeMode == MODE_HEATING ? " | RED on" : " | LEDs off");
 #endif
-  Serial.printf(" | %s\n", connected ? "app connected" : "waiting for app");
+  if (clientCount > 1) Serial.printf(" | %d connections", clientCount);
+  Serial.printf(" | %s\n", connected ? "connected" : "waiting for app");
 
   if (connected && telemetry) {
     sendTelemetry(haveFoot, footC, haveAmbient, ambientC, heel, arch, forefoot, now);
