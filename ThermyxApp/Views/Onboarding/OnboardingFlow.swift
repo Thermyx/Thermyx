@@ -322,6 +322,7 @@ struct OnboardingProfile: View {
     @State private var height = ""
     @State private var heightInches = ""
     @State private var weight = ""
+    @State private var showingSize = false
 
     private var imperial: Bool { settings.temperatureUnit == .fahrenheit }
 
@@ -366,6 +367,22 @@ struct OnboardingProfile: View {
                     }
                     .pickerStyle(.segmented)
 
+                    SectionLabel("Shoe size")
+                    Button { showingSize = true } label: {
+                        HStack {
+                            Text(settings.soleSize?.label ?? "Choose your size")
+                                .font(ThermyxFont.bodyLarge)
+                                .foregroundStyle(settings.soleSize == nil ? Thermyx.Ink.textFaint : Thermyx.Ink.textPrimary)
+                            Spacer()
+                            Image(systemName: "chevron.right").foregroundStyle(Thermyx.Ink.textFaint)
+                        }
+                        .padding(.horizontal, Thermyx.Space.xl)
+                        .frame(minHeight: Thermyx.minimumTapTarget)
+                        .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+                        .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+
                     SectionLabel("What should Insights focus on?")
                     ForEach(UserProfile.Focus.allCases) { focus in
                         focusRow(focus)
@@ -382,6 +399,11 @@ struct OnboardingProfile: View {
         }
         .scrollIndicators(.hidden)
         .scrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $showingSize) {
+            SoleSizePicker(settings: settings)
+                .presentationDetents([.large])
+                .presentationBackground(Thermyx.Ink.midnight)
+        }
         .onAppear(perform: load)
         .onChange(of: age) { _, _ in store() }
         .onChange(of: height) { _, _ in store() }

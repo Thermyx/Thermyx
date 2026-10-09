@@ -24,7 +24,7 @@ struct DeviceProfileSheet: View {
                 .padding(Thermyx.Space.screen)
             }
             .scrollIndicators(.hidden)
-            .background(Thermyx.Ink.midnight)
+            .background(Thermyx.Ink.midnight.ignoresSafeArea())
             .navigationTitle("Device & profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -191,7 +191,7 @@ struct DeviceProfileSheet: View {
         }
         .sheet(isPresented: $showingSizePicker) {
             SoleSizePicker(settings: settings)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.large])
                 .presentationBackground(Thermyx.Ink.midnight)
         }
     }
@@ -239,8 +239,8 @@ struct SoleSizePicker: View {
                 .padding(Thermyx.Space.screen)
             }
             .scrollIndicators(.hidden)
-            .background(Thermyx.Ink.midnight)
-            .navigationTitle("Sole size")
+            .background(Thermyx.Ink.midnight.ignoresSafeArea())
+            .navigationTitle("Shoe size")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
@@ -266,7 +266,7 @@ struct SoleSizePicker: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                 if isEnabled {
-                    Text("\(Int(size.lengthMM)) mm")
+                    Text("\(Int(size.lengthMM.rounded())) mm")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel,
                                      color: isSelected ? Thermyx.Ink.onSignal : Thermyx.Ink.ice)
                 }
