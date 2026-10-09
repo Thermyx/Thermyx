@@ -66,6 +66,25 @@ struct ConnectDeviceView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Connect a device") {
+            if ble.isDemoMode {
+                // Demo Mode swaps the radio for simulated devices, so a real
+                // board can never connect from here. Say so plainly.
+                ThermyxCard(border: Thermyx.Ink.amber.opacity(0.6)) {
+                    VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                        Text("Demo Mode is on")
+                            .font(ThermyxFont.rowTitle)
+                            .foregroundStyle(Thermyx.Ink.amber)
+                        Text("Only simulated devices show here, and real Thermyx boards can't connect. Turn off Demo Mode in Safety → Advanced, or run the ThermyxApp scheme in Xcode instead of Thermyx Demo.")
+                            .font(ThermyxFont.caption)
+                            .foregroundStyle(Thermyx.Ink.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Turn off Demo Mode") { ble.stopDemoMode() }
+                            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
+                            .fixedSize()
+                    }
+                }
+            }
+
             statusCard
 
             HStack(spacing: Thermyx.Space.m) {
