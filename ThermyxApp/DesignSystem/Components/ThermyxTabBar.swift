@@ -105,6 +105,11 @@ struct ThermyxTabScaffold<Tab: Hashable, Content: View, Accessory: View>: View {
                         // what a native TabView does.
                         .allowsHitTesting(item.tab == selection)
                         .accessibilityHidden(item.tab != selection)
+                        // Only the visible tab decides whether the control
+                        // bar shows; a screen in a background tab can't hide it.
+                        .transformPreference(ThermalControlBarHidden.self) { hidden in
+                            if item.tab != selection { hidden = false }
+                        }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

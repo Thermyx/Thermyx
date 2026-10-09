@@ -26,7 +26,66 @@
           "text": "When Home shows Caution or higher and your foot temperature is still rising, take a break in the shade, drink water, and switch the insoles to Cool. Check again in ten minutes: the trend should level off or fall."
         }
       ],
-      "sources": "Sources: Charkoudian N. Skin blood flow in adult human thermoregulation: how it works, when it does not, and why. Mayo Clinic Proceedings. 2003;78(5):603–612. doi:10.4065/78.5.603."
+      "sources": "Sources: Charkoudian N. Skin blood flow in adult human thermoregulation: how it works, when it does not, and why. Mayo Clinic Proceedings. 2003;78(5):603–612. doi:10.4065/78.5.603.",
+      "icon": "thermometer.medium"
+    },
+    {
+      "id": "how-peltier-works",
+      "category": "device",
+      "title": "How Thermyx heats and cools",
+      "deck": "One thin tile does both jobs. Here's how a Peltier module moves heat, and why the fan runs with it.",
+      "readMinutes": 3,
+      "featured": false,
+      "status": "published",
+      "icon": "bolt.fill",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "Thermyx heats and cools with a Peltier module: a thin ceramic tile packed with tiny blocks of two kinds of semiconductor. When current flows through it, heat is carried from one face to the other, so one face gets colder and the other hotter. This is the Peltier effect, described by Jean Peltier in 1834. There are no moving parts and no refrigerant."
+        },
+        {
+          "kind": "body",
+          "text": "Reverse the current and the faces swap. That is how one module does both jobs: current one way warms the side against your foot, the other way cools it. The heat has to go somewhere, though. When the insole cools your foot, the far face gets hot, and that heat, plus the module's own waste heat, has to be carried away or the cool side warms back up."
+        },
+        {
+          "kind": "body",
+          "text": "That is the fan's job, so Thermyx runs the fan whenever it is heating or cooling. A Peltier module also uses a lot of power for the heat it moves, which is why Auto idles whenever your foot is already in range."
+        },
+        {
+          "kind": "action",
+          "text": "If cooling feels weak, check that nothing is covering the fan vent and that the battery isn't low. Use Auto for long wear: it saves battery by only running the module when it's needed."
+        }
+      ],
+      "sources": "Sources: the Peltier effect is standard thermoelectric physics. How the fan and Auto behave comes from the Thermyx prototype."
+    },
+    {
+      "id": "modes",
+      "category": "device",
+      "title": "What each mode does",
+      "deck": "Cool, Auto, Heat and Off, and the safety limits that apply to each.",
+      "readMinutes": 3,
+      "featured": false,
+      "status": "published",
+      "icon": "slider.horizontal.3",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "Cool runs the module to draw heat away from your foot for as long as it's selected. Heat runs it the other way to warm your foot. Heat has two safety limits: the insole stops heating if the contact temperature reaches 40 °C (104 °F) and only resumes below 38.5 °C (101.3 °F), and the app locks Heat out and switches to Cool if your risk level reaches High or Critical."
+        },
+        {
+          "kind": "body",
+          "text": "Auto holds your target temperature. Calibration sets it from what you said felt comfortable, and you can change it in Profile, Advanced, between 26 and 38 °C. Below the target Auto heats, above it Auto cools, and close to it Auto idles, with a small margin so it doesn't flick on and off at the edge."
+        },
+        {
+          "kind": "body",
+          "text": "Off turns the module and the fan off. The insole keeps sensing, so readings, insights and safety alerts still work."
+        },
+        {
+          "kind": "action",
+          "text": "Most of the time, Auto is the one to use. Pick Cool or Heat for a quick change, and Off to save battery when you don't need either."
+        }
+      ],
+      "sources": "Sources: the limits and ranges are the ones set in the Thermyx app and firmware."
     },
     {
       "id": "comfort-band",
@@ -50,7 +109,8 @@
           "text": "The first time you see a long stretch above the band, look at what you were doing then: the air temperature, your shoes, and whether you were resting or working. If the risk level was also raised, plan more shade and water breaks for that kind of day."
         }
       ],
-      "sources": "Sources: the band edges are set in the app (ThermyxTemperatureScale). No outside claim is made about what the band means for health."
+      "sources": "Sources: the band edges are set in the app (ThermyxTemperatureScale). No outside claim is made about what the band means for health.",
+      "icon": "gauge.with.dots.needle.33percent"
     },
     {
       "id": "cold-feet",
@@ -74,7 +134,8 @@
           "text": "Use Auto with a modest target (30–32 °C) rather than Heat when your feet are cold, and check your feet after the first 20 minutes. Stop heating if your feet feel numb, tingle strongly, or look red or blistered."
         }
       ],
-      "sources": "Sources: McIntosh SE, et al. Wilderness Medical Society Clinical Practice Guidelines for the Prevention and Treatment of Frostbite: 2024 Update. Wilderness & Environmental Medicine. 2024;35(2):183–197. doi:10.1177/10806032231222359."
+      "sources": "Sources: McIntosh SE, et al. Wilderness Medical Society Clinical Practice Guidelines for the Prevention and Treatment of Frostbite: 2024 Update. Wilderness & Environmental Medicine. 2024;35(2):183–197. doi:10.1177/10806032231222359.",
+      "icon": "snowflake"
     },
     {
       "id": "fatigue-gait",
@@ -98,7 +159,8 @@
           "text": "If Home shows your steadiness below your usual level, slow down and take a break. If you are also hot, treat it as a heat warning: shade, water, and Cool. If one foot keeps taking more load, check your shoes and anything that hurts."
         }
       ],
-      "sources": "Sources: Effects of experimentally induced fatigue on healthy older adults' gait: a systematic review. PLOS ONE. 2019;14(12):e0226939. doi:10.1371/journal.pone.0226939."
+      "sources": "Sources: Effects of experimentally induced fatigue on healthy older adults' gait: a systematic review. PLOS ONE. 2019;14(12):e0226939. doi:10.1371/journal.pone.0226939.",
+      "icon": "figure.walk"
     },
     {
       "id": "hydration",
@@ -126,7 +188,8 @@
           "text": "When a warning fires: stop, get into shade, drink a cup of water, and switch the insoles to Cool. Rest until the risk level drops, then keep drinking a cup every 15–20 minutes."
         }
       ],
-      "sources": "Sources: NIOSH. Heat Stress: Hydration (DHHS/NIOSH Publication 2017-126). OSHA. Heat — Protecting New Workers (osha.gov/heat-exposure/protecting-new-workers)."
+      "sources": "Sources: NIOSH. Heat Stress: Hydration (DHHS/NIOSH Publication 2017-126). OSHA. Heat — Protecting New Workers (osha.gov/heat-exposure/protecting-new-workers).",
+      "icon": "drop.fill"
     },
     {
       "id": "what-thermyx-is-not",
@@ -150,7 +213,41 @@
           "text": "Trust how you and the people around you feel over what the app says. If someone is confused, faints, or has a seizure in the heat, call 911 first and look at the app later."
         }
       ],
-      "sources": "Sources: CDC. Warning Signs and Symptoms of Heat-Related Illness (cdc.gov/disasters/extremeheat). OSHA. Heat-Related Illnesses and First Aid (osha.gov/heat-exposure/illness-first-aid)."
+      "sources": "Sources: CDC. Warning Signs and Symptoms of Heat-Related Illness (cdc.gov/disasters/extremeheat). OSHA. Heat-Related Illnesses and First Aid (osha.gov/heat-exposure/illness-first-aid).",
+      "icon": "info.circle.fill"
+    },
+    {
+      "id": "reading-insights",
+      "category": "device",
+      "title": "How to read your insights",
+      "deck": "What the daily summary, the shaded temperature chart, and the activity split are telling you.",
+      "readMinutes": 4,
+      "featured": false,
+      "status": "published",
+      "icon": "chart.xyaxis.line",
+      "sections": [
+        {
+          "kind": "body",
+          "text": "The cards at the top of Insights are today's summary: how long you wore Thermyx, how long it heated and cooled, and your average foot temperature. Tap one to open that day's page, or open Daily summaries for earlier days. A week of summaries tells you more than any single reading."
+        },
+        {
+          "kind": "body",
+          "text": "On the temperature chart, the line is your foot-contact temperature. Red shading behind it marks when the insole was heating, and blue when it was cooling. The band shows the comfort range. If the line keeps climbing while the shading is blue, the insole is working hard to keep up, which is worth noticing on a hot day."
+        },
+        {
+          "kind": "body",
+          "text": "Activity splits your wear time into sitting, standing and walking, and estimates your steps from cadence. These are estimates from pressure and movement, not a medical measurement."
+        },
+        {
+          "kind": "body",
+          "text": "If your relay has AI summaries turned on, a short summary of your day with two or three suggestions arrives as a notification after you finish wearing the insoles. It is written from your daily totals only and is not medical advice."
+        },
+        {
+          "kind": "action",
+          "text": "Check your summary at the end of the day for a week. Look for patterns: which days ran hot, when you relied on cooling, and whether your walking time changed."
+        }
+      ],
+      "sources": "Sources: how Thermyx records and summarises data."
     }
   ]
 }

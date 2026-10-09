@@ -31,6 +31,9 @@ struct ThermyxReading: Equatable {
     /// True while the firmware's own burn cutoff is holding the heater off
     /// (flags bit 4).
     var burnCutoff = false
+    /// Whether a foot is on the insole (flags bits 5–6), from firmware that
+    /// senses it. Nil when the insole can't tell.
+    var footDetected: Bool?
 
     init(
         foot: Foot,
@@ -153,6 +156,8 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
     case cool
     case auto
     case heat
+    /// Peltier and fan off. The insole keeps sensing and reporting.
+    case off
 
     var id: String { rawValue }
 
@@ -161,6 +166,7 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
         case .cool: return "Cool"
         case .auto: return "Auto"
         case .heat: return "Heat"
+        case .off: return "Off"
         }
     }
 
@@ -169,6 +175,7 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
         case .cool: return "snowflake"
         case .auto: return "a.circle"
         case .heat: return "flame.fill"
+        case .off: return "power"
         }
     }
 
@@ -177,6 +184,7 @@ enum ThermalSetting: String, CaseIterable, Identifiable {
         case .cool: return .cooling
         case .auto: return .ventilation
         case .heat: return .heating
+        case .off: return .off
         }
     }
 }

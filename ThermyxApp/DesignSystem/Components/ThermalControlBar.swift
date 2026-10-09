@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Cool / Auto / Heat, pinned directly above the tab bar on every user-role
+/// Cool / Auto / Heat / Off, pinned directly above the tab bar on every user-role
 /// tab. A watcher never sees this — a trusted member cannot actuate the device.
 ///
 /// Three states matter:
@@ -77,6 +77,8 @@ struct ThermalControlBar: View {
                     .font(.system(size: 15, weight: .semibold))
                 Text(setting.label)
                     .font(isSelected ? ThermyxFont.controlLabel : ThermyxFont.rowTitleRegular)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
             .foregroundStyle(foreground(for: setting, isSelected: isSelected, isDisabled: isDisabled))
             .frame(maxWidth: .infinity)
@@ -111,6 +113,7 @@ struct ThermalControlBar: View {
         case .cool: return Thermyx.Ink.onSignal
         case .auto: return Thermyx.Ink.textPrimary
         case .heat: return Thermyx.Ink.amber
+        case .off: return Thermyx.Ink.textPrimary
         }
     }
 
@@ -121,6 +124,7 @@ struct ThermalControlBar: View {
         case .cool: return Thermyx.Ink.signal
         case .auto: return Thermyx.Ink.elevated
         case .heat: return Thermyx.Tint.emberFill
+        case .off: return Thermyx.Ink.elevated
         }
     }
 
@@ -131,6 +135,7 @@ struct ThermalControlBar: View {
         case .cool: return .clear
         case .auto: return Thermyx.Tint.neutralBorder
         case .heat: return Thermyx.Tint.emberBorder
+        case .off: return Thermyx.Tint.neutralBorder
         }
     }
 

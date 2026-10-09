@@ -169,6 +169,13 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// to the relay, written to history, Apple Health, or the baseline.
     private(set) var simulator: ThermyxInsoleSimulator?
     @Published private(set) var isDemoMode = false
+    /// TEMPORARY test tool: the "fake insole", a scripted pair with
+    /// repeatable data that follows calibration's instructions. Runs on the
+    /// same simulated radio as Demo Mode (so nothing reaches history, Health
+    /// or the relay) and is labelled "Fake insole" everywhere.
+    @Published private(set) var isFakeInsole = false
+    /// Set to false to remove every "Connect fake insole" button.
+    static let fakeInsoleAvailable = true
 
     override init() {
         super.init()
@@ -195,7 +202,15 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 
     /// Swaps the real radio for the simulated pair. Real insoles are
     /// disconnected first so simulated and live readings can never mix.
-    func startDemoMode() {
+    func startDemoMode() { startSimulated(scripted: false) }
+
+    /// TEMPORARY: connects the scripted fake pair (see `isFakeInsole`).
+    func startFakeInsoles() {
+        if simulator != nil { stopDemoMode() }
+        startSimulated(scripted: true)
+    }
+
+    private func startSimulated(scripted: Bool) {
         guard simulator == nil else { return }
         // Drop real links without forgetting the insoles, so they reconnect
         // when Demo Mode ends. Pending reconnects are cancelled too.
@@ -221,8 +236,9 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         boardState = .notConnected
         readings.removeAll()
         discovered.removeAll()
-        simulator = ThermyxInsoleSimulator(ble: self)
+        simulator = ThermyxInsoleSimulator(ble: self, scripted: scripted)
         isDemoMode = true
+        isFakeInsole = scripted
         state = .poweredOn
         simulator?.connectAll()
     }
@@ -235,6 +251,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         simulator.shutdown()
         self.simulator = nil
         isDemoMode = false
+        isFakeInsole = false
         boardState = .notConnected
         readings.removeAll()
         discovered.removeAll()
@@ -1155,8 +1172,20 @@ final class ThermyxInsoleSimulator: ObservableObject {
         .right: UUID(uuidString: "5E1A0000-0000-4000-8000-00000000000B")!
     ]
 
-    init(ble: ThermyxBLEService) {
+    /// TEMPORARY fake insole: deterministic data that follows the activity
+    /// calibration asks for, instead of the random Demo Mode physics.
+    let isScripted: Bool
+    private(set) var scriptActivity: CalibrationActivity = .sitting
+    private(set) var scriptOutdoor = false
+
+    func setScript(activity: CalibrationActivity, outdoor: Bool) {
+        scriptActivity = activity
+        scriptOutdoor = outdoor
+    }
+
+    init(ble: ThermyxBLEService, scripted: Bool = false) {
         self.ble = ble
+        self.isScripted = scripted
         insoles = [
             .left: Insole(contactC: 32.4, gait: 0.91, battery: 86),
             .right: Insole(contactC: 32.8, gait: 0.90, battery: 79)
@@ -1250,9 +1279,11 @@ final class ThermyxInsoleSimulator: ObservableObject {
     private func attach(_ foot: Foot) {
         guard let ble, var insole = insoles[foot], !insole.isConnected else { return }
         insole.isConnected = true
-        insole.contactC = naturalContact(foot) + Double.random(in: -0.4...0.4)
+        insole.contactC = isScripted
+            ? FakeInsoleScript.steadyFootC(activity: scriptActivity, outdoor: scriptOutdoor, foot: foot)
+            : naturalContact(foot) + Double.random(in: -0.4...0.4)
         insoles[foot] = insole
-        ble.simAttach(foot, name: "Thermyx \(foot.label) (simulated)")
+        ble.simAttach(foot, name: isScripted ? "Fake insole · \(foot.label)" : "Thermyx \(foot.label) (simulated)")
         ble.simSetDiscovered(ble.discovered.filter { $0.id != Self.deviceIDs[foot] })
         publish(foot)
     }
@@ -1294,6 +1325,10 @@ final class ThermyxInsoleSimulator: ObservableObject {
 
     private func step() {
         tick += 1
+        if isScripted {
+            scriptedStep()
+            return
+        }
         publishBoard()
         for foot in Foot.allCases {
             guard var insole = insoles[foot], insole.isConnected else { continue }
@@ -1374,5 +1409,134 @@ final class ThermyxInsoleSimulator: ObservableObject {
         }
         echoed.burnCutoff = insole.commanded == .heating && insole.active != .heating && contact >= 38.5
         ble.simPublish(echoed, rssi: rssiValue(foot))
+    }
+
+    // MARK: Fake insole (TEMPORARY)
+
+    /// One second of the scripted pair: the foot settles toward the usual
+    /// temperature for the current activity, the actuator follows the
+    /// command like the firmware does, and nothing is random.
+    private func scriptedStep() {
+        let second = Int(tick)
+        for foot in Foot.allCases {
+            guard var insole = insoles[foot], insole.isConnected else { continue }
+            let natural = FakeInsoleScript.steadyFootC(activity: scriptActivity, outdoor: scriptOutdoor, foot: foot)
+            insole.active = Self.scriptedDecision(commanded: insole.commanded, contactC: insole.contactC,
+                                                  targetC: autoTargetC(foot), active: insole.active)
+            let push: Double = switch insole.active {
+            case .heating: 2.5
+            case .cooling: -2.5
+            default: 0
+            }
+            insole.contactC += (natural + push - insole.contactC) * 0.15
+            insole.gait = 0.91
+            insole.battery = max(3, insole.battery - (insole.active == .ventilation ? 0.005 : 0.02))
+            insoles[foot] = insole
+            publishScripted(foot, second: second)
+        }
+    }
+
+    /// What the fake firmware does with a command. Auto only steps in when
+    /// the foot is well away from the target, so the usual temperatures
+    /// calibration records stay the activity's own.
+    static func scriptedDecision(commanded: ThermalMode, contactC: Double, targetC: Double, active: ThermalMode) -> ThermalMode {
+        switch commanded {
+        case .ventilation:
+            if contactC > targetC + 1.5 { return .cooling }
+            if contactC < targetC - 1.5 { return .heating }
+            if active == .cooling, contactC > targetC + 0.3 { return .cooling }
+            if active == .heating, contactC < targetC - 0.3 { return .heating }
+            return .ventilation
+        case .heating:
+            if contactC >= ThermyxRiskEngine.burnLimitC { return .ventilation }
+            if active != .heating, contactC >= 38.5 { return .ventilation }
+            return .heating
+        case .cooling, .off:
+            return commanded
+        }
+    }
+
+    private func publishScripted(_ foot: Foot, second: Int) {
+        guard let ble, let insole = insoles[foot] else { return }
+        let v = FakeInsoleScript.values(activity: scriptActivity, outdoor: scriptOutdoor, second: second)
+        let contact = insole.contactC + FakeInsoleScript.wobble(second: second, foot: foot)
+        var reading = ThermyxReading(
+            foot: foot,
+            timestamp: .now,
+            footTemperatureC: contact,
+            ambientTemperatureC: v.ambientC,
+            pressureBalance: v.load,
+            gaitStability: v.gait,
+            batteryPercent: Int(insole.battery.rounded()),
+            thermalMode: insole.active,
+            zones: FootZoneTemperatures(forefootC: contact + 1.3, archC: contact + 0.6, heelC: contact - 1.9),
+            cadenceStepsPerMinute: v.cadence,
+            standingFraction: v.standing
+        )
+        reading.footDetected = true
+        reading.settingEcho = switch insole.commanded {
+        case .cooling: .cool
+        case .heating: .heat
+        case .ventilation: .auto
+        case .off: nil
+        }
+        reading.burnCutoff = insole.commanded == .heating && insole.active != .heating && contact >= 38.5
+        ble.simPublish(reading, rssi: foot == .left ? -55 : -60)
+    }
+}
+
+
+/// The fake insole's script: what each activity looks like, so calibration
+/// gets data it can learn from. Shared by the live fake pair and the
+/// "skip the wait" recording, so both teach the model the same thing.
+enum FakeInsoleScript {
+    struct Values: Equatable {
+        var ambientC: Double
+        var load: Double
+        var gait: Double?
+        var cadence: Double
+        var standing: Double
+    }
+
+    static func steadyFootC(activity: CalibrationActivity, outdoor: Bool, foot: Foot) -> Double {
+        let base: Double = switch activity {
+        case .sitting: 30.2
+        case .standing: 31.0
+        case .walking: 32.4
+        }
+        return base + (outdoor ? 1.2 : 0) + (foot == .right ? 0.3 : 0)
+    }
+
+    static func values(activity: CalibrationActivity, outdoor: Bool, second t: Int) -> Values {
+        let s = Double(t)
+        let ambient = (outdoor ? 31.0 : 23.0) + 0.2 * sin(s / 40)
+        switch activity {
+        case .sitting:
+            return Values(ambientC: ambient, load: 0.30 + 0.01 * sin(s / 5), gait: nil, cadence: 0, standing: 0.05)
+        case .standing:
+            return Values(ambientC: ambient, load: 0.55 + 0.01 * sin(s / 6), gait: nil, cadence: 0, standing: 0.95)
+        case .walking:
+            return Values(ambientC: ambient, load: 0.5 + (t % 2 == 0 ? 0.15 : -0.15), gait: 0.91 + 0.01 * sin(s / 4),
+                          cadence: 104 + 2 * sin(s / 3), standing: 0.10)
+        }
+    }
+
+    /// Small, repeatable wobble on the foot temperature.
+    static func wobble(second t: Int, foot: Foot) -> Double { 0.1 * sin(Double(t) / 9 + (foot == .left ? 0 : 1.3)) }
+
+    /// A pre-recorded calibration step, for "skip the wait".
+    static func samples(activity: CalibrationActivity, outdoor: Bool, seconds: Int, start: Date = .now) -> [CalibrationSample] {
+        (0..<seconds).map { t in
+            let v = values(activity: activity, outdoor: outdoor, second: t)
+            return CalibrationSample(
+                time: start.addingTimeInterval(Double(t)),
+                footC: steadyFootC(activity: activity, outdoor: outdoor, foot: .right) + wobble(second: t, foot: .right),
+                ambientC: v.ambientC,
+                load: v.load,
+                gait: v.gait,
+                cadence: v.cadence,
+                standing: v.standing
+            )
+        }
     }
 }

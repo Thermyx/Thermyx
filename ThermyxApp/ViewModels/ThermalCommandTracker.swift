@@ -64,11 +64,15 @@ struct ThermalCommandTracker: Equatable {
     mutating func reset() { state = .idle }
 
     static func confirms(_ setting: ThermalSetting, _ reading: ThermyxReading) -> Bool {
+        // Off has no echo code (current firmware echoes Auto for it), so the
+        // insole reporting itself off is the confirmation.
+        if setting == .off { return reading.thermalMode == .off }
         if let echo = reading.settingEcho { return echo == setting }
         switch setting {
         case .cool: return reading.thermalMode == .cooling
         case .heat: return reading.thermalMode == .heating || reading.burnCutoff
         case .auto: return true
+        case .off: return reading.thermalMode == .off
         }
     }
 }

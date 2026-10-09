@@ -66,7 +66,9 @@ struct ConnectDeviceView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Connect a device") {
-            if ble.isDemoMode {
+            if ble.isFakeInsole {
+                FakeInsoleConnectedCard(ble: ble)
+            } else if ble.isDemoMode {
                 // Demo Mode swaps the radio for simulated devices, so a real
                 // board can never connect from here. Say so plainly.
                 ThermyxCard(border: Thermyx.Ink.amber.opacity(0.6)) {
@@ -87,6 +89,10 @@ struct ConnectDeviceView: View {
 
             statusCard
             insoleStatus
+
+            if !ble.isDemoMode {
+                FakeInsoleButton(ble: ble)
+            }
 
             HStack(spacing: Thermyx.Space.m) {
                 Button(scanning ? "Stop" : "Scan") {

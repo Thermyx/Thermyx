@@ -27,6 +27,7 @@ struct AdvancedView: View {
             targetTemperature
             RelayConnectionCard(settings: settings, role: "wearer")
             healthSection
+            CalibrationSettingsSection(baseline: viewModel.baseline, settings: settings)
             sensorLayout
             dataSection
             legalRow
@@ -240,7 +241,7 @@ struct AdvancedView: View {
                 )
                 ThermyxDivider()
                 ThermyxValueRow(
-                    label: "Sole size",
+                    label: "Shoe size",
                     value: settings.soleSize?.label ?? "Not set"
                 )
                 ThermyxDivider()
@@ -310,7 +311,7 @@ struct AdvancedView: View {
     private var layoutNote: String {
         let base = "Three pressure sensors per insole (heel, arch, and forefoot) and two temperature sensors."
         guard let size = settings.soleSize else {
-            return base + " Set a sole size to see the spacing in millimetres."
+            return base + " Set a shoe size to see the spacing in millimetres."
         }
         // Heel sensor to forefoot sensor, the span the wiring run has to cover.
         let span = size.millimetres(SoleGeometry.SensorSite.forefoot.position.y - SoleGeometry.SensorSite.heel.position.y)

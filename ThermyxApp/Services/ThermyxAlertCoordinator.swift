@@ -20,6 +20,71 @@ final class ThermyxAlertCoordinator: ObservableObject {
     /// wearer's own notifications say they are simulated.
     var isDemoMode = false
 
+    // MARK: End-of-session AI summary
+
+    /// At most this often, so a stop-start day doesn't spam.
+    static let summaryGap: TimeInterval = 2 * 3600
+    private static let lastSummaryKey = "thermyx.aiSummary.lastAt"
+
+    static func summaryKey(for day: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: day)
+        return String(format: "thermyx.aiSummary.%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// The last AI summary written for a day, if any.
+    static func storedSummary(for day: Date) -> String? {
+        UserDefaults.standard.string(forKey: summaryKey(for: day))
+    }
+
+    /// When a session ends: asks the relay for a short summary of today with
+    /// two or three suggestions, keeps it for the day page, and sends it as a
+    /// notification. Only for a paired wearer, never in Demo Mode, and only
+    /// if the relay has AI summaries turned on.
+    func deliverSessionSummary(history: ThermyxHistoryStore, settings: ThermyxSettingsStore, now: Date = .now) {
+        guard !isDemoMode, settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
+        let defaults = UserDefaults.standard
+        if let last = defaults.object(forKey: Self.lastSummaryKey) as? Date, now.timeIntervalSince(last) < Self.summaryGap { return }
+        let calendar = Calendar.current
+        let samples = history.hourSamples.filter { calendar.isDate($0.start, inSameDayAs: now) }
+        guard !samples.isEmpty else { return }
+        let today = ThermyxDailySummary.summary(
+            day: calendar.startOfDay(for: now),
+            samples: samples,
+            events: history.events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
+        )
+        defaults.set(now, forKey: Self.lastSummaryKey)
+        let body = ThermyxAlertAPIClient.SummaryRequest(today, unit: settings.temperatureUnit, focus: settings.profile.focus)
+        let url = settings.backendURL
+        let token = settings.backendToken
+        Task {
+            guard let text = try? await apiClient.summary(body, baseURL: url, token: token) else { return }
+            defaults.set(text, forKey: Self.summaryKey(for: now))
+            let content = UNMutableNotificationContent()
+            content.title = "Your Thermyx summary"
+            content.body = text
+            content.sound = .default
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "thermyx.summary", content: content, trigger: nil)
+            )
+        }
+    }
+
+    /// Cold-foot and low-battery reminders, for the wearer only.
+    private var comfort = ThermyxComfortWatch()
+
+    /// Called on every reading alongside `evaluate`: notifies the wearer when
+    /// a foot stays cold or an insole battery runs low. Never sent to the
+    /// relay or the trusted circle.
+    func evaluateComfort(_ reading: BilateralReading, unit: TemperatureUnit, now: Date = .now) {
+        for notice in comfort.update(reading, now: now) {
+            let content = UNMutableNotificationContent()
+            content.title = isDemoMode ? "Thermyx demo — simulated, not live data" : notice.title
+            content.body = notice.body(unit: unit)
+            content.sound = .default
+            UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: notice.id, content: content, trigger: nil))
+        }
+    }
+
     func requestPermission() async {
         notificationsAuthorized = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
@@ -183,4 +248,88 @@ final class ThermyxLocationProvider: NSObject, ObservableObject, CLLocationManag
     }
 
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+}
+
+
+/// Decides when to remind the wearer about a cold foot or a low battery.
+///
+/// - Cold: a foot at or below `ThermyxRiskEngine.coldFootC` for a minute.
+///   Once per 20 minutes per foot, and reset when the foot warms past 27 °C.
+/// - Battery: once at 20% and once at 10% per insole, reset after charging
+///   above 25%.
+struct ThermyxComfortWatch {
+    struct Notice: Equatable {
+        enum Kind: Equatable {
+            case cold(Double)
+            case battery(Int, critical: Bool)
+        }
+        let foot: Foot
+        let kind: Kind
+
+        var id: String {
+            switch kind {
+            case .cold: return "thermyx.cold.\(foot.rawValue)"
+            case .battery: return "thermyx.battery.\(foot.rawValue)"
+            }
+        }
+
+        var title: String {
+            switch kind {
+            case .cold: return "\(foot.label) foot is cold"
+            case .battery(_, let critical): return critical ? "\(foot.label) insole battery very low" : "\(foot.label) insole battery low"
+            }
+        }
+
+        func body(unit: TemperatureUnit) -> String {
+            switch kind {
+            case .cold(let c):
+                return "It's been at \(TemperatureFormat.degrees(c, in: unit)) for a minute. Switch to Auto or Heat to warm it up."
+            case .battery(let percent, let critical):
+                return critical
+                    ? "\(percent)% left. Charge it now or it will stop heating and cooling soon."
+                    : "\(percent)% left. Charge it soon."
+            }
+        }
+    }
+
+    static let coldHold: TimeInterval = 60
+    static let coldRepeat: TimeInterval = 20 * 60
+    static let warmResetC = 27.0
+    static let batteryLow = 20
+    static let batteryCritical = 10
+    static let batteryReset = 25
+
+    private var coldSince: [Foot: Date] = [:]
+    private var coldNotifiedAt: [Foot: Date] = [:]
+    private var batteryWarned: [Foot: Int] = [:]
+
+    mutating func update(_ reading: BilateralReading, now: Date) -> [Notice] {
+        var notices: [Notice] = []
+        for r in reading.present {
+            let foot = r.foot
+            if let c = r.footTemperatureC {
+                if c <= ThermyxRiskEngine.coldFootC {
+                    let since = coldSince[foot] ?? now
+                    coldSince[foot] = since
+                    let due = coldNotifiedAt[foot].map { now.timeIntervalSince($0) >= Self.coldRepeat } ?? true
+                    if now.timeIntervalSince(since) >= Self.coldHold, due {
+                        coldNotifiedAt[foot] = now
+                        notices.append(Notice(foot: foot, kind: .cold(c)))
+                    }
+                } else {
+                    coldSince[foot] = nil
+                    if c >= Self.warmResetC { coldNotifiedAt[foot] = nil }
+                }
+            }
+            if let b = r.batteryPercent {
+                if b > Self.batteryReset { batteryWarned[foot] = nil }
+                let threshold = b <= Self.batteryCritical ? Self.batteryCritical : b <= Self.batteryLow ? Self.batteryLow : nil
+                if let threshold, (batteryWarned[foot] ?? Int.max) > threshold {
+                    batteryWarned[foot] = threshold
+                    notices.append(Notice(foot: foot, kind: .battery(b, critical: threshold == Self.batteryCritical)))
+                }
+            }
+        }
+        return notices
+    }
 }

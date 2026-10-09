@@ -23,7 +23,22 @@ final class ThermyxRoleStore: ObservableObject {
     private let defaults = UserDefaults.standard
     init() {
         role = defaults.string(forKey: "thermyx.role").flatMap(ThermyxRole.init(rawValue:))
+        // Onboarding was redone (About you, Connect, Calibrate), so anyone
+        // who finished the old one goes through the new one once.
         hasCompletedOnboarding = defaults.bool(forKey: "thermyx.onboardingComplete")
+            && defaults.integer(forKey: "thermyx.onboardingVersion") >= Self.onboardingVersion
+        #if DEBUG
+        // TEMPORARY, Debug builds only: each new install from Xcode starts
+        // on onboarding, so it can be tested. Closing and reopening the app
+        // doesn't. The name and profile are kept and prefilled.
+        if Self.alwaysOnboardInDebug, ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil {
+            let install = Self.installStamp
+            if defaults.string(forKey: "thermyx.debugInstallStamp") != install {
+                defaults.set(install, forKey: "thermyx.debugInstallStamp")
+                hasCompletedOnboarding = false
+            }
+        }
+        #endif
         let storedProfileName = defaults.string(forKey: "thermyx.profileName") ?? ""
         let storedWatchedName = defaults.string(forKey: "thermyx.watchedUserName") ?? "Thermyx user"
         let storedWatchedPhone = defaults.string(forKey: "thermyx.watchedUserPhone") ?? ""
@@ -53,10 +68,26 @@ final class ThermyxRoleStore: ObservableObject {
     func complete(role: ThermyxRole, name: String, watched: String, code: String) {
         self.role = role; profileName = name; watchedUserName = watched; pairingCode = code; hasCompletedOnboarding = true; save()
     }
+    /// Bump when onboarding gains steps every wearer should see.
+    static let onboardingVersion = 2
+    /// TEMPORARY: set to false to stop Debug builds opening on onboarding
+    /// after every install from Xcode.
+    static let alwaysOnboardInDebug = true
+
+    /// Changes with every install from Xcode: iOS puts each install in a new
+    /// folder, and a rebuild changes the executable's date. A relaunch from
+    /// the Home Screen keeps both.
+    private static var installStamp: String {
+        let executable = Bundle.main.executableURL
+        let built = executable.flatMap { try? FileManager.default.attributesOfItem(atPath: $0.path)[.modificationDate] as? Date }
+        return Bundle.main.bundlePath + "|" + String(built?.timeIntervalSince1970 ?? 0)
+    }
+
     func reset() { role = nil; hasCompletedOnboarding = false; save() }
     private func save() {
         defaults.set(role?.rawValue, forKey: "thermyx.role")
         defaults.set(hasCompletedOnboarding, forKey: "thermyx.onboardingComplete")
+        if hasCompletedOnboarding { defaults.set(Self.onboardingVersion, forKey: "thermyx.onboardingVersion") }
         defaults.set(profileName, forKey: "thermyx.profileName")
         defaults.set(watchedUserName, forKey: "thermyx.watchedUserName")
         defaults.set(watchedUserPhone, forKey: "thermyx.watchedUserPhone")

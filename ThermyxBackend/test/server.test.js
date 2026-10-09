@@ -1,16 +1,17 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { createRelay, normalisePhone, composeMessage } = require("../server.js");
+const { createRelay, normalisePhone, composeMessage, cleanSummaryRequest } = require("../server.js");
 const { openStore } = require("../store.js");
 
-async function start({ env = {}, sendSMS } = {}) {
+async function start({ env = {}, sendSMS, summarize } = {}) {
   let clock = 1_800_000_000_000;
   const now = () => clock;
   const store = openStore(":memory:", now);
   const sent = [];
   const relay = createRelay({
     env, store, now,
-    sendSMS: sendSMS || (async (to, body) => { sent.push({ to, body }); })
+    sendSMS: sendSMS || (async (to, body) => { sent.push({ to, body }); }),
+    summarize
   });
   await new Promise(resolve => relay.server.listen(0, resolve));
   const base = `http://127.0.0.1:${relay.server.address().port}`;
@@ -291,4 +292,37 @@ test("phone normalisation and message text", () => {
   assert.equal(normalisePhone("12"), null);
   assert.match(composeMessage({ level: "High risk", reasons: ["Hot."] }, "thermyx-ab12cd"), /Thermyx High risk on thermyx-ab12cd\. Hot\./);
   assert.doesNotMatch(composeMessage({ level: "High risk", location: { latitude: 1, longitude: 2 } }, "d"), /maps/, "no location without consent");
+});
+
+test("AI summary is off by default", async () => {
+  const r = await start({ summarize: async () => "unused" });
+  try {
+    const { wearer } = await pairBoth(r);
+    const res = await r.call("POST", "/v1/summary", { token: wearer.token, body: { day: "2026-10-09", wornMinutes: 60 } });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.error, "ai_summary_disabled");
+  } finally { await r.close(); }
+});
+
+test("AI summary passes only the cleaned numbers, and only for the wearer", async () => {
+  const seen = [];
+  const r = await start({ env: { AI_SUMMARY_ENABLED: "true" }, summarize: async request => { seen.push(request); return "A calm day."; } });
+  try {
+    const { wearer, watcher } = await pairBoth(r);
+    const body = { day: "2026-10-09", wornMinutes: 125.44, heatingMinutes: 12, peakRisk: "Caution", unit: "F",
+                   focus: "health", name: "Jordan", phone: "+12025550148", location: { latitude: 1, longitude: 2 } };
+    const res = await r.call("POST", "/v1/summary", { token: wearer.token, body });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.summary, "A calm day.");
+    assert.deepEqual(seen[0], { day: "2026-10-09", wornMinutes: 125.4, heatingMinutes: 12, peakRisk: "Caution", focus: "health", unit: "F" });
+    assert.equal((await r.call("POST", "/v1/summary", { token: watcher.token, body })).status, 403, "watchers can't");
+    assert.equal((await r.call("POST", "/v1/summary", { token: wearer.token, body: { day: "today" } })).status, 400);
+  } finally { await r.close(); }
+});
+
+test("summary requests reject bad numbers", () => {
+  assert.equal(cleanSummaryRequest({ day: "2026-10-09" }), null, "worn time is required");
+  assert.equal(cleanSummaryRequest({ day: "2026-10-09", wornMinutes: "60" }), null);
+  assert.equal(cleanSummaryRequest({ day: "2026-10-09", wornMinutes: 60, peakRisk: "Mild" }), null);
+  assert.equal(cleanSummaryRequest({ day: "2026-10-09", wornMinutes: 60 }).unit, "C");
 });

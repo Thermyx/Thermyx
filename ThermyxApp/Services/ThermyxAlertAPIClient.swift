@@ -11,6 +11,7 @@ struct ThermyxAlertAPIClient {
         case tooManyAttempts
         case server(Int)
         case invalidResponse
+        case aiSummaryOff
 
         var errorDescription: String? {
             switch self {
@@ -21,6 +22,7 @@ struct ThermyxAlertAPIClient {
             case .tooManyAttempts: return "Too many tries. Wait a minute and try again."
             case .server(let status): return "The relay returned an error (\(status))."
             case .invalidResponse: return "The relay sent a response the app didn't understand."
+            case .aiSummaryOff: return "AI summaries aren't turned on for this relay yet."
             }
         }
     }
@@ -148,6 +150,55 @@ struct ThermyxAlertAPIClient {
         try await request("GET", "/v1/watch", baseURL: baseURL, token: token, body: Optional<String>.none)
     }
 
+    // MARK: Daily AI summary
+
+    /// One day's aggregate numbers. Temperatures in °C; `unit` is how the
+    /// summary should present them.
+    struct SummaryRequest: Encodable, Equatable {
+        var day: String
+        var wornMinutes: Double
+        var heatingMinutes: Double?
+        var coolingMinutes: Double?
+        var averageFootC: Double?
+        var peakFootC: Double?
+        var lowFootC: Double?
+        var averageAmbientC: Double?
+        var hotHours: Int
+        var cadence: Double?
+        var standingMinutes: Double?
+        var gait: Double?
+        var peakRisk: String?
+        var events: Int
+        var focus: String?
+        var unit: String
+
+        init(_ s: ThermyxDailySummary, unit: TemperatureUnit, focus: UserProfile.Focus?, calendar: Calendar = .current) {
+            let parts = calendar.dateComponents([.year, .month, .day], from: s.day)
+            day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+            wornMinutes = (s.wornSeconds / 60).rounded()
+            heatingMinutes = s.heatingSeconds.map { ($0 / 60).rounded() }
+            coolingMinutes = s.coolingSeconds.map { ($0 / 60).rounded() }
+            averageFootC = s.averageFootC
+            peakFootC = s.peakFootC
+            lowFootC = s.lowFootC
+            averageAmbientC = s.averageAmbientC
+            hotHours = s.hotHours
+            cadence = s.cadenceAverage
+            standingMinutes = s.standingSeconds.map { ($0 / 60).rounded() }
+            gait = s.gaitAverage
+            peakRisk = s.peakRisk?.rawValue
+            events = s.events
+            self.focus = focus?.rawValue
+            self.unit = unit == .fahrenheit ? "F" : "C"
+        }
+    }
+
+    func summary(_ body: SummaryRequest, baseURL: String, token: String) async throws -> String {
+        struct Result: Decodable { let summary: String }
+        let result: Result = try await request("POST", "/v1/summary", baseURL: baseURL, token: token, body: body)
+        return result.summary
+    }
+
     // MARK: Plumbing
 
     static func parseDate(_ string: String) -> Date? {
@@ -177,7 +228,11 @@ struct ThermyxAlertAPIClient {
             do { return try JSONDecoder().decode(Result.self, from: data) }
             catch { throw ClientError.invalidResponse }
         case 401: throw token == nil ? ClientError.codeRejected : ClientError.accessRemoved
-        case 403: throw path == "/v1/pair" ? ClientError.codeRejected : ClientError.accessRemoved
+        case 403:
+            if path == "/v1/pair" { throw ClientError.codeRejected }
+            // The relay has the AI summary switched off (a removed token is 401).
+            if path == "/v1/summary" { throw ClientError.aiSummaryOff }
+            throw ClientError.accessRemoved
         case 429: throw ClientError.tooManyAttempts
         default: throw ClientError.server(http.statusCode)
         }

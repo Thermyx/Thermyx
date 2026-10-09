@@ -1,6 +1,30 @@
 import SwiftUI
 
+/// The Learn tab: one topic per card, with room between them.
+struct LearnTab: View {
+    @State private var path: [InsightsDestination] = {
+        #if DEBUG
+        return ThermyxPreviewHarness.initialLearnPath
+        #else
+        return []
+        #endif
+    }()
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            LearningCenterView(isTab: true)
+                .navigationDestination(for: InsightsDestination.self) { destination in
+                    if case .article(let id) = destination, let article = ThermyxLearningLibrary.article(id: id) {
+                        ArticleView(article: article)
+                    }
+                }
+        }
+    }
+}
+
 struct LearningCenterView: View {
+    /// True on the Learn tab (a top-level screen); false when pushed.
+    var isTab = false
     @State private var filter: LearningFilter = .all
 
     private var articles: [LearningArticle] {
@@ -23,11 +47,23 @@ struct LearningCenterView: View {
     }
 
     var body: some View {
-        ThermyxDetailScreen(title: "Learn") {
-            filterPills
+        Group {
+            if isTab {
+                ThermyxScreen(title: "Learn") { content }
+            } else {
+                ThermyxDetailScreen(title: "Learn") { content }
+            }
+        }
+        .hidesThermalControlBar()
+    }
 
-            if allDrafts { draftNotice }
+    @ViewBuilder
+    private var content: some View {
+        filterPills
 
+        if allDrafts { draftNotice }
+
+        VStack(spacing: Thermyx.Space.xl) {
             if let featured {
                 NavigationLink(value: InsightsDestination.article(featured.id)) {
                     FeaturedArticleCard(article: featured, showsBadge: !allDrafts)
@@ -37,20 +73,20 @@ struct LearningCenterView: View {
 
             ForEach(rest) { article in
                 NavigationLink(value: InsightsDestination.article(article.id)) {
-                    ArticleRow(article: article, showsBadge: !allDrafts)
+                    LearnTopicCard(article: article, showsBadge: !allDrafts)
                 }
                 .buttonStyle(.plain)
             }
-
-            if articles.isEmpty {
-                ThermyxEmptyState(
-                    title: "Nothing in this category yet",
-                    message: "Try another filter.",
-                    systemImage: "book.closed"
-                )
-            }
         }
-        .hidesThermalControlBar()
+        .padding(.top, Thermyx.Space.xs)
+
+        if articles.isEmpty {
+            ThermyxEmptyState(
+                title: "Nothing in this category yet",
+                message: "Try another filter.",
+                systemImage: "book.closed"
+            )
+        }
     }
 
     private var draftNotice: some View {
@@ -148,6 +184,64 @@ struct FeaturedArticleCard: View {
         .overlay {
             RoundedRectangle(cornerRadius: Thermyx.Radius.hero, style: .continuous)
                 .strokeBorder(Color(hex: 0xFF6A13, opacity: 0.3), lineWidth: Thermyx.Stroke.hairline)
+        }
+        .contentShape(.rect)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// One topic per card: a large icon, the title, a short line on what it
+/// covers, and how long it takes to read.
+struct LearnTopicCard: View {
+    let article: LearningArticle
+    var showsBadge: Bool = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.m) {
+            HStack(alignment: .center, spacing: Thermyx.Space.m) {
+                RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
+                    .fill(article.category.iconFill)
+                    .frame(width: 56, height: 56)
+                    .overlay {
+                        Image(systemName: article.symbol)
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(article.category.tint)
+                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(article.category.label)
+                        .narrowLabel(ThermyxFont.sectionLabel, tracking: ThermyxTracking.sectionLabel, color: article.category.tint)
+                    Text("\(article.readMinutes) min read")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textSupporting)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+            }
+
+            Text(article.title)
+                .font(ThermyxFont.cardTitle)
+                .foregroundStyle(Thermyx.Ink.textPrimary)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(article.deck)
+                .font(ThermyxFont.body)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .lineSpacing(3)
+                .lineLimit(3)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if showsBadge, article.status == .placeholder { DraftBadge(compact: true) }
+        }
+        .padding(Thermyx.Space.xl)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.section, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Thermyx.Radius.section, style: .continuous)
+                .strokeBorder(Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
         }
         .contentShape(.rect)
         .accessibilityElement(children: .combine)

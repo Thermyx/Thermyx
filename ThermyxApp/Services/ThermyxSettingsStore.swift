@@ -32,6 +32,8 @@ final class ThermyxSettingsStore: ObservableObject {
 
     /// Profile
     @Published var soleSize: SoleSize? { didSet { save() } }
+    /// The wearer's details from onboarding. Kept on this phone only.
+    @Published var profile: UserProfile { didSet { save() } }
     /// Opt-in for the on-device next-step suggestions shown on Home
     /// (`ThermyxSuggestion`). Off by default.
     @Published var aiSuggestionsEnabled: Bool { didSet { save() } }
@@ -92,6 +94,8 @@ final class ThermyxSettingsStore: ObservableObject {
             .flatMap(InsightsRange.init(rawValue:)) ?? .day
         periodStyle = defaults.string(forKey: "thermyx.periodStyle")
             .flatMap(InsightsPeriodStyle.init(rawValue:)) ?? .standard
+        profile = defaults.data(forKey: "thermyx.userProfile")
+            .flatMap { try? JSONDecoder().decode(UserProfile.self, from: $0) } ?? UserProfile()
         let storedSize = defaults.double(forKey: "thermyx.soleSize")
         soleSize = SoleSize.all.first { $0.usMens == storedSize }
         aiSuggestionsEnabled = defaults.object(forKey: "thermyx.aiSuggestionsEnabled") as? Bool ?? false
@@ -163,13 +167,19 @@ final class ThermyxSettingsStore: ObservableObject {
             || legacyNumbers.contains(Array(digits.utf8))
     }
 
+    /// The trusted circle holds up to three people.
+    static let maxContacts = 3
+    var canAddContact: Bool { contacts.count < Self.maxContacts }
+
     func addContact(name: String, phone: String) {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        guard canAddContact, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         contacts.append(ThermyxContact(name: name, phoneNumber: phone))
     }
 
     func removeContacts(at offsets: IndexSet) { contacts.remove(atOffsets: offsets) }
+
+    func removeContact(_ contact: ThermyxContact) { contacts.removeAll { $0.id == contact.id } }
 
     func toggleContact(_ contact: ThermyxContact) {
         guard let index = contacts.firstIndex(where: { $0.id == contact.id }) else { return }
@@ -199,6 +209,7 @@ final class ThermyxSettingsStore: ObservableObject {
         defaults.set(insightsRange.rawValue, forKey: "thermyx.insightsRange")
         defaults.set(periodStyle.rawValue, forKey: "thermyx.periodStyle")
         defaults.set(soleSize?.usMens ?? 0, forKey: "thermyx.soleSize")
+        defaults.set(try? JSONEncoder().encode(profile), forKey: "thermyx.userProfile")
         defaults.set(aiSuggestionsEnabled, forKey: "thermyx.aiSuggestionsEnabled")
         defaults.set(preferredFoot.rawValue, forKey: "thermyx.preferredFoot")
         defaults.set(targetTemperatureC, forKey: "thermyx.targetTemperatureC")
@@ -239,5 +250,64 @@ enum ThermyxKeychain {
         attributes[kSecValueData as String] = Data(value.utf8)
         attributes[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
         SecItemAdd(attributes as CFDictionary, nil)
+    }
+}
+
+/// What the wearer tells Thermyx about themselves during onboarding. Every
+/// field is optional, and none of it leaves the phone.
+struct UserProfile: Codable, Equatable {
+    enum Sex: String, Codable, CaseIterable, Identifiable {
+        case female, male, other
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .female: return "Female"
+            case .male: return "Male"
+            case .other: return "Other"
+            }
+        }
+    }
+
+    /// What Insights should lead with.
+    enum Focus: String, Codable, CaseIterable, Identifiable {
+        case health, performance
+        var id: String { rawValue }
+        var label: String { self == .health ? "Health" : "Performance" }
+        var detail: String {
+            self == .health ? "Comfort and foot safety first." : "Training, effort and recovery first."
+        }
+    }
+
+    var age: Int?
+    var heightCm: Double?
+    var weightKg: Double?
+    var sex: Sex?
+    var focus: Focus?
+    /// Optional, self-reported, any number of them. Empty means none.
+    var conditions: [HealthCondition]?
+
+    var conditionSet: Set<HealthCondition> {
+        get { Set(conditions ?? []) }
+        set { conditions = HealthCondition.allCases.filter(newValue.contains) }
+    }
+}
+
+enum HealthCondition: String, Codable, CaseIterable, Identifiable {
+    case diabetes
+    case poorCirculation
+    case neuropathy
+    case heatSensitivity
+    case other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .diabetes: return "Diabetes"
+        case .poorCirculation: return "Poor circulation / Raynaud's"
+        case .neuropathy: return "Neuropathy (reduced feeling)"
+        case .heatSensitivity: return "Heat sensitivity"
+        case .other: return "Other"
+        }
     }
 }

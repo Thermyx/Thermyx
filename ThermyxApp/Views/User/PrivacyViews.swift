@@ -231,13 +231,13 @@ struct DemoModeBanner: ViewModifier {
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom, spacing: 0) {
             if ble.isDemoMode {
-                Text("Simulated — not live sensor data")
+                Text(ble.isFakeInsole ? "Fake insole — test data, not live" : "Simulated — not live sensor data")
                     .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.onEmber)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 5)
                     .background(Thermyx.Ink.ember)
                     .allowsHitTesting(false)
-                    .accessibilityLabel("Simulated. This is not live sensor data.")
+                    .accessibilityLabel(ble.isFakeInsole ? "Fake insole. Test data, not live sensor data." : "Simulated. This is not live sensor data.")
             }
         }
     }

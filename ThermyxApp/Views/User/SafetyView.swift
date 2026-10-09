@@ -1,3 +1,4 @@
+import ContactsUI
 import SwiftUI
 import UIKit
 
@@ -32,12 +33,13 @@ struct SafetyView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ThermyxScreen(title: "Safety") {
+            ThermyxScreen(title: "Profile") {
                 sosCard
                 imOKRow
                 escalationLadder
                 trustedCircle
                 WatchersSection(settings: settings, alerts: alerts, level: level)
+                ProfileSettingsSection(roles: roles, settings: settings)
                 advancedRow
                 notificationNote
                 brandPlate
@@ -249,17 +251,19 @@ struct SafetyView: View {
 
     private var trustedCircle: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
-            SectionLabel("Trusted circle") {
-                Button {
-                    showingAddContact = true
-                } label: {
-                    Text("+ Add")
-                        .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.ice)
-                        .frame(minHeight: 32)
-                        .contentShape(.rect)
+            SectionLabel("Trusted circle · \(settings.contacts.count) of \(ThermyxSettingsStore.maxContacts)") {
+                if settings.canAddContact {
+                    Button {
+                        showingAddContact = true
+                    } label: {
+                        Text("+ Add")
+                            .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.ice)
+                            .frame(minWidth: Thermyx.minimumTapTarget, minHeight: Thermyx.minimumTapTarget)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add a trusted contact")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add a trusted contact")
             }
 
             if settings.contacts.isEmpty {
@@ -275,6 +279,9 @@ struct SafetyView: View {
                     ContactRow(contact: contact) {
                         settings.toggleContact(contact)
                     }
+                    .contextMenu {
+                        Button("Remove \(contact.name)", role: .destructive) { settings.removeContact(contact) }
+                    }
                     if settings.relayContactVerification, settings.relayRole == "wearer", contact.verifiedAt == nil {
                         Button("Confirm \(contact.name)'s number") { verifying = contact }
                             .font(ThermyxFont.captionSmall.weight(.semibold))
@@ -282,6 +289,11 @@ struct SafetyView: View {
                             .frame(minHeight: Thermyx.minimumTapTarget)
                     }
                 }
+                Text(settings.canAddContact
+                     ? "Up to \(ThermyxSettingsStore.maxContacts) people. Touch and hold a contact to remove it."
+                     : "Your circle is full (\(ThermyxSettingsStore.maxContacts) people). Touch and hold a contact to remove it.")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
                 if !settings.relayTextingEnabled, !enabledContacts.isEmpty {
                     TextingPreviewCard(settings: settings, level: level, reasons: viewModel.assessment.reasons)
                 }
@@ -445,6 +457,7 @@ struct AddContactSheet: View {
 
     @State private var name = ""
     @State private var phone = ""
+    @State private var pickingContact = false
 
     private var canSave: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -454,6 +467,17 @@ struct AddContactSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: Thermyx.Space.xl) {
+                Button {
+                    pickingContact = true
+                } label: {
+                    Label("Choose from Contacts", systemImage: "person.crop.circle.badge.plus")
+                }
+                .buttonStyle(ThermyxSecondaryButtonStyle())
+                .background(ContactPickerPresenter(isPresented: $pickingContact) { pickedName, pickedPhone in
+                    name = pickedName
+                    phone = pickedPhone
+                })
+
                 VStack(alignment: .leading, spacing: 6) {
                     SectionLabel("Name")
                     TextField("Name", text: $name)
@@ -467,7 +491,7 @@ struct AddContactSheet: View {
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
                 }
-                Text("This contact is stored on your phone. Nothing is sent to them until an escalation you configured actually fires.")
+                Text("Choosing from Contacts copies only the name and the number you pick. This contact is stored on your phone. Nothing is sent to them until an escalation you configured actually fires.")
                     .font(ThermyxFont.captionSmall)
                     .foregroundStyle(Thermyx.Ink.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -625,5 +649,59 @@ struct CriticalAlertView: View {
         // Always tell the relay, so approved watchers see it; contacts are
         // texted only when texting is on (the coordinator decides).
         alerts.notifyTrustedCircle(level: .critical, reading: viewModel.reading, settings: settings, reason: reason)
+    }
+}
+
+/// The system contact picker. It runs outside the app, so Thermyx needs no
+/// Contacts permission and only sees the one number the wearer taps.
+///
+/// Presented from a plain view controller rather than as a SwiftUI sheet:
+/// `CNContactPickerViewController` dismisses itself at once when wrapped
+/// directly in a sheet.
+struct ContactPickerPresenter: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let onPick: (String, String) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
+
+    func updateUIViewController(_ host: UIViewController, context: Context) {
+        context.coordinator.parent = self
+        guard isPresented, host.presentedViewController == nil else { return }
+        let picker = CNContactPickerViewController()
+        picker.delegate = context.coordinator
+        picker.displayedPropertyKeys = [CNContactPhoneNumbersKey]
+        // Only people with a number; with several, the wearer picks one.
+        picker.predicateForEnablingContact = NSPredicate(format: "phoneNumbers.@count > 0")
+        picker.predicateForSelectionOfContact = NSPredicate(format: "phoneNumbers.@count == 1")
+        DispatchQueue.main.async { host.present(picker, animated: true) }
+    }
+
+    final class Coordinator: NSObject, CNContactPickerDelegate {
+        var parent: ContactPickerPresenter
+        init(_ parent: ContactPickerPresenter) { self.parent = parent }
+
+        func contactPickerDidCancel(_ picker: CNContactPickerViewController) {
+            parent.isPresented = false
+        }
+
+        func contactPicker(_ picker: CNContactPickerViewController, didSelect contact: CNContact) {
+            if let number = contact.phoneNumbers.first?.value.stringValue {
+                parent.onPick(Self.name(contact), number)
+            }
+            parent.isPresented = false
+        }
+
+        func contactPicker(_ picker: CNContactPickerViewController, didSelect property: CNContactProperty) {
+            if let number = (property.value as? CNPhoneNumber)?.stringValue {
+                parent.onPick(Self.name(property.contact), number)
+            }
+            parent.isPresented = false
+        }
+
+        static func name(_ contact: CNContact) -> String {
+            CNContactFormatter.string(from: contact, style: .fullName) ?? contact.givenName
+        }
     }
 }

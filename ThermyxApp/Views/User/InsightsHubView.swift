@@ -43,6 +43,9 @@ struct InsightsHubView: View {
                     availableFeet: digest.feet
                 )
 
+                // Today and this week at the top, each a way into its page.
+                InsightsSummaryCards(settings: settings)
+
                 // Test-board sensors, beside (never inside) the body charts.
                 BoardSensorCards(board: viewModel.board, history: viewModel.history, ble: viewModel.ble)
 
@@ -62,7 +65,6 @@ struct InsightsHubView: View {
                     if !settings.healthKitEnabled { healthPrompt }
                 }
 
-                learningRow
             }
             .navigationDestination(for: InsightsDestination.self) { destination in
                 switch destination {
@@ -80,6 +82,10 @@ struct InsightsHubView: View {
                     if let article = ThermyxLearningLibrary.article(id: id) {
                         ArticleView(article: article)
                     }
+                case .days:
+                    DailySummaryListView(settings: settings)
+                case .day(let day):
+                    DailySummaryView(settings: settings, day: day)
                 }
             }
         }
@@ -387,6 +393,24 @@ struct InsightsHubView: View {
         }
     }
 
+    // MARK: - Daily summaries
+
+    @ViewBuilder
+    private var dailySummariesRow: some View {
+        let days = ThermyxDailySummary.days(hourSamples: viewModel.history.hourSamples, events: viewModel.history.events)
+        if let latest = days.first {
+            NavigationLink(value: InsightsDestination.days) {
+                ThermyxNavigationRow(
+                    title: "Daily summaries",
+                    detail: "\(DailySummaryView.dayTitle(latest.day)) · worn \(DurationFormat.long(latest.wornSeconds))"
+                        + " · \(days.count) day\(days.count == 1 ? "" : "s")",
+                    systemImage: "calendar"
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     // MARK: - Learning
 
     @ViewBuilder
@@ -413,4 +437,346 @@ enum InsightsDestination: Hashable {
     case balance
     case learning
     case article(String)
+    case days
+    case day(Date)
+}
+
+// MARK: - Daily summaries
+
+/// Every day with history, newest first.
+struct DailySummaryListView: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var settings: ThermyxSettingsStore
+
+    var body: some View {
+        let days = ThermyxDailySummary.days(hourSamples: viewModel.history.hourSamples, events: viewModel.history.events)
+        ThermyxDetailScreen(title: "Daily summaries") {
+            if days.isEmpty {
+                ThermyxEmptyState(
+                    title: "No days yet",
+                    message: "Wear a connected insole and each day gets a summary here.",
+                    systemImage: "calendar"
+                )
+            }
+            ForEach(days) { day in
+                NavigationLink(value: InsightsDestination.day(day.day)) {
+                    ThermyxNavigationRow(
+                        title: DailySummaryView.dayTitle(day.day),
+                        detail: detail(day),
+                        systemImage: day.peakRisk.map { $0.severity >= ThermyxRiskLevel.caution.severity } == true
+                            ? "exclamationmark.triangle.fill" : "checkmark.circle.fill",
+                        iconTint: day.peakRisk?.tint ?? Thermyx.Ink.ice
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .hidesThermalControlBar()
+    }
+
+    private func detail(_ day: ThermyxDailySummary) -> String {
+        var parts = ["Worn \(DurationFormat.long(day.wornSeconds))"]
+        if let peak = day.peakFootC { parts.append("peak \(TemperatureFormat.degrees(peak, in: settings.temperatureUnit))") }
+        if let h = day.heatingSeconds, h >= 60 { parts.append("heated \(DurationFormat.long(h))") }
+        if let c = day.coolingSeconds, c >= 60 { parts.append("cooled \(DurationFormat.long(c))") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// One day: time worn, how long the insole heated and cooled, temperatures,
+/// movement, the worst risk level, and an optional AI summary.
+struct DailySummaryView: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var settings: ThermyxSettingsStore
+    let day: Date
+
+    @State private var aiSummary: String?
+    @State private var aiError: String?
+    @State private var aiLoading = false
+
+    static func dayTitle(_ day: Date, calendar: Calendar = .current) -> String {
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(.dateTime.weekday(.wide).month(.abbreviated).day())
+    }
+
+    private var summary: ThermyxDailySummary? {
+        let calendar = Calendar.current
+        let samples = viewModel.history.hourSamples.filter { calendar.isDate($0.start, inSameDayAs: day) }
+        guard !samples.isEmpty else { return nil }
+        return ThermyxDailySummary.summary(
+            day: calendar.startOfDay(for: day),
+            samples: samples,
+            events: viewModel.history.events.filter { calendar.isDate($0.timestamp, inSameDayAs: day) }
+        )
+    }
+
+    private var unit: TemperatureUnit { settings.temperatureUnit }
+    private func temp(_ c: Double?) -> String? { c.map { TemperatureFormat.degrees($0, in: unit) } }
+    private func duration(_ s: TimeInterval?) -> String? { s.map(DurationFormat.long) }
+
+    var body: some View {
+        ThermyxDetailScreen(title: Self.dayTitle(day)) {
+            if let s = summary {
+                let performance = settings.profile.focus == .performance
+                if performance {
+                    movement(s)
+                    thermal(s)
+                    temperatures(s)
+                } else {
+                    temperatures(s)
+                    thermal(s)
+                    movement(s)
+                }
+                safety(s)
+                aiCard(s)
+            } else {
+                ThermyxEmptyState(title: "No data for this day", message: "Nothing was recorded.", systemImage: "calendar")
+            }
+        }
+        .hidesThermalControlBar()
+    }
+
+    private func grid<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: Thermyx.Space.s), GridItem(.flexible(), spacing: Thermyx.Space.s)],
+                  spacing: Thermyx.Space.s, content: content)
+    }
+
+    private func temperatures(_ s: ThermyxDailySummary) -> some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Foot temperature")
+            grid {
+                MetricTile(label: "Average", value: temp(s.averageFootC))
+                MetricTile(label: "Peak", value: temp(s.peakFootC), tint: Thermyx.Ink.amber)
+                MetricTile(label: "Lowest", value: temp(s.lowFootC), tint: Thermyx.Ink.ice)
+                MetricTile(label: "Hours warm or hot", value: "\(s.hotHours)")
+            }
+        }
+    }
+
+    private func thermal(_ s: ThermyxDailySummary) -> some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Insole")
+            grid {
+                MetricTile(label: "Worn", value: duration(s.wornSeconds))
+                MetricTile(label: "Air around you", value: temp(s.averageAmbientC))
+                MetricTile(label: "Heating", value: duration(s.heatingSeconds), tint: Thermyx.Ink.amber)
+                MetricTile(label: "Cooling", value: duration(s.coolingSeconds), tint: Thermyx.Ink.ice)
+            }
+            if s.heatingSeconds == nil {
+                Text("Heating and cooling time is recorded from this version of the app on.")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+            }
+        }
+    }
+
+    private func movement(_ s: ThermyxDailySummary) -> some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Movement")
+            grid {
+                MetricTile(label: "Steps (est.)", value: s.steps.map { Int($0.rounded()).formatted() })
+                MetricTile(label: "Cadence", value: s.cadenceAverage.map { "\(Int($0.rounded())) spm" })
+                MetricTile(label: "Steadiness", value: s.gaitAverage.map { "\(Int(($0 * 100).rounded()))%" })
+                MetricTile(label: "Insoles", value: s.feet.map(\.label).joined(separator: " + "))
+            }
+            SectionLabel("Activity")
+            ActivitySplitBar(sitting: s.sittingSeconds, standing: s.standingSeconds, walking: s.walkingSeconds)
+        }
+    }
+
+    private func safety(_ s: ThermyxDailySummary) -> some View {
+        ThermyxCard {
+            HStack(spacing: Thermyx.Space.m) {
+                Circle().fill(s.peakRisk?.tint ?? Thermyx.Ink.textFaint).frame(width: 10, height: 10)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Highest level: \(s.peakRisk?.rawValue ?? "No assessment")")
+                        .font(ThermyxFont.rowTitle)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    Text(s.events == 0 ? "No safety events." : "\(s.events) safety event\(s.events == 1 ? "" : "s").")
+                        .font(ThermyxFont.caption)
+                        .foregroundStyle(Thermyx.Ink.textSupporting)
+                }
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: AI summary
+
+    private func aiCard(_ s: ThermyxDailySummary) -> some View {
+        ThermyxCard {
+            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                SectionLabel("AI summary")
+                if let aiSummary = aiSummary ?? ThermyxAlertCoordinator.storedSummary(for: day) {
+                    Text(aiSummary)
+                        .font(ThermyxFont.body)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Written by AI from this day's numbers. Not medical advice.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                } else if settings.isPairedWithRelay, settings.relayRole == "wearer" {
+                    Button(aiLoading ? "Writing…" : "Summarize this day") { Task { await requestSummary(s) } }
+                        .buttonStyle(ThermyxSecondaryButtonStyle())
+                        .disabled(aiLoading)
+                    Text("A summary also arrives as a notification after you finish wearing the insoles. It uses only this day's totals and averages (no readings, name, or location), sent to your relay, which asks an AI model. The relay stores nothing.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Connect to a relay in Safety → Advanced to get a short AI-written summary of each day.")
+                        .font(ThermyxFont.caption)
+                        .foregroundStyle(Thermyx.Ink.textSupporting)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let aiError {
+                    Text(aiError).font(ThermyxFont.caption).foregroundStyle(Thermyx.Ink.amber)
+                }
+            }
+        }
+    }
+
+    private func requestSummary(_ s: ThermyxDailySummary) async {
+        aiLoading = true
+        aiError = nil
+        defer { aiLoading = false }
+        do {
+            aiSummary = try await ThermyxAlertAPIClient().summary(
+                .init(s, unit: unit, focus: settings.profile.focus),
+                baseURL: settings.backendURL,
+                token: settings.backendToken
+            )
+        } catch {
+            aiError = error.localizedDescription
+        }
+    }
+}
+
+/// The top of Insights: today's summary as tap-through cards, then the week
+/// with the streak, each opening its own page.
+struct InsightsSummaryCards: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var settings: ThermyxSettingsStore
+
+    var body: some View {
+        let days = ThermyxDailySummary.days(hourSamples: viewModel.history.hourSamples, events: viewModel.history.events)
+        let today = days.first { Calendar.current.isDateInToday($0.day) }
+        let week = ThermyxWeeklyReport.make(days: days)
+        let unit = settings.temperatureUnit
+
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            HStack {
+                SectionLabel("Today")
+                Spacer()
+                NavigationLink(value: InsightsDestination.days) {
+                    Text("All days")
+                        .font(ThermyxFont.rowTitle)
+                        .foregroundStyle(Thermyx.Ink.ice)
+                        .frame(minHeight: Thermyx.minimumTapTarget)
+                }
+                .buttonStyle(.plain)
+            }
+            NavigationLink(value: InsightsDestination.day(Calendar.current.startOfDay(for: .now))) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Thermyx.Space.s), GridItem(.flexible(), spacing: Thermyx.Space.s)],
+                          spacing: Thermyx.Space.s) {
+                    MetricTile(label: "Worn", value: today.map { DurationFormat.long($0.wornSeconds) })
+                    MetricTile(label: "Avg foot temp", value: today?.averageFootC.map { TemperatureFormat.degrees($0, in: unit) })
+                    MetricTile(label: "Heating", value: today?.heatingSeconds.map(DurationFormat.long), tint: Thermyx.Ink.ember)
+                    MetricTile(label: "Cooling", value: today?.coolingSeconds.map(DurationFormat.long), tint: Thermyx.Ink.signal)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(today == nil)
+            .accessibilityHint("Opens today's summary")
+
+            NavigationLink(value: InsightsDestination.days) {
+                ThermyxCard {
+                    HStack(spacing: Thermyx.Space.l) {
+                        VStack(spacing: 0) {
+                            Text("\(week.streak)")
+                                .font(ThermyxFont.metricNumeralCompact)
+                                .foregroundStyle(week.streak > 0 ? Thermyx.Ink.amber : Thermyx.Ink.textFaint)
+                            Text(week.streak == 1 ? "day" : "days")
+                                .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
+                        }
+                        .frame(width: 56)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(week.streak > 0 ? "Streak: \(week.streak) day\(week.streak == 1 ? "" : "s") in a row" : "This week")
+                                .font(ThermyxFont.rowTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text(weekLine(week))
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textSupporting)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").foregroundStyle(Thermyx.Ink.textFaint)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func weekLine(_ w: ThermyxWeeklyReport) -> String {
+        var parts = ["\(w.daysWorn) of 7 days", "worn \(DurationFormat.long(w.wornSeconds))"]
+        if let steps = w.steps { parts.append("\(Int(steps).formatted()) steps") }
+        if let change = w.wornChange { parts.append("\(change >= 0 ? "+" : "")\(Int((change * 100).rounded()))% vs last week") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Sitting, standing and walking time as one bar with a legend.
+struct ActivitySplitBar: View {
+    let sitting: TimeInterval?
+    let standing: TimeInterval?
+    let walking: TimeInterval?
+
+    private var parts: [(String, TimeInterval, Color)] {
+        [("Sitting", sitting ?? 0, Thermyx.Ink.textSupporting),
+         ("Standing", standing ?? 0, Thermyx.Ink.signal),
+         ("Walking", walking ?? 0, Thermyx.Ink.ice)]
+    }
+
+    var body: some View {
+        let total = parts.reduce(0) { $0 + $1.1 }
+        ThermyxCard {
+            if total <= 0 {
+                Text("Activity needs the insole's motion and pressure sensors. It shows here once they report.")
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.textSupporting)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                    GeometryReader { geo in
+                        HStack(spacing: 2) {
+                            ForEach(parts, id: \.0) { part in
+                                if part.1 > 0 {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(part.2)
+                                        .frame(width: max(4, (geo.size.width - 4) * part.1 / total))
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: 14)
+                    HStack(spacing: Thermyx.Space.m) {
+                        ForEach(parts, id: \.0) { part in
+                            HStack(spacing: 4) {
+                                Circle().fill(part.2).frame(width: 8, height: 8)
+                                Text("\(part.0) \(DurationFormat.long(part.1))")
+                                    .font(ThermyxFont.captionSmall)
+                                    .foregroundStyle(Thermyx.Ink.textSecondary)
+                            }
+                        }
+                    }
+                    Text("Estimated from cadence and pressure.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
 }

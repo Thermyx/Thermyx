@@ -25,7 +25,7 @@ struct AppRootView: View {
 // MARK: - User
 
 enum UserTab: Hashable {
-    case home, insights, safety
+    case home, insights, learn, profile
 }
 
 struct UserRoot: View {
@@ -53,7 +53,8 @@ struct UserRoot: View {
     private static let tabs: [ThermyxTabBar<UserTab>.Item] = [
         .init(.home, label: "Home", systemImage: "house.fill"),
         .init(.insights, label: "Insights", systemImage: "chart.xyaxis.line"),
-        .init(.safety, label: "Safety", systemImage: "shield.checkered")
+        .init(.learn, label: "Learn", systemImage: "book.fill"),
+        .init(.profile, label: "Profile", systemImage: "person.crop.circle.fill")
     ]
 
     /// The tour drives the tab when it is running; otherwise the user does.
@@ -78,7 +79,9 @@ struct UserRoot: View {
                 HomeView(roles: roles, settings: settings)
             case .insights:
                 InsightsHubView(settings: settings, health: health)
-            case .safety:
+            case .learn:
+                LearnTab()
+            case .profile:
                 SafetyView(roles: roles, settings: settings, alerts: alerts, health: health)
             }
         }
@@ -103,12 +106,17 @@ struct UserRoot: View {
             let assessment = viewModel.assessment
             alerts.isDemoMode = viewModel.ble.isDemoMode
             alerts.evaluate(assessment, reading: reading, settings: settings)
+            alerts.evaluateComfort(reading, unit: settings.temperatureUnit)
             if assessment.level == .critical {
                 let snoozed = criticalSnoozedUntil.map { Date.now < $0 } ?? false
                 if !snoozed, !showingCritical { showingCritical = true }
             } else if assessment.level.severity < ThermyxRiskLevel.high.severity {
                 criticalSnoozedUntil = nil
             }
+        }
+        .onChange(of: viewModel.sessionEndedAt) { _, ended in
+            guard ended != nil else { return }
+            alerts.deliverSessionSummary(history: viewModel.history, settings: settings)
         }
         .fullScreenCover(isPresented: $showingCritical) {
             CriticalAlertView(alerts: alerts, settings: settings) {

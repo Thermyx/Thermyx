@@ -77,7 +77,7 @@ enum ThermyxPreviewHarness {
         @Published var tab: UserTab = .home
         private var timer: Timer?
         private let steps: [(UserTab, TimeInterval)] = [
-            (.home, 7), (.insights, 7), (.safety, 5)
+            (.home, 7), (.insights, 7), (.learn, 4), (.profile, 5)
         ]
         private var index = 0
 
@@ -137,8 +137,9 @@ enum ThermyxPreviewHarness {
     /// Which tab the requested state should open on.
     static var initialUserTab: UserTab {
         switch state {
-        case .insights, .health, .temperature, .movement, .movementAdvanced, .balance, .learning, .article: return .insights
-        case .safety, .advanced, .legal: return .safety
+        case .insights, .health, .temperature, .movement, .movementAdvanced, .balance: return .insights
+        case .learning, .article: return .learn
+        case .safety, .advanced, .legal: return .profile
         default: return .home
         }
     }
@@ -147,7 +148,7 @@ enum ThermyxPreviewHarness {
     static var initialOnboardingStep: Int {
         switch state {
         case .onboardingRole: return 1
-        case .onboardingPair: return 2
+        case .onboardingPair: return 3
         default: return 0
         }
     }
@@ -174,10 +175,13 @@ enum ThermyxPreviewHarness {
         case .movement: return [.movement]
         case .movementAdvanced: return [.movement, .movementAdvanced]
         case .balance: return [.balance]
-        case .learning: return [.learning]
-        case .article: return [.learning, .article("feet-first")]
         default: return []
         }
+    }
+
+    /// The Learn tab opens on an article for the `article` state.
+    static var initialLearnPath: [InsightsDestination] {
+        state == .article ? [.article("feet-first")] : []
     }
 
     static var initialSafetyPath: [SafetyDestination] {

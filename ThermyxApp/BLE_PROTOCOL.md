@@ -26,7 +26,7 @@ either. All multi-byte fields are little-endian.
 | 5–6 | Ambient temperature in °C × 100, signed int16 |
 | 7–8 | Gait stability × 10000, unsigned uint16; `0xFFFF` = not measured |
 | 9–10 | Pressure balance (forefoot share of load) × 10000, unsigned uint16; `0xFFFF` = not measured |
-| 11 | Flags: bits 0–1 which foot (see [Which foot an insole is on](#which-foot-an-insole-is-on)); bits 2–3 setting echo; bit 4 burn cutoff; bits 5–7 reserved, send `0` |
+| 11 | Flags: bits 0–1 which foot (see [Which foot an insole is on](#which-foot-an-insole-is-on)); bits 2–3 setting echo; bit 4 burn cutoff; bit 5 foot sensing present; bit 6 foot detected (meaningful only with bit 5); bit 7 reserved, send `0` |
 
 ### Version 2 — 18 bytes
 
@@ -67,8 +67,11 @@ should keep sending telemetry at a defined interval, such as 1 Hz.
 | `[1, mode]` | Set the mode, using the mode values above. `3` (ventilation) is the app's **Auto**: the firmware regulates towards the target temperature and reports the mode it is actually running. |
 | `[2, lo, hi]` | Set Auto's target foot temperature: int16 °C × 100, little-endian. The app sends 26–38 °C; firmware should clamp to that range. Sent on connect and whenever the wearer moves the Advanced slider. Firmware that predates this command can ignore it. |
 
-The app's control bar sends `cooling` for Cool, `ventilation` for Auto, and
-`heating` for Heat. **The app will not send `heating` while its risk engine is
+The app's control bar sends `cooling` for Cool, `ventilation` for Auto,
+`heating` for Heat, and `off` (0) for Off. Off turns the Peltier and fan off;
+the insole keeps sensing and sending telemetry. Off has no setting-echo code,
+so the app confirms it from the reported mode byte being `0`. (Current ESP32
+firmware echoes Auto while off; the app ignores the echo for Off.) **The app will not send `heating` while its risk engine is
 at High Risk or Critical** — it locks the Heat control out and commands cooling
 instead. Firmware must still enforce its own independent cutoffs; the app-side
 lockout is a second layer, not the primary safety mechanism.
@@ -116,6 +119,15 @@ Both fields use `0xFFFF` as an explicit "not measured" sentinel. A firmware that
 cannot compute one should send `0xFFFF` rather than `0` — the app treats zero as
 a genuine zero (standing still, or not walking) and the sentinel as no data, and
 renders an empty state for the latter.
+
+## Foot detection (flags bits 5–6)
+
+Firmware with a pressure sensor sets bit 5 and reports in bit 6 whether a
+foot is on the insole (load above its "foot on" threshold, tuned so sitting
+still still counts). The app uses it for the "step on it" check in
+calibration and, once the firmware refuses to heat or cool an empty insole,
+to explain why. Firmware without foot sensing leaves both bits 0, and the
+app treats foot presence as unknown, never as "no foot".
 
 ## Which foot an insole is on
 
