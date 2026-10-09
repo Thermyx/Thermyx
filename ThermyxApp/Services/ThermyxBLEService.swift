@@ -143,6 +143,8 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// Peripherals we have accepted, keyed by the foot they serve.
     private var links: [Foot: CBPeripheral] = [:]
     private var commandCharacteristics: [Foot: CBCharacteristic] = [:]
+    /// Command characteristics found before the insole said which foot.
+    private var unassignedCommands: [UUID: CBCharacteristic] = [:]
     /// A peripheral connected but not yet assigned a foot.
     private var pendingFoot: [UUID: Foot] = [:]
     fileprivate var packetTimestamps: [Foot: [Date]] = [:]
@@ -476,6 +478,36 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         errorMessage = "\(boardName) isn't a Thermyx sensor (no Thermyx sensor service)."
     }
 
+    /// The connected device turned out to be an insole. If the app had it
+    /// down as the sensor board, forget that, so it is never reconnected and
+    /// rejected as a board again.
+    fileprivate func becomeInsole(_ peripheral: CBPeripheral) {
+        let id = peripheral.identifier
+        if isBoard(id) {
+            boardPeripheral = nil
+            boardManualConnect = false
+            boardState = .notConnected
+        }
+        if boardMemory.peripheralID == id {
+            boardMemory = BoardMemory()
+            boardMemory.save()
+        }
+        peripherals[id] = peripheral
+        startRSSIPolling()
+    }
+
+    /// The connected device turned out to be the sensor board, even if it
+    /// was tapped as an insole.
+    fileprivate func becomeBoard(_ peripheral: CBPeripheral) {
+        guard !isBoard(peripheral.identifier) else { return }
+        pendingFoot[peripheral.identifier] = nil
+        insoleStep = nil
+        boardPeripheral = peripheral
+        boardManualConnect = true
+        boardName = peripheral.name ?? "Thermyx"
+        boardState = .connecting(boardName)
+    }
+
     fileprivate func decodeBoardValue(_ data: Data, from peripheralID: UUID) {
         guard isBoard(peripheralID) else { return }
         // Malformed or out-of-range lines are dropped.
@@ -499,6 +531,12 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         if case .scanning = boardState { boardState = .notConnected }
         if let simulator { simulator.connect(device, as: foot); return }
         guard let target = peripherals[device.id] else { return }
+        if isBoard(device.id) {
+            // Tapped as an insole: stop treating it as the sensor board.
+            boardPeripheral = nil
+            boardManualConnect = false
+            boardState = .notConnected
+        }
         let assigned = device.advertisedFoot ?? foot
         if let assigned {
             pendingFoot[device.id] = assigned
@@ -606,6 +644,9 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     private func adopt(_ peripheralID: UUID, as foot: Foot) {
         guard links[foot]?.identifier != peripheralID, let peripheral = peripherals[peripheralID] else { return }
         links[foot] = peripheral
+        if let command = unassignedCommands.removeValue(forKey: peripheralID) {
+            commandCharacteristics[foot] = command
+        }
         connected.insert(foot)
         names[foot] = peripheral.name ?? "Thermyx \(foot.label)"
         pendingFoot[peripheralID] = nil
@@ -661,7 +702,7 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
                     self.boardName = self.boardMemory.name ?? peripheral.name ?? "Thermyx"
                     self.boardState = peripheral.state == .connected ? .connecting(self.boardName) : .reconnecting(self.boardName)
                     peripheral.delegate = self
-                    if peripheral.state == .connected { peripheral.discoverServices([Self.sensorServiceUUID]) }
+                    if peripheral.state == .connected { peripheral.discoverServices([Self.serviceUUID, Self.sensorServiceUUID]) }
                     continue
                 }
                 if let foot = known.first(where: { $0.value == peripheral.identifier })?.key {
@@ -669,7 +710,7 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
                 }
                 peripheral.delegate = self
                 if peripheral.state == .connected {
-                    peripheral.discoverServices([Self.serviceUUID])
+                    peripheral.discoverServices([Self.serviceUUID, Self.sensorServiceUUID])
                     self.startRSSIPolling()
                 }
             }
@@ -753,13 +794,13 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
             }
             self.errorMessage = nil
             peripheral.delegate = self
-            if self.isBoard(peripheral.identifier) {
-                peripheral.discoverServices([Self.sensorServiceUUID])
-                return
+            // Ask for both services and decide what the device is from what
+            // it has. The same board keeps its Bluetooth identity across
+            // firmware, so what the app remembers about it can be stale.
+            if !self.isBoard(peripheral.identifier) {
+                self.insoleStep = "Connected to \(peripheral.name ?? "the insole"). Looking for the Thermyx service…"
             }
-            self.insoleStep = "Connected to \(peripheral.name ?? "the insole"). Looking for the Thermyx service…"
-            peripheral.discoverServices([Self.serviceUUID])
-            self.startRSSIPolling()
+            peripheral.discoverServices([Self.serviceUUID, Self.sensorServiceUUID])
         }
     }
 
@@ -861,11 +902,22 @@ extension ThermyxBLEService: CBPeripheralDelegate {
     }
 
     nonisolated func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        // An insole service wins: the device is an insole now, whatever the
+        // app remembered (e.g. the same ESP32 earlier ran the sensor sketch).
+        if let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) {
+            Task { @MainActor in
+                self.becomeInsole(peripheral)
+                self.insoleStep = "Found the Thermyx service. Subscribing to readings…"
+            }
+            peripheral.discoverCharacteristics([Self.telemetryUUID, Self.commandUUID], for: service)
+            return
+        }
         if let board = peripheral.services?.first(where: { $0.uuid == Self.sensorServiceUUID }) {
+            Task { @MainActor in self.becomeBoard(peripheral) }
             peripheral.discoverCharacteristics([Self.sensorValueUUID], for: board)
             return
         }
-        guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
+        do {
             let name = peripheral.name ?? "The device"
             let failure = error?.localizedDescription
             Task { @MainActor in
@@ -873,13 +925,10 @@ extension ThermyxBLEService: CBPeripheralDelegate {
                     self.rejectBoard(peripheral)
                 } else {
                     self.insoleStep = failure.map { "\(name) connected, but reading its services failed: \($0)" }
-                        ?? "\(name) connected, but it has no Thermyx insole service. Check the firmware."
+                        ?? "\(name) connected, but it has no Thermyx service. Check the firmware."
                 }
             }
-            return
         }
-        Task { @MainActor in self.insoleStep = "Found the Thermyx service. Subscribing to readings…" }
-        peripheral.discoverCharacteristics([Self.telemetryUUID, Self.commandUUID], for: service)
     }
 
     nonisolated func peripheral(
@@ -896,6 +945,9 @@ extension ThermyxBLEService: CBPeripheralDelegate {
                     // then hold the characteristic against the pending foot.
                     if let foot = self.pendingFoot[identifier] ?? self.footFor(identifier) {
                         self.commandCharacteristics[foot] = characteristic
+                    } else {
+                        // Attached when the first packet says which foot.
+                        self.unassignedCommands[identifier] = characteristic
                     }
                 }
             }
