@@ -222,7 +222,7 @@ private struct DeviceRow: View {
                     .foregroundStyle(Thermyx.Ink.textSupporting)
             }
             Spacer(minLength: Thermyx.Space.xs)
-            Text(verbatim: "\(device.rssi) dBm")
+            Text(verbatim: device.isSystemConnected ? "On iPhone" : "\(device.rssi) dBm")
                 .font(ThermyxFont.captionSmall)
                 .monospacedDigit()
                 .foregroundStyle(device.isStrong ? Thermyx.Ink.textSecondary : Thermyx.Ink.amber)
@@ -234,7 +234,9 @@ private struct DeviceRow: View {
         .frame(minHeight: Thermyx.minimumTapTarget)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(device.name), \(kindLabel), signal \(device.rssi) decibel-milliwatts")
+        .accessibilityLabel(device.isSystemConnected
+            ? "\(device.name), \(kindLabel), already connected to this iPhone"
+            : "\(device.name), \(kindLabel), signal \(device.rssi) decibel-milliwatts")
     }
 
     private var icon: String {

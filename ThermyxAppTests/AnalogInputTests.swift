@@ -293,4 +293,14 @@ final class AnalogInputTests: XCTestCase {
         XCTAssertEqual(merged.kind, .sensorBoard, "A packet without services keeps the kind")
         XCTAssertEqual(merged.rssi, -63, "Signal strength is smoothed")
     }
+
+    func testSystemConnectedDeviceTakesItsFirstRealSignal() {
+        let id = UUID()
+        let held = Device(id: id, name: "Thermyx Left", rssi: 0, advertisedFoot: .left, kind: .insole, isSystemConnected: true)
+        XCTAssertTrue(held.isStrong, "No signal reading is not shown as weak")
+        let heard = Device(id: id, name: "Thermyx Left", rssi: -58, advertisedFoot: .left, kind: .insole)
+        let merged = held.merged(with: heard)
+        XCTAssertEqual(merged.rssi, -58, "Not averaged with the placeholder 0")
+        XCTAssertFalse(merged.isSystemConnected)
+    }
 }

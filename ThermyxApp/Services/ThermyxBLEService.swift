@@ -62,7 +62,11 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         var kind: Kind = .insole
         /// False when the device advertises no name at all.
         var isNamed = true
-        var isStrong: Bool { rssi > -75 }
+        /// Already connected to this iPhone (by iOS, another app, or a
+        /// pairing in Settings), so it isn't advertising and has no signal
+        /// reading. Tapping it still connects: apps share iOS's link.
+        var isSystemConnected = false
+        var isStrong: Bool { isSystemConnected || rssi > -75 }
 
         /// Thermyx by service UUID, or a name that says Thermyx.
         var looksLikeThermyx: Bool {
@@ -93,10 +97,11 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             DiscoveredDevice(
                 id: id,
                 name: update.isNamed ? update.name : name,
-                rssi: Int((Double(rssi) * 0.7 + Double(update.rssi) * 0.3).rounded()),
+                rssi: isSystemConnected ? update.rssi : Int((Double(rssi) * 0.7 + Double(update.rssi) * 0.3).rounded()),
                 advertisedFoot: update.advertisedFoot ?? advertisedFoot,
                 kind: update.kind != .other ? update.kind : kind,
-                isNamed: isNamed || update.isNamed
+                isNamed: isNamed || update.isNamed,
+                isSystemConnected: false
             )
         }
     }
@@ -347,6 +352,32 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             withServices: showAll ? nil : [Self.serviceUUID, Self.sensorServiceUUID],
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: true]
         )
+        listSystemConnected()
+    }
+
+    /// A Thermyx device iOS is already connected to stops advertising, so a
+    /// scan never finds it. List those too, so the app can attach to the
+    /// existing link instead of waiting for an advertisement that won't come.
+    private func listSystemConnected() {
+        let ours = Set(links.values.map(\.identifier) + [boardPeripheral?.identifier].compactMap { $0 })
+        let groups: [(CBUUID, DiscoveredDevice.Kind)] = [(Self.serviceUUID, .insole), (Self.sensorServiceUUID, .sensorBoard)]
+        for (service, kind) in groups {
+            for peripheral in central.retrieveConnectedPeripherals(withServices: [service]) where !ours.contains(peripheral.identifier) {
+                peripherals[peripheral.identifier] = peripheral
+                guard !discovered.contains(where: { $0.id == peripheral.identifier }) else { continue }
+                let name = peripheral.name ?? "Thermyx"
+                discovered.append(DiscoveredDevice(
+                    id: peripheral.identifier,
+                    name: name,
+                    rssi: 0,
+                    advertisedFoot: kind == .insole ? Self.foot(fromName: name) : nil,
+                    kind: kind,
+                    isNamed: true,
+                    isSystemConnected: true
+                ))
+            }
+        }
+        discovered.sort(by: DiscoveredDevice.listOrder)
     }
 
     func stopScan() {
