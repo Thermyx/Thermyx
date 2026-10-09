@@ -89,6 +89,12 @@ testing them together.
 
 ### Version 3 — 22 bytes
 
+22 bytes is more than one notification carries at BLE's default 23-byte
+ATT MTU (20 bytes of payload), so the firmware must raise its MTU
+(`BLEDevice::setMTU(185)` on ESP32 Arduino; iOS negotiates 185). If a
+version 3 packet still arrives cut to 18–21 bytes, the app decodes the
+version 2 fields and treats cadence and standing as not measured.
+
 Version 3 is version 2 with two IMU-derived movement channels appended. These
 come from the GY-521 (MPU-6050) motion sensor already on the prototype's I2C
 bus, so a v2 insole can move to v3 with a firmware update alone. A v1-sensor

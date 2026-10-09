@@ -79,6 +79,22 @@ final class ProtocolTests: XCTestCase {
         XCTAssertEqual(ThermyxProtocol.decode(short), .failure(.tooShort(length: 12, needed: 22)))
     }
 
+    func testDecodesAVersionThreePacketCutToTwentyBytes() throws {
+        // A 23-byte ATT MTU delivers only 20 bytes of a notification.
+        let full = ThermyxProtocol.encode(ThermyxProtocol.Telemetry(
+            version: 3, mode: .cooling, batteryPercent: nil, footTemperatureC: 31.62, ambientTemperatureC: nil,
+            gaitStability: nil, pressureBalance: nil, declaredFoot: .left, settingEcho: .cool,
+            cadenceStepsPerMinute: 100, standingFraction: 0.5
+        ))
+        let t = try ThermyxProtocol.decode(full.prefix(20)).get()
+        XCTAssertEqual(t.footTemperatureC ?? 0, 31.62, accuracy: 0.001)
+        XCTAssertEqual(t.declaredFoot, .left)
+        XCTAssertEqual(t.settingEcho, .cool)
+        XCTAssertEqual(t.mode, .cooling)
+        XCTAssertNil(t.cadenceStepsPerMinute, "Lost bytes are not measured, not zero")
+        XCTAssertNil(t.standingFraction)
+    }
+
     func testRoundTripsAVersionThreePacket() throws {
         let original = ThermyxProtocol.Telemetry(
             version: 3,

@@ -66,7 +66,27 @@ struct ConnectDeviceView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Connect a device") {
+            if ble.isDemoMode {
+                // Demo Mode swaps the radio for simulated devices, so a real
+                // board can never connect from here. Say so plainly.
+                ThermyxCard(border: Thermyx.Ink.amber.opacity(0.6)) {
+                    VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                        Text("Demo Mode is on")
+                            .font(ThermyxFont.rowTitle)
+                            .foregroundStyle(Thermyx.Ink.amber)
+                        Text("Only simulated devices show here, and real Thermyx boards can't connect. Turn off Demo Mode in Safety → Advanced, or run the ThermyxApp scheme in Xcode instead of Thermyx Demo.")
+                            .font(ThermyxFont.caption)
+                            .foregroundStyle(Thermyx.Ink.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Turn off Demo Mode") { ble.stopDemoMode() }
+                            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
+                            .fixedSize()
+                    }
+                }
+            }
+
             statusCard
+            insoleStatus
 
             HStack(spacing: Thermyx.Space.m) {
                 Button(scanning ? "Stop" : "Scan") {
@@ -119,6 +139,35 @@ struct ConnectDeviceView: View {
         .onDisappear { if scanning { stop() } }
         .onChange(of: ble.boardState) { _, state in
             if case .connecting = state { scanning = false }
+        }
+    }
+
+    @ViewBuilder
+    private var insoleStatus: some View {
+        let feet = Foot.allCases.filter { ble.isConnected($0) }
+        if !feet.isEmpty || ble.insoleStep != nil {
+            ThermyxCard {
+                VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                    SectionLabel("Insoles")
+                    ForEach(feet, id: \.self) { foot in
+                        HStack(spacing: 6) {
+                            Circle().fill(Thermyx.Ink.ice).frame(width: 7, height: 7)
+                            Text(verbatim: "\(ble.names[foot] ?? foot.label) · \(ble.reading(for: foot) != nil ? "receiving readings" : "connected, no reading yet")")
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                        }
+                    }
+                    if let step = ble.insoleStep {
+                        HStack(alignment: .top, spacing: 6) {
+                            ProgressView().controlSize(.mini).tint(Thermyx.Ink.textSupporting)
+                            Text(verbatim: step)
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
         }
     }
 

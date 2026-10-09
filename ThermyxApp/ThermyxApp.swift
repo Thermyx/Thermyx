@@ -5,6 +5,7 @@ struct ThermyxApp: App {
     @StateObject private var viewModel = ThermyxViewModel()
     @StateObject private var roles = ThermyxRoleStore()
     @StateObject private var settings = ThermyxSettingsStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -16,6 +17,14 @@ struct ThermyxApp: App {
                 // a shipping binary contains no synthetic-data code path at all.
                 .previewHarness(roles: roles, settings: settings, viewModel: viewModel)
                 .modifier(DemoModeBanner(ble: viewModel.ble))
+        }
+        // History saves on a 5-second debounce. Save straight away when the
+        // app leaves the screen, so a suspend or a swipe-away loses nothing.
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                let history = viewModel.history
+                Task { await history.save() }
+            }
         }
     }
 }
