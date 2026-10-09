@@ -35,6 +35,11 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// Set when a device connects without declaring which foot it is on, so
     /// the UI can ask.
     @Published var awaitingFootAssignment: DiscoveredDevice?
+    /// Where the app is in connecting an insole, step by step, so a link
+    /// that stalls says where ("Connected, but no Thermyx service" is a
+    /// firmware problem; "Waiting for the first reading" is a data one).
+    /// Nil once readings arrive.
+    @Published private(set) var insoleStep: String?
     /// The last command an insole refused at the Bluetooth level.
     @Published private(set) var lastWriteFailure: WriteFailure?
 
@@ -498,6 +503,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         if let assigned {
             pendingFoot[device.id] = assigned
         }
+        insoleStep = "Connecting to \(device.name)…"
         central.connect(target, options: nil)
     }
 
@@ -583,6 +589,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             return
         }
         adopt(peripheralID, as: foot)
+        insoleStep = nil
         readings[foot] = telemetry.reading(for: foot)
 
         var stamps = packetTimestamps[foot] ?? []
@@ -750,6 +757,7 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
                 peripheral.discoverServices([Self.sensorServiceUUID])
                 return
             }
+            self.insoleStep = "Connected to \(peripheral.name ?? "the insole"). Looking for the Thermyx service…"
             peripheral.discoverServices([Self.serviceUUID])
             self.startRSSIPolling()
         }
@@ -772,6 +780,7 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
                 return
             }
             self.tearDown(identifier)
+            self.insoleStep = nil
             self.errorMessage = error?.localizedDescription ?? "Could not connect to the insole."
         }
     }
@@ -857,9 +866,19 @@ extension ThermyxBLEService: CBPeripheralDelegate {
             return
         }
         guard let service = peripheral.services?.first(where: { $0.uuid == Self.serviceUUID }) else {
-            Task { @MainActor in self.rejectBoard(peripheral) }
+            let name = peripheral.name ?? "The device"
+            let failure = error?.localizedDescription
+            Task { @MainActor in
+                if self.isBoard(peripheral.identifier) {
+                    self.rejectBoard(peripheral)
+                } else {
+                    self.insoleStep = failure.map { "\(name) connected, but reading its services failed: \($0)" }
+                        ?? "\(name) connected, but it has no Thermyx insole service. Check the firmware."
+                }
+            }
             return
         }
+        Task { @MainActor in self.insoleStep = "Found the Thermyx service. Subscribing to readings…" }
         peripheral.discoverCharacteristics([Self.telemetryUUID, Self.commandUUID], for: service)
     }
 
@@ -906,6 +925,19 @@ extension ThermyxBLEService: CBPeripheralDelegate {
                 self.decodeBoardValue(data, from: identifier)
             } else {
                 self.decodeTelemetry(data, from: identifier)
+            }
+        }
+    }
+
+    nonisolated func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
+        guard characteristic.uuid == Self.telemetryUUID else { return }
+        let message = error?.localizedDescription
+        let notifying = characteristic.isNotifying
+        Task { @MainActor in
+            if let message {
+                self.insoleStep = "Couldn't subscribe to readings: \(message)"
+            } else if notifying, self.insoleStep != nil {
+                self.insoleStep = "Subscribed. Waiting for the first reading (the insole sends one a second)…"
             }
         }
     }
