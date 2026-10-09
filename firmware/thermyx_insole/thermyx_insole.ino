@@ -257,6 +257,9 @@ class CommandCallbacks : public BLECharacteristicCallbacks {
 static void startBLE() {
   const char *name = THERMYX_FOOT == 1 ? "Thermyx Left" : "Thermyx Right";
   BLEDevice::init(name);
+  // The 22-byte telemetry packet needs more than the default 23-byte MTU,
+  // which only fits 20 bytes per notification; iOS agrees to 185.
+  BLEDevice::setMTU(185);
   BLEServer *server = BLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
   BLEService *service = server->createService(SERVICE_UUID);

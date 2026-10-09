@@ -67,7 +67,13 @@ enum ThermyxProtocol {
         guard let version = bytes.first, let needed = requiredLength(for: version) else {
             return .failure(.unsupportedVersion(bytes.first))
         }
-        guard bytes.count >= needed else { return .failure(.tooShort(length: bytes.count, needed: needed)) }
+        // A version 3 packet cut to 20 bytes by a 23-byte ATT MTU (the ESP32
+        // Arduino default) still carries every version 2 field intact; only
+        // cadence and standing are lost. Decode what arrived rather than
+        // dropping every packet, which would leave the insole never showing
+        // as connected.
+        let truncatedV3 = version == 3 && bytes.count >= 18 && bytes.count < needed
+        guard bytes.count >= needed || truncatedV3 else { return .failure(.tooShort(length: bytes.count, needed: needed)) }
 
         func int16(_ i: Int) -> Int16 { Int16(bitPattern: UInt16(bytes[i]) | UInt16(bytes[i + 1]) << 8) }
         func uint16(_ i: Int) -> UInt16 { UInt16(bytes[i]) | UInt16(bytes[i + 1]) << 8 }
@@ -99,7 +105,7 @@ enum ThermyxProtocol {
             // All three or none: a heat map off one broken channel would mislead.
             telemetry.zones = FootZoneTemperatures(forefootC: forefoot, archC: arch, heelC: heel)
         }
-        if version >= 3 {
+        if version >= 3, !truncatedV3 {
             let cadence = uint16(18)
             if cadence != noValue { telemetry.cadenceStepsPerMinute = Double(cadence) / 10 }
             telemetry.standingFraction = fraction(20)
