@@ -33,6 +33,22 @@ struct ThermyxHistorySample: Codable, Equatable, Identifiable {
     var trackedSeconds: Double?
     var heatingSeconds: Double?
     var coolingSeconds: Double?
+    /// Estimated steps (cadence × time), and time sitting, standing and
+    /// walking, from the insole's motion and pressure. Nil when the insole
+    /// doesn't report cadence or standing.
+    var steps: Double?
+    var sittingSeconds: Double?
+    var standingSeconds: Double?
+    var walkingSeconds: Double?
+
+    /// What the wearer was doing in one reading, from cadence and the share
+    /// of time loaded without stepping. Nil without those signals.
+    static func activity(of reading: ThermyxReading) -> CalibrationActivity? {
+        guard let cadence = reading.cadenceStepsPerMinute ?? (reading.standingFraction != nil ? 0 : nil) else { return nil }
+        if cadence >= 30 { return .walking }
+        guard let standing = reading.standingFraction else { return nil }
+        return standing >= 0.5 ? .standing : .sitting
+    }
 
     var id: String { "\(foot.rawValue)-\(start.timeIntervalSince1970)" }
 
@@ -62,6 +78,15 @@ struct ThermyxHistorySample: Codable, Equatable, Identifiable {
             case .heating: heatingSeconds = (heatingSeconds ?? 0) + elapsed
             case .cooling: coolingSeconds = (coolingSeconds ?? 0) + elapsed
             case .ventilation, .off: break
+            }
+            if let cadence = reading.cadenceStepsPerMinute {
+                steps = (steps ?? 0) + cadence * elapsed / 60
+            }
+            switch Self.activity(of: reading) {
+            case .walking: walkingSeconds = (walkingSeconds ?? 0) + elapsed
+            case .standing: standingSeconds = (standingSeconds ?? 0) + elapsed
+            case .sitting: sittingSeconds = (sittingSeconds ?? 0) + elapsed
+            case nil: break
             }
         }
         let n = Double(sampleCount)

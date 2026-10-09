@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Everything the Insights screens draw, derived in one place from retained
 /// history.
@@ -141,6 +142,27 @@ struct InsightsDigest {
         return samples.contains { $0.trackedSeconds != nil } ? values.reduce(0, +) : nil
     }
 
+    /// Stretches when the insole spent most of a bucket heating or cooling,
+    /// merged where they touch, for shading behind the temperature chart.
+    func thermalShading(heat: Color, cool: Color) -> [ChartShade] {
+        let bucketLength = range.usesHourlyTier ? TimeInterval(3600) : TimeInterval(60)
+        var shades: [ChartShade] = []
+        for sample in samples {
+            guard let tracked = sample.trackedSeconds, tracked > 0 else { continue }
+            let color: Color
+            if (sample.heatingSeconds ?? 0) / tracked >= 0.5 { color = heat }
+            else if (sample.coolingSeconds ?? 0) / tracked >= 0.5 { color = cool }
+            else { continue }
+            let end = sample.start.addingTimeInterval(bucketLength)
+            if let last = shades.last, last.color == color, last.end >= sample.start {
+                shades[shades.count - 1] = ChartShade(start: last.start, end: max(last.end, end), color: color)
+            } else {
+                shades.append(ChartShade(start: sample.start, end: end, color: color))
+            }
+        }
+        return shades
+    }
+
     /// How long this window actually has data for.
     var trackedSeconds: TimeInterval {
         let bucketLength = range.usesHourlyTier ? TimeInterval(3600) : TimeInterval(60)
@@ -245,6 +267,13 @@ struct ThermyxDailySummary: Identifiable, Equatable {
     var peakRisk: ThermyxRiskLevel?
     var events: Int
     var feet: [Foot]
+    /// Estimated steps and time per activity, from the foot that recorded
+    /// the most. Nil when the insole doesn't report movement.
+    var steps: Double? = nil
+    var sittingSeconds: TimeInterval? = nil
+    var walkingSeconds: TimeInterval? = nil
+
+    var hasActivity: Bool { sittingSeconds != nil || walkingSeconds != nil || steps != nil }
 
     static func days(
         hourSamples: [ThermyxHistorySample],
@@ -271,7 +300,11 @@ struct ThermyxDailySummary: Identifiable, Equatable {
         let hourFoot = hours.compactMap { $0.compactMap(\.footMeanC).max() }
         let peak = samples.compactMap(\.peakRiskLevel).max { $0.severity < $1.severity }
         let standing = samples.filter { $0.standingMean != nil }
-        return ThermyxDailySummary(
+        func tracked(_ value: (ThermyxHistorySample) -> Double?) -> Double? {
+            samples.contains { value($0) != nil } ? perFoot(value).max() : nil
+        }
+        let trackedStanding = tracked(\.standingSeconds)
+        var summary = ThermyxDailySummary(
             day: day,
             wornSeconds: worn,
             heatingSeconds: tracked ? perFoot(\.heatingSeconds).max() : nil,
@@ -288,6 +321,58 @@ struct ThermyxDailySummary: Identifiable, Equatable {
             peakRisk: peak,
             events: events.count,
             feet: feet
+        )
+        summary.steps = tracked(\.steps)
+        summary.sittingSeconds = tracked(\.sittingSeconds)
+        summary.walkingSeconds = tracked(\.walkingSeconds)
+        if let trackedStanding { summary.standingSeconds = trackedStanding }
+        return summary
+    }
+}
+
+/// The week so far, and the streak of days worn, for the Insights home.
+struct ThermyxWeeklyReport: Equatable {
+    var daysWorn: Int
+    var wornSeconds: TimeInterval
+    var heatingSeconds: TimeInterval
+    var coolingSeconds: TimeInterval
+    var steps: Double?
+    /// Change in time worn against the same days last week, as a fraction.
+    var wornChange: Double?
+    /// Consecutive days worn, ending today (or yesterday, if today has no
+    /// wear yet, so a streak isn't lost at breakfast).
+    var streak: Int
+
+    /// A day counts once the insoles were worn for this long.
+    static let minimumWear: TimeInterval = 10 * 60
+
+    static func make(days: [ThermyxDailySummary], now: Date = .now, calendar: Calendar = .current) -> ThermyxWeeklyReport {
+        let worn = days.filter { $0.wornSeconds >= minimumWear }
+        let today = calendar.startOfDay(for: now)
+        let weekStart = calendar.date(byAdding: .day, value: -6, to: today)!
+        let lastWeekStart = calendar.date(byAdding: .day, value: -13, to: today)!
+        let thisWeek = worn.filter { $0.day >= weekStart }
+        let lastWeek = worn.filter { $0.day >= lastWeekStart && $0.day < weekStart }
+
+        let wornDays = Set(worn.map(\.day))
+        var cursor = wornDays.contains(today) ? today : calendar.date(byAdding: .day, value: -1, to: today)!
+        var streak = 0
+        while wornDays.contains(cursor) {
+            streak += 1
+            cursor = calendar.date(byAdding: .day, value: -1, to: cursor)!
+        }
+
+        let thisTotal = thisWeek.reduce(0) { $0 + $1.wornSeconds }
+        let lastTotal = lastWeek.reduce(0) { $0 + $1.wornSeconds }
+        let steps = thisWeek.compactMap(\.steps)
+        return ThermyxWeeklyReport(
+            daysWorn: thisWeek.count,
+            wornSeconds: thisTotal,
+            heatingSeconds: thisWeek.compactMap(\.heatingSeconds).reduce(0, +),
+            coolingSeconds: thisWeek.compactMap(\.coolingSeconds).reduce(0, +),
+            steps: steps.isEmpty ? nil : steps.reduce(0, +),
+            wornChange: lastTotal > 0 ? (thisTotal - lastTotal) / lastTotal : nil,
+            streak: streak
         )
     }
 }

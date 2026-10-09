@@ -43,6 +43,9 @@ struct InsightsHubView: View {
                     availableFeet: digest.feet
                 )
 
+                // Today and this week at the top, each a way into its page.
+                InsightsSummaryCards(settings: settings)
+
                 // Test-board sensors, beside (never inside) the body charts.
                 BoardSensorCards(board: viewModel.board, history: viewModel.history, ble: viewModel.ble)
 
@@ -62,8 +65,6 @@ struct InsightsHubView: View {
                     if !settings.healthKitEnabled { healthPrompt }
                 }
 
-                dailySummariesRow
-                learningRow
             }
             .navigationDestination(for: InsightsDestination.self) { destination in
                 switch destination {
@@ -574,11 +575,13 @@ struct DailySummaryView: View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
             SectionLabel("Movement")
             grid {
+                MetricTile(label: "Steps (est.)", value: s.steps.map { Int($0.rounded()).formatted() })
                 MetricTile(label: "Cadence", value: s.cadenceAverage.map { "\(Int($0.rounded())) spm" })
-                MetricTile(label: "Standing", value: duration(s.standingSeconds))
                 MetricTile(label: "Steadiness", value: s.gaitAverage.map { "\(Int(($0 * 100).rounded()))%" })
                 MetricTile(label: "Insoles", value: s.feet.map(\.label).joined(separator: " + "))
             }
+            SectionLabel("Activity")
+            ActivitySplitBar(sitting: s.sittingSeconds, standing: s.standingSeconds, walking: s.walkingSeconds)
         }
     }
 
@@ -605,7 +608,7 @@ struct DailySummaryView: View {
         ThermyxCard {
             VStack(alignment: .leading, spacing: Thermyx.Space.s) {
                 SectionLabel("AI summary")
-                if let aiSummary {
+                if let aiSummary = aiSummary ?? ThermyxAlertCoordinator.storedSummary(for: day) {
                     Text(aiSummary)
                         .font(ThermyxFont.body)
                         .foregroundStyle(Thermyx.Ink.textPrimary)
@@ -617,7 +620,7 @@ struct DailySummaryView: View {
                     Button(aiLoading ? "Writing…" : "Summarize this day") { Task { await requestSummary(s) } }
                         .buttonStyle(ThermyxSecondaryButtonStyle())
                         .disabled(aiLoading)
-                    Text("Sends only this day's totals and averages (no readings, name, or location) to your relay, which asks an AI model for a short summary. Nothing is stored.")
+                    Text("A summary also arrives as a notification after you finish wearing the insoles. It uses only this day's totals and averages (no readings, name, or location), sent to your relay, which asks an AI model. The relay stores nothing.")
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
@@ -647,5 +650,133 @@ struct DailySummaryView: View {
         } catch {
             aiError = error.localizedDescription
         }
+    }
+}
+
+/// The top of Insights: today's summary as tap-through cards, then the week
+/// with the streak, each opening its own page.
+struct InsightsSummaryCards: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var settings: ThermyxSettingsStore
+
+    var body: some View {
+        let days = ThermyxDailySummary.days(hourSamples: viewModel.history.hourSamples, events: viewModel.history.events)
+        let today = days.first { Calendar.current.isDateInToday($0.day) }
+        let week = ThermyxWeeklyReport.make(days: days)
+        let unit = settings.temperatureUnit
+
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            HStack {
+                SectionLabel("Today")
+                Spacer()
+                NavigationLink(value: InsightsDestination.days) {
+                    Text("All days")
+                        .font(ThermyxFont.rowTitle)
+                        .foregroundStyle(Thermyx.Ink.ice)
+                        .frame(minHeight: Thermyx.minimumTapTarget)
+                }
+                .buttonStyle(.plain)
+            }
+            NavigationLink(value: InsightsDestination.day(Calendar.current.startOfDay(for: .now))) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: Thermyx.Space.s), GridItem(.flexible(), spacing: Thermyx.Space.s)],
+                          spacing: Thermyx.Space.s) {
+                    MetricTile(label: "Worn", value: today.map { DurationFormat.long($0.wornSeconds) })
+                    MetricTile(label: "Avg foot temp", value: today?.averageFootC.map { TemperatureFormat.degrees($0, in: unit) })
+                    MetricTile(label: "Heating", value: today?.heatingSeconds.map(DurationFormat.long), tint: Thermyx.Ink.ember)
+                    MetricTile(label: "Cooling", value: today?.coolingSeconds.map(DurationFormat.long), tint: Thermyx.Ink.signal)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(today == nil)
+            .accessibilityHint("Opens today's summary")
+
+            NavigationLink(value: InsightsDestination.days) {
+                ThermyxCard {
+                    HStack(spacing: Thermyx.Space.l) {
+                        VStack(spacing: 0) {
+                            Text("\(week.streak)")
+                                .font(ThermyxFont.metricNumeralCompact)
+                                .foregroundStyle(week.streak > 0 ? Thermyx.Ink.amber : Thermyx.Ink.textFaint)
+                            Text(week.streak == 1 ? "day" : "days")
+                                .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
+                        }
+                        .frame(width: 56)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(week.streak > 0 ? "Streak: \(week.streak) day\(week.streak == 1 ? "" : "s") in a row" : "This week")
+                                .font(ThermyxFont.rowTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text(weekLine(week))
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textSupporting)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 0)
+                        Image(systemName: "chevron.right").foregroundStyle(Thermyx.Ink.textFaint)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func weekLine(_ w: ThermyxWeeklyReport) -> String {
+        var parts = ["\(w.daysWorn) of 7 days", "worn \(DurationFormat.long(w.wornSeconds))"]
+        if let steps = w.steps { parts.append("\(Int(steps).formatted()) steps") }
+        if let change = w.wornChange { parts.append("\(change >= 0 ? "+" : "")\(Int((change * 100).rounded()))% vs last week") }
+        return parts.joined(separator: " · ")
+    }
+}
+
+/// Sitting, standing and walking time as one bar with a legend.
+struct ActivitySplitBar: View {
+    let sitting: TimeInterval?
+    let standing: TimeInterval?
+    let walking: TimeInterval?
+
+    private var parts: [(String, TimeInterval, Color)] {
+        [("Sitting", sitting ?? 0, Thermyx.Ink.textSupporting),
+         ("Standing", standing ?? 0, Thermyx.Ink.signal),
+         ("Walking", walking ?? 0, Thermyx.Ink.ice)]
+    }
+
+    var body: some View {
+        let total = parts.reduce(0) { $0 + $1.1 }
+        ThermyxCard {
+            if total <= 0 {
+                Text("Activity needs the insole's motion and pressure sensors. It shows here once they report.")
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.textSupporting)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                    GeometryReader { geo in
+                        HStack(spacing: 2) {
+                            ForEach(parts, id: \.0) { part in
+                                if part.1 > 0 {
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(part.2)
+                                        .frame(width: max(4, (geo.size.width - 4) * part.1 / total))
+                                }
+                            }
+                        }
+                    }
+                    .frame(height: 14)
+                    HStack(spacing: Thermyx.Space.m) {
+                        ForEach(parts, id: \.0) { part in
+                            HStack(spacing: 4) {
+                                Circle().fill(part.2).frame(width: 8, height: 8)
+                                Text("\(part.0) \(DurationFormat.long(part.1))")
+                                    .font(ThermyxFont.captionSmall)
+                                    .foregroundStyle(Thermyx.Ink.textSecondary)
+                            }
+                        }
+                    }
+                    Text("Estimated from cadence and pressure.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -443,4 +443,99 @@ final class RiskEngineTests: XCTestCase {
         XCTAssertEqual(today.feet, [.left, .right])
         XCTAssertNil(days[1].heatingSeconds, "Old buckets didn't record it")
     }
+
+    // MARK: Tabs, profile, summaries, battery
+
+    func testLearningLibraryIncludesTheNewTopics() {
+        let ids = ThermyxLearningLibrary.articles.map(\.id)
+        for id in ["how-peltier-works", "modes", "reading-insights"] { XCTAssertTrue(ids.contains(id), id) }
+        XCTAssertTrue(ThermyxLearningLibrary.articles.allSatisfy { $0.icon != nil })
+    }
+
+    func testHealthConditionsAreAMultiSelectThatSurvivesSaving() throws {
+        var profile = UserProfile()
+        XCTAssertTrue(profile.conditionSet.isEmpty)
+        profile.conditionSet = [.neuropathy, .diabetes]
+        XCTAssertEqual(profile.conditions, [.diabetes, .neuropathy], "Kept in a stable order")
+        let decoded = try JSONDecoder().decode(UserProfile.self, from: JSONEncoder().encode(profile))
+        XCTAssertEqual(decoded.conditionSet, [.diabetes, .neuropathy])
+        // A profile saved by the previous build (on/off switches) still loads.
+        let old = Data(#"{"age":30,"diabetes":true}"#.utf8)
+        XCTAssertEqual(try JSONDecoder().decode(UserProfile.self, from: old).age, 30)
+    }
+
+    func testActivityFromCadenceAndStanding() {
+        func r(_ cadence: Double?, _ standing: Double?) -> ThermyxReading {
+            ThermyxReading(foot: .left, timestamp: .now, footTemperatureC: 31, ambientTemperatureC: nil, pressureBalance: nil,
+                           gaitStability: nil, batteryPercent: nil, thermalMode: .ventilation, zones: nil,
+                           cadenceStepsPerMinute: cadence, standingFraction: standing)
+        }
+        XCTAssertEqual(ThermyxHistorySample.activity(of: r(100, 0.1)), .walking)
+        XCTAssertEqual(ThermyxHistorySample.activity(of: r(0, 0.9)), .standing)
+        XCTAssertEqual(ThermyxHistorySample.activity(of: r(0, 0.1)), .sitting)
+        XCTAssertNil(ThermyxHistorySample.activity(of: r(nil, nil)))
+        var sample = ThermyxHistorySample(foot: .left, start: .now)
+        sample.accumulate(r(120, 0.1), risk: nil, elapsed: 30)
+        XCTAssertEqual(sample.steps, 60)
+        XCTAssertEqual(sample.walkingSeconds, 30)
+    }
+
+    func testWeeklyReportCountsTheStreak() {
+        let calendar = Calendar(identifier: .gregorian)
+        let now = calendar.date(from: DateComponents(year: 2026, month: 10, day: 9, hour: 8))!
+        func day(_ offset: Int, worn: TimeInterval) -> ThermyxDailySummary {
+            let d = calendar.date(byAdding: .day, value: -offset, to: calendar.startOfDay(for: now))!
+            return ThermyxDailySummary(day: d, wornSeconds: worn, heatingSeconds: 60, coolingSeconds: 120, averageFootC: 31,
+                                       peakFootC: 33, lowFootC: 30, averageAmbientC: nil, hotHours: 0, cadenceAverage: nil,
+                                       standingSeconds: nil, gaitAverage: nil, peakRisk: nil, events: 0, feet: [.left])
+        }
+        // Not worn yet today; worn the three days before, then a gap.
+        let days = [day(1, worn: 3600), day(2, worn: 3600), day(3, worn: 1800), day(5, worn: 3600), day(9, worn: 7200)]
+        let report = ThermyxWeeklyReport.make(days: days, now: now, calendar: calendar)
+        XCTAssertEqual(report.streak, 3)
+        XCTAssertEqual(report.daysWorn, 4)
+        XCTAssertEqual(report.coolingSeconds, 480)
+        XCTAssertEqual(try XCTUnwrap(report.wornChange), (12_600.0 - 7200) / 7200, accuracy: 0.001)
+    }
+
+    func testSessionEndsAfterFifteenStillMinutes() {
+        var stillness = SessionStillness()
+        let t0 = Date(timeIntervalSince1970: 0)
+        func r(_ t: TimeInterval, _ cadence: Double) -> ThermyxReading {
+            ThermyxReading(foot: .left, timestamp: t0.addingTimeInterval(t), footTemperatureC: 31, ambientTemperatureC: nil,
+                           pressureBalance: nil, gaitStability: nil, batteryPercent: nil, thermalMode: .ventilation, zones: nil,
+                           cadenceStepsPerMinute: cadence, standingFraction: 0.1)
+        }
+        XCTAssertFalse(stillness.update(r(0, 100)))
+        XCTAssertFalse(stillness.update(r(25 * 60, 100)))
+        XCTAssertFalse(stillness.update(r(26 * 60, 0)))
+        XCTAssertFalse(stillness.update(r(40 * 60, 0)))
+        XCTAssertTrue(stillness.update(r(41 * 60 + 1, 0)))
+        XCTAssertFalse(stillness.update(r(50 * 60, 0)), "Once per session")
+        XCTAssertFalse(stillness.endSession(), "Already summarized")
+    }
+
+    func testBatteryEstimateNeedsAReadableDrop() {
+        var estimator = BatteryEstimator()
+        let t0 = Date(timeIntervalSince1970: 0)
+        func r(_ t: TimeInterval, _ percent: Int) -> ThermyxReading {
+            ThermyxReading(foot: .left, timestamp: t0.addingTimeInterval(t), footTemperatureC: 31, ambientTemperatureC: nil,
+                           pressureBalance: nil, gaitStability: nil, batteryPercent: percent, thermalMode: .ventilation, zones: nil)
+        }
+        estimator.add(r(0, 80))
+        estimator.add(r(10 * 60, 79))
+        XCTAssertNil(estimator.hoursLeft(.left), "Too soon")
+        estimator.add(r(30 * 60, 75))
+        XCTAssertEqual(try XCTUnwrap(estimator.hoursLeft(.left)), 7.5, accuracy: 0.01, "5 points in 30 min, 75 left")
+    }
+
+    func testTrustedCircleIsCappedAtThree() {
+        let store = ThermyxSettingsStore()
+        let saved = store.contacts
+        defer { store.contacts = saved }
+        store.contacts = []
+        for i in 1...4 { store.addContact(name: "Person \(i)", phone: "+1202555010\(i)") }
+        XCTAssertEqual(store.contacts.count, 3)
+        XCTAssertFalse(store.canAddContact)
+    }
 }

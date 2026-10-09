@@ -8,6 +8,14 @@ struct SeriesPoint: Identifiable, Equatable {
     var id: Date { date }
 }
 
+/// A shaded stretch of time behind a chart, e.g. when the insole heated.
+struct ChartShade: Identifiable, Equatable {
+    let start: Date
+    let end: Date
+    let color: Color
+    var id: Date { start }
+}
+
 /// A named series drawn on a shared time axis.
 struct ChartSeries: Identifiable, Equatable {
     let id: String
@@ -44,6 +52,8 @@ struct ThermyxTimeSeriesChart: View {
     /// Drawn behind the plot, e.g. the temperature comfort band.
     var band: ClosedRange<Double>?
     var bandLabel: String?
+    /// Time ranges shaded behind the plot.
+    var shading: [ChartShade] = []
     var showsExtremes: Bool = true
     var showsAverage: Bool = true
     var averageLabel: String = "Average"
@@ -128,6 +138,14 @@ struct ThermyxTimeSeriesChart: View {
 
     private var chart: some View {
         Chart {
+            ForEach(shading) { shade in
+                RectangleMark(
+                    xStart: .value("Start", shade.start),
+                    xEnd: .value("End", shade.end)
+                )
+                .foregroundStyle(shade.color.opacity(0.18))
+            }
+
             if let band {
                 RectangleMark(
                     yStart: .value("Band low", band.lowerBound),

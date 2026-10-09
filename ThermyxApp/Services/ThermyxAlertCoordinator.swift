@@ -20,6 +20,55 @@ final class ThermyxAlertCoordinator: ObservableObject {
     /// wearer's own notifications say they are simulated.
     var isDemoMode = false
 
+    // MARK: End-of-session AI summary
+
+    /// At most this often, so a stop-start day doesn't spam.
+    static let summaryGap: TimeInterval = 2 * 3600
+    private static let lastSummaryKey = "thermyx.aiSummary.lastAt"
+
+    static func summaryKey(for day: Date, calendar: Calendar = .current) -> String {
+        let c = calendar.dateComponents([.year, .month, .day], from: day)
+        return String(format: "thermyx.aiSummary.%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    /// The last AI summary written for a day, if any.
+    static func storedSummary(for day: Date) -> String? {
+        UserDefaults.standard.string(forKey: summaryKey(for: day))
+    }
+
+    /// When a session ends: asks the relay for a short summary of today with
+    /// two or three suggestions, keeps it for the day page, and sends it as a
+    /// notification. Only for a paired wearer, never in Demo Mode, and only
+    /// if the relay has AI summaries turned on.
+    func deliverSessionSummary(history: ThermyxHistoryStore, settings: ThermyxSettingsStore, now: Date = .now) {
+        guard !isDemoMode, settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
+        let defaults = UserDefaults.standard
+        if let last = defaults.object(forKey: Self.lastSummaryKey) as? Date, now.timeIntervalSince(last) < Self.summaryGap { return }
+        let calendar = Calendar.current
+        let samples = history.hourSamples.filter { calendar.isDate($0.start, inSameDayAs: now) }
+        guard !samples.isEmpty else { return }
+        let today = ThermyxDailySummary.summary(
+            day: calendar.startOfDay(for: now),
+            samples: samples,
+            events: history.events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
+        )
+        defaults.set(now, forKey: Self.lastSummaryKey)
+        let body = ThermyxAlertAPIClient.SummaryRequest(today, unit: settings.temperatureUnit, focus: settings.profile.focus)
+        let url = settings.backendURL
+        let token = settings.backendToken
+        Task {
+            guard let text = try? await apiClient.summary(body, baseURL: url, token: token) else { return }
+            defaults.set(text, forKey: Self.summaryKey(for: now))
+            let content = UNMutableNotificationContent()
+            content.title = "Your Thermyx summary"
+            content.body = text
+            content.sound = .default
+            try? await UNUserNotificationCenter.current().add(
+                UNNotificationRequest(identifier: "thermyx.summary", content: content, trigger: nil)
+            )
+        }
+    }
+
     /// Cold-foot and low-battery reminders, for the wearer only.
     private var comfort = ThermyxComfortWatch()
 

@@ -110,9 +110,14 @@ struct TemperatureDetailView: View {
                     height: 190,
                     format: { String(format: "%.1f°", $0) },
                     band: comfortBand,
-                    bandLabel: "Comfort band"
+                    bandLabel: "Comfort band",
+                    shading: digest.thermalShading(heat: Thermyx.Ink.ember, cool: Thermyx.Ink.signal)
                 )
 
+                HStack(spacing: Thermyx.Space.m) {
+                    ChartLegendChip(color: Thermyx.Ink.ember.opacity(0.4), label: "Heating")
+                    ChartLegendChip(color: Thermyx.Ink.signal.opacity(0.4), label: "Cooling")
+                }
                 HStack(spacing: Thermyx.Space.m) {
                     ChartLegendChip(color: Color(hex: 0x2C9CF0, opacity: 0.5), label: "Comfort band")
                     ChartLegendChip(color: Thermyx.Ink.ember, label: "High")

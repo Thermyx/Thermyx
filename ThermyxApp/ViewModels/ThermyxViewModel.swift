@@ -21,6 +21,14 @@ final class ThermyxViewModel: ObservableObject {
     /// The foot whose detail the user is looking at, where a screen shows one
     /// at a time. Defaults to whichever is connected.
     @Published var focusedFoot: Foot = .left
+    /// Set when a wearing session ends: the insoles disconnect after a real
+    /// session, or the wearer has been still for a while. Triggers the
+    /// end-of-session AI summary.
+    @Published private(set) var sessionEndedAt: Date?
+    private var stillness = SessionStillness()
+    /// Battery-life estimate for the weaker insole, from the last hour.
+    @Published private(set) var batteryHoursLeft: Double?
+    private var battery = BatteryEstimator()
 
     let ble = ThermyxBLEService()
     let history = ThermyxHistoryStore()
@@ -74,6 +82,8 @@ final class ThermyxViewModel: ObservableObject {
                     self.endSession(for: foot)
                 }
                 self.reading = next
+                for r in next.present { self.battery.add(r) }
+                self.batteryHoursLeft = next.present.compactMap { self.battery.hoursLeft($0.foot) }.min()
                 self.updateTrend()
                 self.trackAsymmetry(next)
                 // Simulated readings never teach the baseline.
@@ -358,6 +368,7 @@ final class ThermyxViewModel: ObservableObject {
         guard !ble.isDemoMode else { return }
 
         if sessionStart[foot] == nil { sessionStart[foot] = entry.timestamp }
+        if stillness.update(entry) { sessionEndedAt = entry.timestamp }
         if let last = lastRecordedAt[foot], let temperature = entry.footTemperatureC, temperature >= 35 {
             heatExposureSeconds[foot, default: 0] += entry.timestamp.timeIntervalSince(last)
         }
@@ -391,6 +402,9 @@ final class ThermyxViewModel: ObservableObject {
         guard sessionStart.values.isEmpty, let session = pairSession else { return }
         pairSession = nil
         guard session.end.timeIntervalSince(session.start) >= 60 else { return }
+        if session.end.timeIntervalSince(session.start) >= SessionStillness.minimumWear, stillness.endSession() {
+            sessionEndedAt = session.end
+        }
 
         let peak = history.events(for: .day, style: .rolling, foot: nil)
             .compactMap(\.riskLevel)
@@ -401,5 +415,78 @@ final class ThermyxViewModel: ObservableObject {
 
     func endAllSessions() {
         for foot in Foot.allCases { endSession(for: foot) }
+    }
+}
+
+/// Decides when a wearing session has ended for the AI summary: after at
+/// least 20 minutes of wear, either the insoles are taken off or the wearer
+/// has been still (no steps) for 15 minutes. Once per session.
+struct SessionStillness {
+    static let minimumWear: TimeInterval = 20 * 60
+    static let stillFor: TimeInterval = 15 * 60
+    /// Steps per minute below which the wearer counts as still.
+    static let stillCadence = 5.0
+
+    private var wearStart: Date?
+    private var stillSince: Date?
+    private var summarized = false
+
+    /// Feed each recorded reading. True when this reading ends the session.
+    mutating func update(_ reading: ThermyxReading) -> Bool {
+        let now = reading.timestamp
+        if wearStart == nil { wearStart = now }
+        guard let cadence = reading.cadenceStepsPerMinute else { return false }
+        if cadence >= Self.stillCadence {
+            stillSince = nil
+            summarized = false
+            return false
+        }
+        if stillSince == nil { stillSince = now }
+        guard !summarized, let start = wearStart, let still = stillSince,
+              still.timeIntervalSince(start) >= Self.minimumWear,
+              now.timeIntervalSince(still) >= Self.stillFor
+        else { return false }
+        summarized = true
+        return true
+    }
+
+    /// The insoles were taken off. True if this session still needs a summary.
+    mutating func endSession() -> Bool {
+        defer { self = SessionStillness() }
+        return !summarized
+    }
+}
+
+/// Estimates battery life from how fast each insole's charge fell over the
+/// last hour. Nil until there are 15 minutes of data and a drop of at least
+/// 2 points, so it never guesses from noise.
+struct BatteryEstimator {
+    static let window: TimeInterval = 3600
+    static let minimumSpan: TimeInterval = 15 * 60
+    static let minimumDrop = 2.0
+
+    private var history: [Foot: [(time: Date, percent: Int)]] = [:]
+
+    mutating func add(_ reading: ThermyxReading) {
+        guard let percent = reading.batteryPercent else { return }
+        var points = history[reading.foot] ?? []
+        // Charging (a rise) starts the estimate over.
+        if let last = points.last, percent > last.percent + 1 { points.removeAll() }
+        if points.last?.percent != percent || points.isEmpty { points.append((reading.timestamp, percent)) }
+        points.removeAll { reading.timestamp.timeIntervalSince($0.time) > Self.window }
+        if points.isEmpty { points.append((reading.timestamp, percent)) }
+        history[reading.foot] = points
+        latest[reading.foot] = (reading.timestamp, percent)
+    }
+
+    private var latest: [Foot: (time: Date, percent: Int)] = [:]
+
+    func hoursLeft(_ foot: Foot) -> Double? {
+        guard let first = history[foot]?.first, let now = latest[foot] else { return nil }
+        let span = now.time.timeIntervalSince(first.time)
+        let drop = Double(first.percent - now.percent)
+        guard span >= Self.minimumSpan, drop >= Self.minimumDrop else { return nil }
+        let perHour = drop / (span / 3600)
+        return Double(now.percent) / perHour
     }
 }

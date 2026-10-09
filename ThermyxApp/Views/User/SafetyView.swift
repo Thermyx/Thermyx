@@ -33,12 +33,13 @@ struct SafetyView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ThermyxScreen(title: "Safety") {
+            ThermyxScreen(title: "Profile") {
                 sosCard
                 imOKRow
                 escalationLadder
                 trustedCircle
                 WatchersSection(settings: settings, alerts: alerts, level: level)
+                ProfileSettingsSection(roles: roles, settings: settings)
                 advancedRow
                 notificationNote
                 brandPlate
@@ -250,17 +251,19 @@ struct SafetyView: View {
 
     private var trustedCircle: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
-            SectionLabel("Trusted circle") {
-                Button {
-                    showingAddContact = true
-                } label: {
-                    Text("+ Add")
-                        .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.ice)
-                        .frame(minHeight: 32)
-                        .contentShape(.rect)
+            SectionLabel("Trusted circle · \(settings.contacts.count) of \(ThermyxSettingsStore.maxContacts)") {
+                if settings.canAddContact {
+                    Button {
+                        showingAddContact = true
+                    } label: {
+                        Text("+ Add")
+                            .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.ice)
+                            .frame(minWidth: Thermyx.minimumTapTarget, minHeight: Thermyx.minimumTapTarget)
+                            .contentShape(.rect)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add a trusted contact")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Add a trusted contact")
             }
 
             if settings.contacts.isEmpty {
@@ -276,6 +279,9 @@ struct SafetyView: View {
                     ContactRow(contact: contact) {
                         settings.toggleContact(contact)
                     }
+                    .contextMenu {
+                        Button("Remove \(contact.name)", role: .destructive) { settings.removeContact(contact) }
+                    }
                     if settings.relayContactVerification, settings.relayRole == "wearer", contact.verifiedAt == nil {
                         Button("Confirm \(contact.name)'s number") { verifying = contact }
                             .font(ThermyxFont.captionSmall.weight(.semibold))
@@ -283,6 +289,11 @@ struct SafetyView: View {
                             .frame(minHeight: Thermyx.minimumTapTarget)
                     }
                 }
+                Text(settings.canAddContact
+                     ? "Up to \(ThermyxSettingsStore.maxContacts) people. Touch and hold a contact to remove it."
+                     : "Your circle is full (\(ThermyxSettingsStore.maxContacts) people). Touch and hold a contact to remove it.")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
                 if !settings.relayTextingEnabled, !enabledContacts.isEmpty {
                     TextingPreviewCard(settings: settings, level: level, reasons: viewModel.assessment.reasons)
                 }

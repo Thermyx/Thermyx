@@ -167,13 +167,19 @@ final class ThermyxSettingsStore: ObservableObject {
             || legacyNumbers.contains(Array(digits.utf8))
     }
 
+    /// The trusted circle holds up to three people.
+    static let maxContacts = 3
+    var canAddContact: Bool { contacts.count < Self.maxContacts }
+
     func addContact(name: String, phone: String) {
-        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+        guard canAddContact, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !phone.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         contacts.append(ThermyxContact(name: name, phoneNumber: phone))
     }
 
     func removeContacts(at offsets: IndexSet) { contacts.remove(atOffsets: offsets) }
+
+    func removeContact(_ contact: ThermyxContact) { contacts.removeAll { $0.id == contact.id } }
 
     func toggleContact(_ contact: ThermyxContact) {
         guard let index = contacts.firstIndex(where: { $0.id == contact.id }) else { return }
@@ -277,8 +283,31 @@ struct UserProfile: Codable, Equatable {
     var weightKg: Double?
     var sex: Sex?
     var focus: Focus?
-    /// Optional, self-reported. Stored only; nothing uses them yet.
-    var reducedFeeling: Bool?
-    var poorCirculation: Bool?
-    var diabetes: Bool?
+    /// Optional, self-reported, any number of them. Empty means none.
+    var conditions: [HealthCondition]?
+
+    var conditionSet: Set<HealthCondition> {
+        get { Set(conditions ?? []) }
+        set { conditions = HealthCondition.allCases.filter(newValue.contains) }
+    }
+}
+
+enum HealthCondition: String, Codable, CaseIterable, Identifiable {
+    case diabetes
+    case poorCirculation
+    case neuropathy
+    case heatSensitivity
+    case other
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .diabetes: return "Diabetes"
+        case .poorCirculation: return "Poor circulation / Raynaud's"
+        case .neuropathy: return "Neuropathy (reduced feeling)"
+        case .heatSensitivity: return "Heat sensitivity"
+        case .other: return "Other"
+        }
+    }
 }

@@ -10,6 +10,10 @@ struct LearningArticle: Codable, Identifiable, Equatable {
     let status: Status
     let sections: [Section]
     let sources: String
+    /// SF Symbol for the topic card; falls back to the category's.
+    var icon: String?
+
+    var symbol: String { icon ?? category.symbol }
 
     enum Status: String, Codable {
         /// Copy has been written and cited.
@@ -39,6 +43,7 @@ enum LearningCategory: String, Codable, CaseIterable, Identifiable {
     case heat
     case cold
     case feet
+    case device
 
     var id: String { rawValue }
 
@@ -47,6 +52,7 @@ enum LearningCategory: String, Codable, CaseIterable, Identifiable {
         case .heat: return "Heat"
         case .cold: return "Cold"
         case .feet: return "Feet"
+        case .device: return "Your Thermyx"
         }
     }
 
@@ -55,6 +61,7 @@ enum LearningCategory: String, Codable, CaseIterable, Identifiable {
         case .heat: return Thermyx.Ink.amber
         case .cold: return Thermyx.Ink.ice
         case .feet: return Thermyx.Ink.textSecondary
+        case .device: return Thermyx.Ink.signal
         }
     }
 
@@ -63,6 +70,7 @@ enum LearningCategory: String, Codable, CaseIterable, Identifiable {
         case .heat: return Thermyx.Tint.emberFill
         case .cold: return Color(hex: 0x2C9CF0, opacity: 0.14)
         case .feet: return Thermyx.Tint.neutralFill
+        case .device: return Thermyx.Tint.signalFill
         }
     }
 
@@ -71,6 +79,7 @@ enum LearningCategory: String, Codable, CaseIterable, Identifiable {
         case .heat: return "thermometer.sun.fill"
         case .cold: return "snowflake"
         case .feet: return "shoeprints.fill"
+        case .device: return "cpu"
         }
     }
 }

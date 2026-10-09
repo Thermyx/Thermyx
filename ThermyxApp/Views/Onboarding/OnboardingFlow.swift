@@ -388,10 +388,8 @@ struct OnboardingProfile: View {
                         focusRow(focus)
                     }
 
-                    SectionLabel("Optional: anything that affects your feet")
-                    condition("Reduced feeling in my feet", \.reducedFeeling)
-                    condition("Poor circulation", \.poorCirculation)
-                    condition("Diabetes", \.diabetes)
+                    SectionLabel("Health conditions (optional)")
+                    HealthConditionsMenu(settings: settings)
                 }
                 .riseIn(delay: 0.1)
             }
@@ -492,13 +490,133 @@ struct OnboardingProfile: View {
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
     }
 
-    private func condition(_ label: String, _ key: WritableKeyPath<UserProfile, Bool?>) -> some View {
-        Toggle(isOn: Binding(
-            get: { settings.profile[keyPath: key] == true },
-            set: { settings.profile[keyPath: key] = $0 ? true : nil }
-        )) {
-            Text(label).font(ThermyxFont.body).foregroundStyle(Thermyx.Ink.textPrimary)
+}
+
+/// Pick any number of health conditions from a dropdown. Kept on this phone.
+struct HealthConditionsMenu: View {
+    @ObservedObject var settings: ThermyxSettingsStore
+
+    private var selected: Set<HealthCondition> { settings.profile.conditionSet }
+
+    var body: some View {
+        Menu {
+            Button {
+                settings.profile.conditionSet = []
+            } label: {
+                if selected.isEmpty { Label("None", systemImage: "checkmark") } else { Text("None") }
+            }
+            ForEach(HealthCondition.allCases) { condition in
+                Button {
+                    var set = selected
+                    if set.contains(condition) { set.remove(condition) } else { set.insert(condition) }
+                    settings.profile.conditionSet = set
+                } label: {
+                    if selected.contains(condition) { Label(condition.label, systemImage: "checkmark") } else { Text(condition.label) }
+                }
+            }
+        } label: {
+            HStack {
+                Text(selected.isEmpty ? "None" : HealthCondition.allCases.filter(selected.contains).map(\.label).joined(separator: ", "))
+                    .font(ThermyxFont.body)
+                    .foregroundStyle(selected.isEmpty ? Thermyx.Ink.textFaint : Thermyx.Ink.textPrimary)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down").foregroundStyle(Thermyx.Ink.textFaint)
+            }
+            .padding(.horizontal, Thermyx.Space.xl)
+            .padding(.vertical, Thermyx.Space.s)
+            .frame(minHeight: Thermyx.minimumTapTarget)
+            .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
+            .contentShape(.rect)
         }
-        .tint(Thermyx.Ink.ice)
+        .menuActionDismissBehavior(.disabled)
+        .accessibilityLabel("Health conditions")
+        .accessibilityValue(selected.isEmpty ? "None" : "\(selected.count) selected")
+    }
+}
+
+/// Profile tab: who you are and what Insights focuses on, editable any time.
+struct ProfileSettingsSection: View {
+    @ObservedObject var roles: ThermyxRoleStore
+    @ObservedObject var settings: ThermyxSettingsStore
+    @State private var editing = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            SectionLabel("Your profile")
+            ThermyxCard {
+                VStack(alignment: .leading, spacing: Thermyx.Space.m) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(roles.profileName.isEmpty ? "No name yet" : roles.profileName)
+                                .font(ThermyxFont.cardTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                            Text(details)
+                                .font(ThermyxFont.caption)
+                                .foregroundStyle(Thermyx.Ink.textSupporting)
+                        }
+                        Spacer()
+                        Button("Edit") { editing = true }
+                            .font(ThermyxFont.rowTitle)
+                            .foregroundStyle(Thermyx.Ink.ice)
+                            .frame(minWidth: Thermyx.minimumTapTarget, minHeight: Thermyx.minimumTapTarget)
+                    }
+
+                    SectionLabel("Insights focus")
+                    Picker("Insights focus", selection: Binding(
+                        get: { settings.profile.focus ?? .health },
+                        set: { settings.profile.focus = $0 }
+                    )) {
+                        ForEach(UserProfile.Focus.allCases) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    Text((settings.profile.focus ?? .health) == .health
+                         ? "Health: safety, comfort and circulation come first."
+                         : "Performance: training, recovery and gait come first.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+
+                    SectionLabel("Health conditions")
+                    HealthConditionsMenu(settings: settings)
+
+                    Text("Your profile stays on this phone.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
+            }
+        }
+        .sheet(isPresented: $editing) {
+            NavigationStack {
+                OnboardingProfile(name: $roles.profileName, settings: settings)
+                    .padding(.horizontal, Thermyx.Space.screen)
+                    .background(Thermyx.Ink.midnight.ignoresSafeArea())
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } }
+                    }
+            }
+            .presentationDetents([.large])
+            .presentationBackground(Thermyx.Ink.midnight)
+        }
+    }
+
+    private var details: String {
+        let p = settings.profile
+        var parts: [String] = []
+        if let age = p.age { parts.append("\(age) yrs") }
+        if let cm = p.heightCm {
+            if settings.temperatureUnit == .fahrenheit {
+                let inches = Int((cm / 2.54).rounded())
+                parts.append("\(inches / 12)′\(inches % 12)″")
+            } else {
+                parts.append("\(Int(cm.rounded())) cm")
+            }
+        }
+        if let kg = p.weightKg {
+            parts.append(settings.temperatureUnit == .fahrenheit ? "\(Int((kg / 0.453_592).rounded())) lb" : "\(Int(kg.rounded())) kg")
+        }
+        if let sex = p.sex { parts.append(sex.label) }
+        if let size = settings.soleSize { parts.append(size.label) }
+        return parts.isEmpty ? "Add your details" : parts.joined(separator: " · ")
     }
 }

@@ -112,7 +112,9 @@ struct HomeView: View {
         guard !feet.isEmpty else { return "Offline" }
         let which = feet.count == 2 ? "Both insoles" : "\(feet[0].label) only"
         guard let battery = reading.batteryPercent else { return which }
-        return "\(which) · \(battery)%"
+        guard let hours = viewModel.batteryHoursLeft else { return "\(which) · \(battery)%" }
+        let left = hours >= 1 ? "~\(Int(hours.rounded()))h left" : "~\(max(1, Int((hours * 60).rounded())))m left"
+        return "\(which) · \(battery)% · \(left)"
     }
 
     private var profileLabel: String {
