@@ -133,6 +133,9 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     private var lastHeard: [UUID: Date] = [:]
     /// When each row was last redrawn, to hold the list steady.
     private var lastShown: [UUID: Date] = [:]
+    /// The name each device advertises now. iOS caches `peripheral.name`
+    /// from older firmware, so this one is preferred.
+    private var advertisedNames: [UUID: String] = [:]
     /// Devices not heard for this long leave the list.
     nonisolated static let discoveredTimeout: TimeInterval = 12
 
@@ -406,7 +409,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             simulator.connectBoard()
             return
         }
-        guard let target = peripherals[device.id] else { return }
+        guard let target = peripherals[device.id] else {
+            errorMessage = "\(device.name) is no longer in range. Scan again."
+            return
+        }
         central.stopScan()
         // One board at a time: let go of the previous one first.
         if let current = boardPeripheral, current.identifier != device.id {
@@ -530,7 +536,14 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     func connect(to device: DiscoveredDevice, as foot: Foot? = nil) {
         if case .scanning = boardState { boardState = .notConnected }
         if let simulator { simulator.connect(device, as: foot); return }
-        guard let target = peripherals[device.id] else { return }
+        guard let target = peripherals[device.id] else {
+            errorMessage = "\(device.name) is no longer in range. Scan again."
+            return
+        }
+        // The tap overrides any earlier disconnect of this device, and a
+        // running scan only competes with the connection for the radio.
+        userDisconnects.remove(device.id)
+        central.stopScan()
         if isBoard(device.id) {
             // Tapped as an insole: stop treating it as the sensor board.
             boardPeripheral = nil
@@ -622,8 +635,12 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 
         // The packet's own foot declaration wins; otherwise fall back to what
         // the user assigned at pairing.
-        guard let foot = telemetry.declaredFoot ?? pendingFoot[peripheralID] ?? footFor(peripheralID) else {
-            errorMessage = "An insole connected without saying which foot it is on."
+        // Firmware that doesn't declare a foot gets a free slot instead of
+        // having every packet dropped; the name says which one it took.
+        guard let foot = telemetry.declaredFoot ?? pendingFoot[peripheralID] ?? footFor(peripheralID)
+            ?? Foot.allCases.first(where: { links[$0] == nil })
+        else {
+            errorMessage = "Both insole slots are in use, so this insole was ignored."
             return
         }
         adopt(peripheralID, as: foot)
@@ -648,7 +665,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             commandCharacteristics[foot] = command
         }
         connected.insert(foot)
-        names[foot] = peripheral.name ?? "Thermyx \(foot.label)"
+        names[foot] = advertisedNames[peripheralID] ?? peripheral.name ?? "Thermyx \(foot.label)"
         pendingFoot[peripheralID] = nil
         userDisconnects.remove(peripheralID)
         var known = knownInsoles
@@ -738,6 +755,7 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
             // 127 means iOS couldn't measure it; keep the last real value.
             guard strength != 127 else { return }
             self.peripherals[identifier] = peripheral
+            if isNamed { self.advertisedNames[identifier] = name }
             let kind: DiscoveredDevice.Kind
             if services.contains(Self.serviceUUID) {
                 kind = .insole
@@ -793,6 +811,8 @@ extension ThermyxBLEService: CBCentralManagerDelegate {
                 return
             }
             self.errorMessage = nil
+            // Connected now, so any earlier disconnect request is over.
+            self.userDisconnects.remove(peripheral.identifier)
             peripheral.delegate = self
             // Ask for both services and decide what the device is from what
             // it has. The same board keeps its Bluetooth identity across
@@ -925,7 +945,7 @@ extension ThermyxBLEService: CBPeripheralDelegate {
                     self.rejectBoard(peripheral)
                 } else {
                     self.insoleStep = failure.map { "\(name) connected, but reading its services failed: \($0)" }
-                        ?? "\(name) connected, but it has no Thermyx service. Check the firmware."
+                        ?? "\(name) connected, but no Thermyx service was found. If it was just reflashed, iOS may remember its old services: forget it in Settings → Bluetooth and turn Bluetooth off and on. Otherwise check the firmware."
                 }
             }
         }

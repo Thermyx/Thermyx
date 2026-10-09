@@ -27,7 +27,9 @@ struct HomeView: View {
     var body: some View {
         VStack(spacing: 0) {
             header
-            if heroTemperatureC != nil {
+            // A connected insole keeps the live layout even without a foot
+            // temperature, so a missing sensor never reads as "not connected".
+            if heroTemperatureC != nil || viewModel.anyConnected {
                 live
             } else {
                 // No insole live: the test board's main sensor, if any.
@@ -169,6 +171,18 @@ struct HomeView: View {
 
                 Spacer(minLength: 0)
             }
+            .padding(.horizontal, Thermyx.Space.screen)
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Foot sensor not reporting")
+                    .font(ThermyxFont.featureHeadline)
+                    .foregroundStyle(Thermyx.Ink.amber)
+                Text("The insole is connected but sends no foot temperature. Check the temperature sensor's wiring.")
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.textSupporting)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Thermyx.Space.screen)
         }
     }

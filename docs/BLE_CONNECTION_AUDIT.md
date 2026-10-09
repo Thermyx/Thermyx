@@ -63,7 +63,7 @@ identifier (`becomeInsole`); a sensor service makes it the board
 (`becomeBoard`). Tapping a device as an insole also drops a stale board
 claim on it.
 
-## 3. iOS's cached copy of the old services. Check
+## 3. iOS's cached copy of the old services. Check (message added)
 
 **Severity: high if the ESP32 was flashed with different firmware.**
 
@@ -115,7 +115,7 @@ advertising in `onConnect` and counts clients; Heat drops to Auto only
 when no one is connected. The app's Scan also lists Thermyx devices iOS
 already holds ("On iPhone") via `retrieveConnectedPeripherals`.
 
-## 7. `userDisconnects` can keep an ID and suppress reconnects. Open
+## 7. `userDisconnects` can keep an ID and suppress reconnects. Fixed
 
 **Severity: medium.**
 
@@ -130,7 +130,7 @@ does **not** reconnect.
 Suggested fix: clear the ID in `connect(to:)` and `connectBoard` (the
 user's tap overrides an old disconnect), and on `didConnect`.
 
-## 8. Insole connected but no foot temperature: Home looks offline. Open
+## 8. Insole connected but no foot temperature: Home looks offline. Fixed
 
 **Severity: medium.**
 
@@ -155,7 +155,7 @@ board, and tapping it ran `connectBoard`, which then rejected it. Routing
 by discovered services (#2) makes this harmless; the list label can still
 be briefly wrong.
 
-## 10. Scanning keeps running while connecting. Open
+## 10. Scanning keeps running while connecting. Fixed
 
 **Severity: low.**
 
@@ -164,7 +164,7 @@ connections, but a continuous scan competes for radio time while
 connecting and keeps the list redrawing. Suggested fix:
 `central.stopScan()` in `connect(to:)`, as `connectBoard` already does.
 
-## 11. Silent no-op when a tapped device isn't known. Open
+## 11. Silent no-op when a tapped device isn't known. Fixed
 
 **Severity: low.**
 
@@ -173,7 +173,7 @@ connecting and keeps the list redrawing. Suggested fix:
 listed, so this shouldn't happen, but if it does the tap does nothing at
 all. Suggested fix: set `insoleStep` / `errorMessage` ("Scan again").
 
-## 12. Packets without a declared foot are dropped. Check
+## 12. Packets without a declared foot are dropped. Fixed
 
 **Severity: low with current firmware.**
 
@@ -182,7 +182,7 @@ If flags bits 0–1 are 0 and the app has no pending foot (name without
 which foot" and never adopts. The ESP32 firmware sets `THERMYX_FOOT 1`,
 so this only bites with other firmware.
 
-## 13. iOS may show an old name. Check
+## 13. iOS may show an old name. Fixed
 
 **Severity: cosmetic.**
 
@@ -192,6 +192,24 @@ instead of "Thermyx Left"). The list now prefers the advertised name, but
 or toggling Bluetooth refreshes it.
 
 ---
+
+## Fixes for 3, 7, 8, 10–13 (after `2a57ac3`)
+
+- 3: the "no Thermyx service" step now tells you to forget the device and
+  turn Bluetooth off and on if it was just reflashed.
+- 7: a tap and a completed connection both clear an old disconnect
+  request, so later drops reconnect again.
+- 8: Home keeps the live layout while an insole is connected and says
+  "Foot sensor not reporting" instead of showing the empty state.
+- 10: `connect(to:)` stops the scan before connecting.
+- 11: a tapped device that's gone says "no longer in range. Scan again."
+- 12: a packet with no declared foot takes a free slot instead of being
+  dropped.
+- 13: the connected insole is named by its current advertised name.
+
+Also fixed while here: history is saved as soon as the app goes to the
+background (it was only saved on a 5-second debounce, so the last few
+seconds could be lost on suspend).
 
 ## Test checklist (in order)
 
