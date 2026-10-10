@@ -268,31 +268,17 @@ struct HomeView: View {
 
     /// With both insoles on, the third tile becomes left-right balance —
     /// the signal a single insole could never give.
+    /// Only the left–right gap, with both insoles on. Steadiness lives on
+    /// Insights.
+    @ViewBuilder
     private var metricRow: some View {
-        HStack(spacing: Thermyx.Space.xs) {
+        if viewModel.bothConnected {
             MetricTile(
-                label: "Ambient",
-                value: reading.ambientTemperatureC.map { TemperatureFormat.degrees($0, in: unit) },
-                accessibilityValue: reading.ambientTemperatureC.map { TemperatureFormat.full($0, in: unit) }
+                label: "L–R gap",
+                value: asymmetryText,
+                tint: asymmetryTint,
+                accessibilityValue: asymmetryAccessibility
             )
-            MetricTile(
-                label: "Steadiness",
-                value: reading.gaitStability.map { "\(Int(($0 * 100).rounded()))%" },
-                tint: Thermyx.Ink.ice
-            )
-            if viewModel.bothConnected {
-                MetricTile(
-                    label: "L–R gap",
-                    value: asymmetryText,
-                    tint: asymmetryTint,
-                    accessibilityValue: asymmetryAccessibility
-                )
-            } else {
-                MetricTile(
-                    label: "Forefoot load",
-                    value: reading.pressureBalance.map { "\(Int(($0 * 100).rounded()))%" }
-                )
-            }
         }
     }
 

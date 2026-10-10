@@ -174,6 +174,25 @@ enum PersonalLayer {
             if counts { raise("Foot temperature is well above your usual for this activity.") }
         }
 
+        // Calibration model: steadiness against this wearer's usual walk,
+        // checked only while they're walking.
+        if let model, let gait, let usual = model.walkingSteadiness, let margin = model.steadinessMargin {
+            let walking = (activity?[.walking] ?? 0) >= 0.5
+                || (activity == nil && (reading.present.compactMap(\.cadenceStepsPerMinute).max() ?? 0) >= 30)
+            if walking {
+                let under = usual.mean - gait
+                let counts = under >= margin
+                signals.append(.init(
+                    kind: .personalBaseline,
+                    title: "Steadiness compared with your usual walk",
+                    value: "\(Int((gait * 100).rounded()))%",
+                    rule: "Caution at \(Int((margin * 100).rounded())) points below your usual \(Int((usual.mean * 100).rounded()))%",
+                    contributes: counts
+                ))
+                if counts { raise("Steadiness is well below your usual walk.") }
+            }
+        }
+
         if let d = trend.delta5 ?? trend.delta10 {
             let fast = trend.isRisingFast
             let recovering = trend.isRecovering
@@ -552,6 +571,9 @@ struct PersonalThermalModel: Codable, Equatable {
     var indoorDone: Bool
     var outdoorDone: Bool
     var trainedAt: Date
+    /// Usual steadiness (gait stability, 0–1) while walking, from the
+    /// walking minutes. Nil when the insole didn't report steadiness.
+    var walkingSteadiness: Stats? = nil
     /// True when trained from the TEMPORARY fake insole's scripted data.
     /// Such a model never seeds the baseline, and Home asks for a real
     /// calibration once a real insole connects.
@@ -602,6 +624,14 @@ struct PersonalThermalModel: Codable, Equatable {
 
     /// Margin above the expected temperature that raises Caution.
     func margin(_ expected: Stats) -> Double { max(Self.minimumMarginC, Self.marginSDs * expected.sd) }
+
+    /// How far below the usual walking steadiness counts: three spreads, and
+    /// never less than 8 points.
+    static let minimumSteadinessMargin = 0.08
+    static let minimumSteadinessSD = 0.02
+    var steadinessMargin: Double? {
+        walkingSteadiness.map { max(Self.minimumSteadinessMargin, Self.marginSDs * $0.sd) }
+    }
 }
 
 /// Builds the model from a finished calibration session.
@@ -640,7 +670,18 @@ enum CalibrationTrainer {
         // Comfort target: resting temperature (sitting, else standing),
         // nudged by how comfortable the wearer said it felt.
         let resting = foot[.sitting]?.mean ?? foot[.standing]?.mean ?? foot.values.first!.mean
-        return PersonalThermalModel(
+
+        // Steadiness while walking, indoors and out: how steady this
+        // wearer's normal walk is.
+        let gait = segments.filter { $0.activity == .walking }.flatMap(\.samples).compactMap(\.gait)
+        var steadiness: PersonalThermalModel.Stats?
+        if gait.count >= 10 {
+            let mean = gait.reduce(0, +) / Double(gait.count)
+            let sd = (gait.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(gait.count)).squareRoot()
+            steadiness = .init(mean: mean, sd: max(sd, PersonalThermalModel.minimumSteadinessSD))
+        }
+
+        var model = PersonalThermalModel(
             classifier: ActivityClassifier(training: training),
             footByActivity: foot,
             comfortTargetC: PersonalThermalModel.comfortTarget(restingC: resting, comfort: comfort),
@@ -649,5 +690,7 @@ enum CalibrationTrainer {
             outdoorDone: segments.contains { $0.outdoor },
             trainedAt: now
         )
+        model.walkingSteadiness = steadiness
+        return model
     }
 }

@@ -538,4 +538,15 @@ final class RiskEngineTests: XCTestCase {
         XCTAssertEqual(store.contacts.count, 3)
         XCTAssertFalse(store.canAddContact)
     }
+
+    func testCalibrationLearnsWalkingSteadiness() throws {
+        let segments = CalibrationPlan.steps.prefix(CalibrationPlan.indoorCount).map {
+            CalibrationTrainer.Segment(activity: $0.activity, outdoor: $0.outdoor,
+                                       samples: FakeInsoleScript.samples(activity: $0.activity, outdoor: $0.outdoor, seconds: 60))
+        }
+        let model = try XCTUnwrap(CalibrationTrainer.train(segments: Array(segments), comfort: 0))
+        let steady = try XCTUnwrap(model.walkingSteadiness)
+        XCTAssertEqual(steady.mean, 0.91, accuracy: 0.01)
+        XCTAssertEqual(try XCTUnwrap(model.steadinessMargin), 0.08, accuracy: 0.001, "Never tighter than 8 points")
+    }
 }

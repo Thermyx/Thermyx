@@ -45,6 +45,7 @@ struct InsightsHubView: View {
 
                 // Today and this week at the top, each a way into its page.
                 InsightsSummaryCards(settings: settings)
+                SteadinessCard(baseline: viewModel.baseline)
 
                 // Test-board sensors, beside (never inside) the body charts.
                 BoardSensorCards(board: viewModel.board, history: viewModel.history, ble: viewModel.ble)
@@ -283,7 +284,7 @@ struct InsightsHubView: View {
                 ThermyxCard {
                     VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
                         HStack(alignment: .firstTextBaseline) {
-                            SectionLabel("Gait stability")
+                            SectionLabel("Steadiness over time")
                             Spacer(minLength: Thermyx.Space.xs)
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 12, weight: .bold))
@@ -778,5 +779,40 @@ struct ActivitySplitBar: View {
             }
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Insights: live steadiness against the wearer's usual walk from
+/// calibration.
+struct SteadinessCard: View {
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @ObservedObject var baseline: PersonalBaselineStore
+
+    var body: some View {
+        let now = viewModel.reading.gaitStability
+        let usual = baseline.model?.walkingSteadiness?.mean ?? baseline.baseline.gaitMean
+        ThermyxCard {
+            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                SectionLabel("Steadiness")
+                HStack(spacing: Thermyx.Space.s) {
+                    MetricTile(label: "Now", value: now.map { "\(Int(($0 * 100).rounded()))%" }, tint: Thermyx.Ink.ice)
+                    MetricTile(label: "Your usual", value: usual.map { "\(Int(($0 * 100).rounded()))%" })
+                }
+                Text(caption(now: now, usual: usual))
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func caption(now: Double?, usual: Double?) -> String {
+        if now == nil {
+            return "How even and regular your steps are. It shows once the insole's motion and pressure sensors report."
+        }
+        guard usual != nil else {
+            return "How even and regular your steps are. Calibrate to learn your usual walk."
+        }
+        return "How even and regular your steps are, against your usual walk from calibration. Well below usual while walking raises Caution."
     }
 }

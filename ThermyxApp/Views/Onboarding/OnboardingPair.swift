@@ -306,7 +306,7 @@ enum CalibrationPlan {
               instruction: "Stand up and stay where you are, as you normally would.",
               question: .yesNo("Is this how you usually stand?")),
         .init(activity: .walking, outdoor: false, title: "Walk around",
-              instruction: "Walk around the room at your normal pace.",
+              instruction: "Walk around the room at your normal pace. Thermyx learns how steady your usual walk is.",
               question: .yesNo("Is the insole getting in the way of your walking?")),
         .init(activity: .sitting, outdoor: true, title: "Rest outside",
               instruction: "Go outside and sit or rest without moving much.",
@@ -898,6 +898,9 @@ struct CalibrationNorms: View {
                     row("Usual foot temp · \(activity.label.lowercased())",
                         "\(TemperatureFormat.degrees(stats.mean, in: unit)) ± \(spread(stats.sd))")
                 }
+            }
+            if let steady = model.walkingSteadiness {
+                row("Usual steadiness · walking", "\(Int((steady.mean * 100).rounded()))%")
             }
             if let accuracy = model.classifierAccuracy {
                 row("Activity model accuracy", "\(Int((accuracy * 100).rounded()))%")
