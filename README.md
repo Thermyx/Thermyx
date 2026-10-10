@@ -4,6 +4,8 @@ iPhone app for the Thermyx smart insole: a BLE wearable that senses foot
 temperature, pressure, and movement, and actively heats or cools within hard
 safety limits.
 
+Website: thermyx.web.app
+
 ## Thermyx is a pair
 
 The app holds an independent BLE link to each insole and shows whatever it has.
