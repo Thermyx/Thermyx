@@ -89,6 +89,25 @@ final class ThermyxAlertCoordinator: ObservableObject {
         notificationsAuthorized = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
+    /// Re-reads the permission, e.g. after the wearer comes back from
+    /// Settings.
+    func refreshPermission() async {
+        let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        notificationsAuthorized = status == .authorized || status == .provisional || status == .ephemeral
+    }
+
+    /// A harmless notification so the wearer can check alerts reach them.
+    func sendTestNotification() {
+        let content = UNMutableNotificationContent()
+        content.title = "Thermyx test"
+        content.body = "Notifications are working. Safety alerts, cold and battery reminders, and your session summary will look like this."
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "thermyx.test", content: content,
+                                  trigger: UNTimeIntervalNotificationTrigger(timeInterval: 3, repeats: false))
+        )
+    }
+
     /// Called on every reading. ThermyxAlertPolicy decides; this carries it out.
     func evaluate(_ assessment: ThermyxRiskAssessment, reading: BilateralReading, settings: ThermyxSettingsStore) {
         let level = assessment.level

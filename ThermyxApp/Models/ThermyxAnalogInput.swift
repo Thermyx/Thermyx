@@ -528,13 +528,13 @@ final class SensorBoardStore: ObservableObject {
     private static let scaleKey = "thermyx.fsrForceScale"
 
     init(packets: AnyPublisher<SensorPacket, Never>, history: ThermyxHistoryStore?) {
+        // The sensor type is always detected from what the board sends, and
+        // the hand-tuning controls are gone from Advanced, so anything an
+        // older build saved is cleared rather than silently applied.
         let defaults = UserDefaults.standard
-        typeOverride = defaults.string(forKey: Self.overrideKey).flatMap(SensorTypeOverride.init(rawValue:)) ?? .auto
-        let scale = defaults.double(forKey: Self.scaleKey)
-        calibration = SensorCalibration(
-            ntcOffsetC: defaults.double(forKey: Self.offsetKey),
-            fsrScale: scale == 0 ? 1 : min(max(scale, FSR402.scaleRange.lowerBound), FSR402.scaleRange.upperBound)
-        )
+        for key in [Self.overrideKey, Self.offsetKey, Self.scaleKey] { defaults.removeObject(forKey: key) }
+        typeOverride = .auto
+        calibration = SensorCalibration(ntcOffsetC: 0, fsrScale: 1)
         self.history = history
         packets
             .receive(on: RunLoop.main)

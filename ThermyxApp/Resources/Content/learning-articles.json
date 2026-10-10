@@ -56,7 +56,8 @@
           "text": "If cooling feels weak, check that nothing is covering the fan vent and that the battery isn't low. Use Auto for long wear: it saves battery by only running the module when it's needed."
         }
       ],
-      "sources": "Sources: the Peltier effect is standard thermoelectric physics. How the fan and Auto behave comes from the Thermyx prototype."
+      "sources": "Sources: the Peltier effect is standard thermoelectric physics. How the fan and Auto behave comes from the Thermyx prototype.",
+      "visual": "peltier"
     },
     {
       "id": "modes",
@@ -85,7 +86,8 @@
           "text": "Most of the time, Auto is the one to use. Pick Cool or Heat for a quick change, and Off to save battery when you don't need either."
         }
       ],
-      "sources": "Sources: the limits and ranges are the ones set in the Thermyx app and firmware."
+      "sources": "Sources: the limits and ranges are the ones set in the Thermyx app and firmware.",
+      "visual": "modes"
     },
     {
       "id": "comfort-band",
@@ -110,7 +112,8 @@
         }
       ],
       "sources": "Sources: the band edges are set in the app (ThermyxTemperatureScale). No outside claim is made about what the band means for health.",
-      "icon": "gauge.with.dots.needle.33percent"
+      "icon": "gauge.with.dots.needle.33percent",
+      "visual": "comfortBand"
     },
     {
       "id": "cold-feet",
@@ -239,15 +242,12 @@
           "text": "Activity splits your wear time into sitting, standing and walking, and estimates your steps from cadence. These are estimates from pressure and movement, not a medical measurement."
         },
         {
-          "kind": "body",
-          "text": "If your relay has AI summaries turned on, a short summary of your day with two or three suggestions arrives as a notification after you finish wearing the insoles. It is written from your daily totals only and is not medical advice."
-        },
-        {
           "kind": "action",
           "text": "Check your summary at the end of the day for a week. Look for patterns: which days ran hot, when you relied on cooling, and whether your walking time changed."
         }
       ],
-      "sources": "Sources: how Thermyx records and summarises data."
+      "sources": "Sources: how Thermyx records and summarises data.",
+      "visual": "comfortBand"
     }
   ]
 }

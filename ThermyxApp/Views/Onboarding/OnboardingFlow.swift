@@ -288,7 +288,7 @@ struct OnboardingCalibrate: View {
                 .font(ThermyxFont.onboardingHeadline)
                 .foregroundStyle(Thermyx.Ink.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Wear the insole for about 6 minutes: sit, stand and walk indoors, then the same outside (that half can wait). Thermyx learns how warm your feet usually run for each, sets Auto to what feels comfortable, and learns to tell what you're doing. It all stays on this phone.")
+            Text("Wear the insole for about 3 minutes, 30 seconds each: sit, stand and walk indoors, then the same outside (that half can wait). Thermyx learns how warm your feet usually run for each, sets Auto to what feels comfortable, and learns to tell what you're doing. It all stays on this phone.")
                 .font(ThermyxFont.body)
                 .foregroundStyle(Thermyx.Ink.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)

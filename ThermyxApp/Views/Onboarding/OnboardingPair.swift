@@ -267,7 +267,7 @@ struct RadarSweep: View {
 
 // MARK: - Calibration
 //
-// About 6 minutes: three indoor minutes (sitting, standing, walking), then
+// About 3 minutes: three indoor half-minutes (sitting, standing, walking), then
 // three outdoor ones that can be done later. Each minute records one sample
 // a second and asks one question. The on-device model in
 // PersonalBaseline.swift is trained from the result.
@@ -294,9 +294,9 @@ enum CalibrationQuestion: Equatable {
 }
 
 enum CalibrationPlan {
-    static let secondsPerStep = 60
+    static let secondsPerStep = 30
     /// The question appears this many seconds into a step.
-    static let questionAt = 20
+    static let questionAt = 10
 
     static let steps: [CalibrationStep] = [
         .init(activity: .sitting, outdoor: false, title: "Sit down",
@@ -418,7 +418,7 @@ final class CalibrationSession: ObservableObject {
     private func finishStep(keep: Bool) {
         timer?.invalidate()
         timer = nil
-        if keep, current.count >= 20 {
+        if keep, current.count >= 15 {
             segments.append(.init(activity: step.activity, outdoor: step.outdoor, samples: current))
         }
         current = []
@@ -497,7 +497,7 @@ final class CalibrationSession: ObservableObject {
 }
 
 /// The calibration screens, shown full screen from onboarding, Home, or
-/// Safety → Advanced.
+/// Profile → Advanced.
 struct CalibrationView: View {
     @EnvironmentObject private var viewModel: ThermyxViewModel
     @ObservedObject var settings: ThermyxSettingsStore
@@ -539,7 +539,7 @@ struct CalibrationView: View {
         let connected = viewModel.anyConnected
         let receiving = viewModel.reading.hasAny
         VStack(alignment: .leading, spacing: Thermyx.Space.l) {
-            Text("Thermyx learns your normal: how warm your feet run when you sit, stand and walk, and what feels comfortable. It takes about 6 minutes. The outdoor half can be done later.")
+            Text("Thermyx learns your normal: how warm your feet run when you sit, stand and walk, and what feels comfortable. It takes about 3 minutes. The outdoor half can be done later.")
                 .font(ThermyxFont.body)
                 .foregroundStyle(Thermyx.Ink.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -791,9 +791,9 @@ struct CalibrationPromptCard: View {
                         Text(finishing ? "Finish calibration" : (retrain ? "Calibrate with your insole" : "Calibrate Thermyx"))
                             .font(ThermyxFont.rowTitle)
                             .foregroundStyle(Thermyx.Ink.textPrimary)
-                        Text(finishing ? "3 minutes outside to complete your profile."
+                        Text(finishing ? "1½ minutes outside to complete your profile."
                              : retrain ? "Your current norms came from fake insole test data."
-                             : "About 6 minutes. Learns your normal and sets Auto for you.")
+                             : "About 3 minutes. Learns your normal and sets Auto for you.")
                             .font(ThermyxFont.captionSmall)
                             .foregroundStyle(Thermyx.Ink.textSupporting)
                     }
@@ -828,7 +828,7 @@ struct ActivityGuessLabel: View {
     }
 }
 
-/// Safety → Advanced: calibration status, redo, and clear.
+/// Profile → Advanced: calibration status, redo, and clear.
 struct CalibrationSettingsSection: View {
     @EnvironmentObject private var viewModel: ThermyxViewModel
     @ObservedObject var baseline: PersonalBaselineStore

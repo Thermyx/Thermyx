@@ -549,4 +549,32 @@ final class RiskEngineTests: XCTestCase {
         XCTAssertEqual(steady.mean, 0.91, accuracy: 0.01)
         XCTAssertEqual(try XCTUnwrap(model.steadinessMargin), 0.08, accuracy: 0.001, "Never tighter than 8 points")
     }
+
+    func testCalibrationStepsAreThirtySeconds() {
+        XCTAssertEqual(CalibrationPlan.steps.count, 6)
+        XCTAssertEqual(CalibrationPlan.secondsPerStep, 30)
+        XCTAssertLessThan(CalibrationPlan.questionAt, CalibrationPlan.secondsPerStep)
+    }
+
+    func testLearnSuggestionsFollowTheProfileAndToday() {
+        var profile = UserProfile()
+        let none = LearnSuggestion.make(today: nil, calibrated: true, profile: profile, current: .empty, usualSteadiness: nil)
+        XCTAssertEqual(none.map(\.id), ["start"], "Something useful even with no data")
+
+        profile.conditionSet = [.neuropathy, .poorCirculation]
+        let ids = LearnSuggestion.make(today: nil, calibrated: false, profile: profile, current: .empty, usualSteadiness: nil).map(\.id)
+        XCTAssertEqual(ids, ["calibrate", "cold", "check-feet"])
+        XCTAssertTrue(LearnSuggestion.make(today: nil, calibrated: false, profile: profile, current: .empty, usualSteadiness: nil)
+            .allSatisfy { $0.articleID.map { ThermyxLearningLibrary.article(id: $0) != nil } ?? true }, "Links go to real articles")
+    }
+
+    func testCircleTextIncludesLevelReasonAndLocation() {
+        let draft = TextDraft.alert(recipients: ["+12025550148"], level: .critical, reasons: ["I pressed SOS."],
+                                    location: .init(latitude: 29.76, longitude: -95.37, accuracyM: 20))
+        XCTAssertEqual(draft.recipients, ["+12025550148"])
+        XCTAssertTrue(draft.body.contains("Critical"))
+        XCTAssertTrue(draft.body.contains("I pressed SOS."))
+        XCTAssertTrue(draft.body.contains("maps.apple.com/?ll=29.76000,-95.37000"))
+        XCTAssertFalse(TextDraft.alert(recipients: [], level: .normal, reasons: [], location: nil).body.contains("check on me"))
+    }
 }

@@ -76,7 +76,7 @@ struct ConnectDeviceView: View {
                         Text("Demo Mode is on")
                             .font(ThermyxFont.rowTitle)
                             .foregroundStyle(Thermyx.Ink.amber)
-                        Text("Only simulated devices show here, and real Thermyx boards can't connect. Turn off Demo Mode in Safety → Advanced, or run the ThermyxApp scheme in Xcode instead of Thermyx Demo.")
+                        Text("Only simulated devices show here, and real Thermyx boards can't connect. Turn off Demo Mode in Profile → Advanced, or run the ThermyxApp scheme in Xcode instead of Thermyx Demo.")
                             .font(ThermyxFont.caption)
                             .foregroundStyle(Thermyx.Ink.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)

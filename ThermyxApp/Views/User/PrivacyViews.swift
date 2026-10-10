@@ -110,7 +110,7 @@ struct DataFlowView: View {
             title: "Your location — only during a High, Critical, or SOS event",
             detail: settings.shareLocationDuringEvents
                 ? "You've allowed this. It expires after 1 hour and is cleared as soon as the event ends."
-                : "Off. You can allow it under Safety → Who can see your status."
+                : "Off. You can allow it under Profile → Who can see your status."
         ))
         items.append(Item(
             title: "Contact numbers and alert reasons",

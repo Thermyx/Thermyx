@@ -626,7 +626,7 @@ struct DailySummaryView: View {
                         .foregroundStyle(Thermyx.Ink.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("Connect to a relay in Safety → Advanced to get a short AI-written summary of each day.")
+                    Text("Connect to a relay in Profile → Advanced to get a short AI-written summary of each day.")
                         .font(ThermyxFont.caption)
                         .foregroundStyle(Thermyx.Ink.textSupporting)
                         .fixedSize(horizontal: false, vertical: true)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 @main
 struct ThermyxApp: App {
@@ -6,6 +7,12 @@ struct ThermyxApp: App {
     @StateObject private var roles = ThermyxRoleStore()
     @StateObject private var settings = ThermyxSettingsStore()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        // Without a delegate, iOS drops notifications while the app is open,
+        // so a safety alert or summary would never show on screen.
+        UNUserNotificationCenter.current().delegate = ThermyxNotificationPresenter.shared
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -36,3 +43,16 @@ private extension View {
     func previewHarness(roles: ThermyxRoleStore, settings: ThermyxSettingsStore, viewModel: ThermyxViewModel) -> Self { self }
 }
 #endif
+
+/// Shows Thermyx notifications as banners even while the app is open.
+final class ThermyxNotificationPresenter: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = ThermyxNotificationPresenter()
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .list, .sound])
+    }
+}

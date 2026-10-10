@@ -80,7 +80,7 @@ struct UserRoot: View {
             case .insights:
                 InsightsHubView(settings: settings, health: health)
             case .learn:
-                LearnTab()
+                LearnTab(settings: settings)
             case .profile:
                 SafetyView(roles: roles, settings: settings, alerts: alerts, health: health)
             }

@@ -217,7 +217,6 @@ enum ThermyxPreviewHarness {
     @MainActor
     static func start(viewModel: ThermyxViewModel) async {
         if isSimulated {
-            UNUserNotificationCenter.current().delegate = ForegroundNotifications.shared
             await viewModel.history.loadIfNeeded()
             if state == .simulator {
                 // A day of back-filled history so the charts have something to
