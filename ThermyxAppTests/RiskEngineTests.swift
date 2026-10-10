@@ -568,13 +568,27 @@ final class RiskEngineTests: XCTestCase {
             .allSatisfy { $0.articleID.map { ThermyxLearningLibrary.article(id: $0) != nil } ?? true }, "Links go to real articles")
     }
 
-    func testCircleTextIncludesLevelReasonAndLocation() {
-        let draft = TextDraft.alert(recipients: ["+12025550148"], level: .critical, reasons: ["I pressed SOS."],
-                                    location: .init(latitude: 29.76, longitude: -95.37, accuracyM: 20))
-        XCTAssertEqual(draft.recipients, ["+12025550148"])
-        XCTAssertTrue(draft.body.contains("Critical"))
-        XCTAssertTrue(draft.body.contains("I pressed SOS."))
-        XCTAssertTrue(draft.body.contains("maps.apple.com/?ll=29.76000,-95.37000"))
-        XCTAssertFalse(TextDraft.alert(recipients: [], level: .normal, reasons: [], location: nil).body.contains("check on me"))
+    func testCircleIsTextedWhenTooHotOrColdButNotEverySecond() {
+        var rule = ThermyxTemperatureTexts()
+        let t0 = Date(timeIntervalSince1970: 0)
+        func at(_ t: TimeInterval, _ c: Double) -> [ThermyxTemperatureTexts.Event] {
+            rule.update(BilateralReading(left: reading(footC: c), right: nil), now: t0.addingTimeInterval(t))
+        }
+        XCTAssertTrue(at(0, 39).isEmpty)
+        XCTAssertTrue(at(60, 39).isEmpty, "Not before 2 minutes")
+        let first = at(120, 39.2)
+        XCTAssertEqual(first.count, 1)
+        XCTAssertTrue(first[0].isHot)
+        XCTAssertEqual(first[0].minutes, 2)
+        for t in stride(from: 121.0, to: 1019, by: 1) { XCTAssertTrue(at(t, 39).isEmpty, "No repeat inside 15 minutes") }
+        XCTAssertEqual(at(1020, 39).count, 1, "One reminder after 15 minutes")
+        XCTAssertTrue(at(1030, 37).isEmpty, "Back in range resets")
+        XCTAssertTrue(at(1040, 39).isEmpty, "A new episode waits 2 minutes again")
+
+        XCTAssertTrue(at(2000, 21).isEmpty)
+        let cold = at(2300, 21)
+        XCTAssertEqual(cold.count, 1, "Cold after 5 minutes")
+        XCTAssertFalse(cold[0].isHot)
+        XCTAssertTrue(cold[0].message(unit: .celsius).contains("too cold"))
     }
 }

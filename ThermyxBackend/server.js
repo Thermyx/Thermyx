@@ -24,9 +24,23 @@
 //   AI_SUMMARY_ENABLED     "true" to allow the daily AI summary. OFF by default.
 //   ANTHROPIC_API_KEY      needed when AI_SUMMARY_ENABLED
 //   AI_MODEL               default claude-haiku-4-5
+const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { openStore } = require("./store");
+
+/// Reads KEY=VALUE lines from ThermyxBackend/.env, if it exists, without
+/// overriding anything already set. Keeps the Twilio and Anthropic keys in
+/// a file git ignores instead of the command line.
+function loadEnvFile(file = path.join(__dirname, ".env"), env = process.env) {
+  let text;
+  try { text = fs.readFileSync(file, "utf8"); } catch { return; }
+  for (const line of text.split(/\r?\n/)) {
+    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
+    if (!match || env[match[1]] !== undefined) continue;
+    env[match[1]] = match[2].replace(/^["']|["']$/g, "");
+  }
+}
 
 const LEVELS = ["Normal", "Caution", "High risk", "Critical"];
 const KINDS = ["status", "alert", "sos", "ok"];
@@ -178,6 +192,7 @@ function createRelay(options = {}) {
   const aiSummary = env.AI_SUMMARY_ENABLED === "true";
   const summarize = options.summarize || anthropicSummarize(env);
   const summaryLimit = rateLimiter(20, 60 * 60_000, now); // AI summaries per wearer per hour
+  const testTextLimit = rateLimiter(3, 60 * 60_000, now); // test texts per wearer per hour
 
   store.purgeExpired();
   const purgeTimer = setInterval(() => store.purgeExpired(), 10 * 60_000);
@@ -295,6 +310,25 @@ function createRelay(options = {}) {
     // Wearer routes.
     if (route === "POST /v1/events") return readBody(req, res, body => handleEvent(identity, body, res));
     if (route === "GET /v1/watchers") return json(res, 200, { watchers: store.listWatchers(identity.deviceID) });
+    // A test text to the trusted circle, so the wearer can check texting
+    // works before it matters. Needs texting turned on.
+    if (route === "POST /v1/texts/test") {
+      if (!smsEnabled) return json(res, 403, { error: "sms_disabled" });
+      if (!options.sendSMS && TWILIO_KEYS.some(key => !env[key])) return json(res, 503, { error: "sms_not_configured" });
+      if (!testTextLimit(identity.deviceID)) return json(res, 429, { error: "rate_limited" });
+      return readBody(req, res, async body => {
+        const recipients = [...new Set((Array.isArray(body.recipients) ? body.recipients : [])
+          .filter(r => typeof r === "string").map(normalisePhone).filter(Boolean))].slice(0, MAX_RECIPIENTS);
+        if (!recipients.length) return json(res, 400, { error: "no_recipients" });
+        const message = `Thermyx test: you're in the trusted circle for ${identity.deviceID}. You'll get a text like this if their feet get too hot or too cold, or they need help.`;
+        let delivered = 0;
+        for (const to of recipients) {
+          try { await sendWithRetry(sendSMS, to, message); delivered += 1; }
+          catch (error) { log(`Test text to …${to.slice(-4)} failed:`, error.message); }
+        }
+        return json(res, delivered ? 200 : 502, { texted: delivered, failed: recipients.length - delivered });
+      });
+    }
     // Daily AI summary: the app sends one day's aggregate numbers (no
     // readings, names, or locations); they are passed to the model and
     // neither stored nor logged. Off unless AI_SUMMARY_ENABLED.
@@ -379,9 +413,10 @@ function twilioSend(env) {
   };
 }
 
-module.exports = { createRelay, validateEvent, normalisePhone, composeMessage, cleanSummaryRequest };
+module.exports = { createRelay, validateEvent, normalisePhone, composeMessage, cleanSummaryRequest, loadEnvFile };
 
 if (require.main === module) {
+  loadEnvFile();
   const relay = createRelay();
   const port = Number(process.env.PORT || 8787);
   relay.server.listen(port, () => log(`Thermyx relay listening on ${port} (texting ${process.env.SMS_ENABLED === "true" ? "ON" : "OFF"})`));

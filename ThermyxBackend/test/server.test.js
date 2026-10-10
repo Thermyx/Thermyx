@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { createRelay, normalisePhone, composeMessage, cleanSummaryRequest } = require("../server.js");
+const { createRelay, normalisePhone, composeMessage, cleanSummaryRequest, loadEnvFile } = require("../server.js");
 const { openStore } = require("../store.js");
 
 async function start({ env = {}, sendSMS, summarize } = {}) {
@@ -325,4 +325,39 @@ test("summary requests reject bad numbers", () => {
   assert.equal(cleanSummaryRequest({ day: "2026-10-09", wornMinutes: "60" }), null);
   assert.equal(cleanSummaryRequest({ day: "2026-10-09", wornMinutes: 60, peakRisk: "Mild" }), null);
   assert.equal(cleanSummaryRequest({ day: "2026-10-09", wornMinutes: 60 }).unit, "C");
+});
+
+test("test texts need texting on, go only to the given numbers, and are limited", async () => {
+  const off = await start();
+  try {
+    const { wearer } = await pairBoth(off);
+    assert.equal((await off.call("POST", "/v1/texts/test", { token: wearer.token, body: { recipients: ["2025550148"] } })).status, 403);
+  } finally { await off.close(); }
+
+  const r = await start({ env: { SMS_ENABLED: "true" } });
+  try {
+    const { wearer, watcher } = await pairBoth(r);
+    const res = await r.call("POST", "/v1/texts/test", { token: wearer.token, body: { recipients: ["(202) 555-0148", "bad"] } });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.texted, 1);
+    assert.equal(r.sent[0].to, "+12025550148");
+    assert.match(r.sent[0].body, /trusted circle/);
+    assert.equal((await r.call("POST", "/v1/texts/test", { token: watcher.token, body: { recipients: ["2025550148"] } })).status, 403);
+    await r.call("POST", "/v1/texts/test", { token: wearer.token, body: { recipients: ["2025550148"] } });
+    await r.call("POST", "/v1/texts/test", { token: wearer.token, body: { recipients: ["2025550148"] } });
+    assert.equal((await r.call("POST", "/v1/texts/test", { token: wearer.token, body: { recipients: ["2025550148"] } })).status, 429);
+  } finally { await r.close(); }
+});
+
+test(".env values load without overriding the real environment", () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "thermyx-")), ".env");
+  fs.writeFileSync(file, "SMS_ENABLED=true\n# comment\nTWILIO_FROM_NUMBER=\"+12025550100\"\nPORT=9999\n");
+  const env = { PORT: "8787" };
+  loadEnvFile(file, env);
+  assert.equal(env.SMS_ENABLED, "true");
+  assert.equal(env.TWILIO_FROM_NUMBER, "+12025550100");
+  assert.equal(env.PORT, "8787");
 });

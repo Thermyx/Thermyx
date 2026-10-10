@@ -71,6 +71,29 @@ final class ThermyxAlertCoordinator: ObservableObject {
         }
     }
 
+    /// When the trusted circle is texted about foot temperature.
+    private var temperatureTexts = ThermyxTemperatureTexts()
+
+    private func notifyCircleTexted(_ event: ThermyxTemperatureTexts.Event, unit: TemperatureUnit) {
+        let content = UNMutableNotificationContent()
+        content.title = "Your trusted circle was texted"
+        content.body = event.message(unit: unit)
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thermyx.circle.\(event.foot.rawValue)", content: content, trigger: nil))
+    }
+
+    /// Sends a test text to the enabled contacts through the relay.
+    func sendTestText(settings: ThermyxSettingsStore) async -> String {
+        let recipients = settings.contacts.filter(\.enabled).map(\.phoneNumber)
+        guard !recipients.isEmpty else { return "Turn on at least one trusted contact first." }
+        do {
+            let texted = try await apiClient.testText(recipients: recipients, baseURL: settings.backendURL, token: settings.backendToken)
+            return "Test text sent to \(texted) contact\(texted == 1 ? "" : "s")."
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     /// Cold-foot and low-battery reminders, for the wearer only.
     private var comfort = ThermyxComfortWatch()
 
@@ -119,6 +142,21 @@ final class ThermyxAlertCoordinator: ObservableObject {
         if lastAlertLevel != policy.announced { lastAlertLevel = policy.announced }
 
         if decision.notifyWearer { notifyWearer(level) }
+
+        // Too hot or too cold for too long: text the trusted circle, on its
+        // own rule and schedule (see ThermyxTemperatureTexts). Demo Mode and
+        // the fake insole never text anyone.
+        if !isDemoMode {
+            for event in temperatureTexts.update(reading, now: .now) {
+                location.refresh()
+                send(kind: .alert, level: event.isHot ? .high : .caution, reasons: [event.message(unit: settings.temperatureUnit)],
+                     focus: event.foot, reading: reading, settings: settings, texts: true)
+                if settings.relayTextingEnabled, settings.contacts.contains(where: \.enabled) {
+                    notifyCircleTexted(event, unit: settings.temperatureUnit)
+                }
+            }
+        }
+
         if decision.alert {
             location.refresh()
             send(kind: .alert, level: level, reasons: assessment.reasons, focus: assessment.foot, reading: reading, settings: settings, texts: true)
@@ -354,5 +392,71 @@ struct ThermyxComfortWatch {
             }
         }
         return notices
+    }
+}
+
+/// When to text the trusted circle about foot temperature.
+///
+/// - Too hot: a foot at or above 38.5 °C (101.3 °F) for 2 minutes. That is
+///   well above the comfort band and close to the insole's 40 °C cutoff.
+/// - Too cold: a foot at or below 22 °C (71.6 °F) for 5 minutes.
+///
+/// One text when it starts, then at most one reminder every 15 minutes while
+/// it lasts. It resets once the foot is back in range (below 37.5 °C, or
+/// above 24 °C), so a new episode texts again. Never every second.
+struct ThermyxTemperatureTexts {
+    static let hotC = 38.5
+    static let hotHold: TimeInterval = 2 * 60
+    static let hotResetC = 37.5
+    static let coldC = 22.0
+    static let coldHold: TimeInterval = 5 * 60
+    static let coldResetC = 24.0
+    static let reminder: TimeInterval = 15 * 60
+
+    struct Event: Equatable {
+        let foot: Foot
+        let isHot: Bool
+        let celsius: Double
+        let minutes: Int
+
+        func message(unit: TemperatureUnit) -> String {
+            let temp = TemperatureFormat.degrees(celsius, in: unit)
+            return isHot
+                ? "Their \(foot.label.lowercased()) foot has been too hot (\(temp)) for \(minutes) min."
+                : "Their \(foot.label.lowercased()) foot has been too cold (\(temp)) for \(minutes) min."
+        }
+    }
+
+    private struct Episode {
+        var since: Date
+        var lastText: Date?
+    }
+
+    private var hot: [Foot: Episode] = [:]
+    private var cold: [Foot: Episode] = [:]
+
+    mutating func update(_ reading: BilateralReading, now: Date) -> [Event] {
+        var events: [Event] = []
+        for r in reading.present {
+            guard let c = r.footTemperatureC else { continue }
+            if let e = Self.step(&hot[r.foot], out: c >= Self.hotC, back: c < Self.hotResetC, hold: Self.hotHold, now: now) {
+                events.append(Event(foot: r.foot, isHot: true, celsius: c, minutes: e))
+            }
+            if let e = Self.step(&cold[r.foot], out: c <= Self.coldC, back: c > Self.coldResetC, hold: Self.coldHold, now: now) {
+                events.append(Event(foot: r.foot, isHot: false, celsius: c, minutes: e))
+            }
+        }
+        return events
+    }
+
+    /// Returns the minutes out of range when a text is due.
+    private static func step(_ episode: inout Episode?, out: Bool, back: Bool, hold: TimeInterval, now: Date) -> Int? {
+        if back { episode = nil; return nil }
+        guard out else { return nil }   // between the edges: keep the episode, no new text
+        if episode == nil { episode = Episode(since: now) }
+        guard let since = episode?.since, now.timeIntervalSince(since) >= hold else { return nil }
+        if let last = episode?.lastText, now.timeIntervalSince(last) < reminder { return nil }
+        episode?.lastText = now
+        return Int((now.timeIntervalSince(since) / 60).rounded())
     }
 }

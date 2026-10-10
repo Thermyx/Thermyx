@@ -32,6 +32,23 @@ and it is not durable production infrastructure.
 - **Logs** never contain tokens, codes, phone numbers (beyond the last four
   digits of a failed send), or locations.
 
+## Turn on automatic texting
+
+1. Make a Twilio account and get a phone number. A trial account can only
+   text numbers you have verified in Twilio, which is enough to test with the
+   team. Texting the public from a US number needs Twilio's A2P 10DLC or
+   toll-free verification first.
+2. `cp .env.example .env` and fill in `SMS_ENABLED=true`, `TWILIO_ACCOUNT_SID`,
+   `TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER`. The relay reads `.env` when
+   it starts; git ignores it.
+3. `npm start`, and keep the relay running (a computer that stays on, or a host).
+4. In the app: Profile → Advanced → connect to the relay, turn on at least one
+   trusted contact, then Profile → Trusted circle → **Send a test text**.
+
+The app texts the circle when a foot is 38.5 °C or hotter for 2 minutes,
+22 °C or colder for 5 minutes, at High risk or Critical, and on SOS, with at
+most one reminder every 15 minutes while it lasts.
+
 ## Texting is OFF by default
 
 Texts go out only when `SMS_ENABLED=true` **and** Twilio is configured. Keep
@@ -46,7 +63,7 @@ and shows a labelled preview of the message instead.
 cd ThermyxBackend
 npm run demo                # port 8787, database in ./data/demo.sqlite
 npm run admin wearer-code   # in a second terminal: prints a one-time code
-npm test                    # 20 tests, no network needed
+npm test                    # 22 tests, no network needed
 ```
 
 In the app: **Safety → Advanced → Connect to relay**, enter
@@ -104,6 +121,7 @@ Every route except `/health` and `/v1/pair` needs `Authorization: Bearer <token>
 | `DELETE /v1/device` | wearer | Delete my data: ends this phone's and every watcher's access and removes the stored status and location |
 | `POST /v1/contacts/verify` `{phone}` | wearer | Off by default. Texts the number a 6-digit code (10 min, 5 tries, 5 sends/hour) |
 | `POST /v1/contacts/confirm` `{phone, code}` | wearer | Confirms the code the contact read back. Numbers are stored only as salted hashes, and only until confirmed or expired |
+| `POST /v1/texts/test` `{recipients}` | wearer | Needs texting on. Texts the given numbers a test message (3 per hour) |
 | `POST /v1/summary` | wearer | Off by default. One day's aggregate numbers (`day`, `wornMinutes`, heating/cooling minutes, temperatures, cadence, standing, peak risk, `unit`, `focus`) → `{summary}`. Only those fields reach the model; nothing is stored or logged. 20 per hour |
 | `DELETE /v1/watch` | watcher | Stop watching (ends this watcher's own access) |
 | `GET /v1/watch` | watcher | `{status: "pending"}` or `{status: "approved", state: {level, kind, updatedAt, location?}}` |

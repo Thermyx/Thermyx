@@ -1,4 +1,3 @@
-import MessageUI
 import ContactsUI
 import SwiftUI
 import UIKit
@@ -19,7 +18,6 @@ struct SafetyView: View {
     }()
     @State private var showingAddContact = false
     @State private var verifying: ThermyxContact?
-    @State private var textDraft: TextDraft?
     @State private var showingSOSConfirmation = false
     @State private var showingCannotCall = false
     @State private var okSentAt: Date?
@@ -58,7 +56,6 @@ struct SafetyView: View {
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
         }
-        .background(MessageComposerPresenter(draft: $textDraft))
         .sheet(isPresented: $showingAddContact) {
             AddContactSheet(settings: settings)
                 .presentationDetents([.medium])
@@ -75,15 +72,12 @@ struct SafetyView: View {
             titleVisibility: .visible
         ) {
             Button("Call 911", role: .destructive) { placeEmergencyCall() }
-            if !canTextCircle, !enabledContacts.isEmpty {
-                Button("Text my circle first") { textCircle(level: .critical, reason: "I pressed SOS.") }
-            }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(!canTextCircle
                  ? (enabledContacts.isEmpty
                     ? "This dials 911. Add trusted contacts to also tell someone."
-                    : "This dials 911. Texts aren't sent automatically yet, so tap Text my circle first to send one from Messages.")
+                    : "This dials 911. Automatic texting isn't set up yet, so your trusted circle won't be texted.")
                  : "This dials 911 and texts \(enabledContacts.count) trusted contact\(enabledContacts.count == 1 ? "" : "s").")
         }
         .alert("This device can't place calls", isPresented: $showingCannotCall) {
@@ -104,7 +98,7 @@ struct SafetyView: View {
     private var sosSubtitle: String {
         if enabledContacts.isEmpty { return "Opens your phone's dialer. Add a trusted contact to also text them" }
         if !settings.isPairedWithRelay || !settings.relayTextingEnabled {
-            return "Opens your phone's dialer, and lets you text your trusted circle from Messages"
+            return "Opens your phone's dialer. Set up automatic texting below to also text your trusted circle"
         }
         return settings.shareLocationDuringEvents && alerts.location.isAuthorized
             ? "Opens your phone's dialer and texts your trusted circle your location"
@@ -177,17 +171,6 @@ struct SafetyView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Call 911")
         .accessibilityHint("Dials emergency services and notifies your trusted circle")
-    }
-
-    /// Opens Messages with every enabled contact and the alert filled in;
-    /// the wearer taps Send.
-    private func textCircle(level: ThermyxRiskLevel, reason: String?) {
-        textDraft = TextDraft.alert(
-            recipients: enabledContacts.map(\.phoneNumber),
-            level: level,
-            reasons: reason.map { [$0] } ?? viewModel.assessment.reasons,
-            location: settings.shareLocationDuringEvents ? alerts.location.recent : nil
-        )
     }
 
     private func placeEmergencyCall() {
@@ -314,11 +297,7 @@ struct SafetyView: View {
                      : "Your circle is full (\(ThermyxSettingsStore.maxContacts) people). Touch and hold a contact to remove it.")
                     .font(ThermyxFont.captionSmall)
                     .foregroundStyle(Thermyx.Ink.textFaint)
-                if !enabledContacts.isEmpty {
-                    TextingHelpCard(automatic: canTextCircle) {
-                        textCircle(level: level == .unavailable ? .normal : level, reason: nil)
-                    }
-                }
+                AutomaticTextingCard(settings: settings, alerts: alerts)
             }
         }
     }
@@ -608,7 +587,6 @@ struct CriticalAlertView: View {
     @State private var circleNotified = false
     @State private var showingCannotCall = false
     @State private var showingWhy = false
-    @State private var textDraft: TextDraft?
 
     private var assessment: ThermyxRiskAssessment { viewModel.assessment }
     private var canTextCircle: Bool {
@@ -651,20 +629,6 @@ struct CriticalAlertView: View {
                 }
                 .buttonStyle(ThermyxPrimaryButtonStyle(fill: .white, foreground: Thermyx.Ink.onEmber))
 
-                if !canTextCircle, settings.contacts.contains(where: \.enabled) {
-                    Button {
-                        textDraft = TextDraft.alert(
-                            recipients: settings.contacts.filter(\.enabled).map(\.phoneNumber),
-                            level: .critical,
-                            reasons: assessment.reasons,
-                            location: settings.shareLocationDuringEvents ? alerts.location.recent : nil
-                        )
-                    } label: {
-                        Label("Text my circle", systemImage: "message.fill")
-                    }
-                    .buttonStyle(ThermyxSecondaryButtonStyle(tint: .white, border: .white.opacity(0.7)))
-                }
-
                 Button {
                     alerts.sendImOK(level: assessment.level, reading: viewModel.reading, settings: settings)
                     onDismiss()
@@ -678,7 +642,6 @@ struct CriticalAlertView: View {
         .padding(.vertical, Thermyx.Space.xxl)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Thermyx.Ink.alarmGradient.ignoresSafeArea())
-        .background(MessageComposerPresenter(draft: $textDraft))
         .task {
             UINotificationFeedbackGenerator().notificationOccurred(.error)
             while remaining > 0 && !Task.isCancelled {
@@ -710,7 +673,7 @@ struct CriticalAlertView: View {
         if !settings.isPairedWithRelay {
             return "Tap I'm OK if you're safe. Connect to a relay under Profile → Advanced so your trusted circle can be told next time."
         }
-        return "Tap I'm OK if you're safe, or Text my circle to send a message from Messages. Approved watchers see that you're at Critical."
+        return "Tap I'm OK if you're safe. Automatic texting isn't set up, so nobody will be texted. Approved watchers see that you're at Critical."
     }
 
     private func notifyCircle(reason: String) {
@@ -776,107 +739,101 @@ struct ContactPickerPresenter: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - Texting the trusted circle
+// MARK: - Automatic texting
 
-/// A text ready to send from Messages.
-struct TextDraft: Identifiable, Equatable {
-    let id = UUID()
-    let recipients: [String]
-    let body: String
+/// Profile: whether automatic texts are on, exactly when they're sent, a
+/// test text, and the steps to turn them on.
+struct AutomaticTextingCard: View {
+    @ObservedObject var settings: ThermyxSettingsStore
+    @ObservedObject var alerts: ThermyxAlertCoordinator
+    @State private var testResult: String?
+    @State private var sending = false
+    @State private var showingSetup = false
 
-    static func alert(recipients: [String], level: ThermyxRiskLevel, reasons: [String],
-                      location: ThermyxAlertEvent.AlertLocation?) -> TextDraft {
-        var parts = [level.severity >= ThermyxRiskLevel.high.severity
-                     ? "Thermyx alert: I'm at \(level.rawValue)."
-                     : "Thermyx check-in from me."]
-        if !reasons.isEmpty { parts.append(reasons.joined(separator: " ")) }
-        if let location {
-            parts.append(String(format: "Where I am: https://maps.apple.com/?ll=%.5f,%.5f", location.latitude, location.longitude))
-        }
-        if level.severity >= ThermyxRiskLevel.high.severity { parts.append("Please check on me.") }
-        return TextDraft(recipients: recipients, body: parts.joined(separator: " "))
-    }
-}
-
-/// How texting works, with a button that always works: Messages, filled in.
-struct TextingHelpCard: View {
-    /// True when the relay sends texts on its own.
-    let automatic: Bool
-    let onText: () -> Void
-    @State private var showingHow = false
+    private var unit: TemperatureUnit { settings.temperatureUnit }
+    private var on: Bool { settings.isPairedWithRelay && settings.relayTextingEnabled }
+    private var hasContacts: Bool { settings.contacts.contains(where: \.enabled) }
 
     var body: some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                SectionLabel("Texting your circle", color: automatic ? Thermyx.Ink.ice : Thermyx.Ink.amber)
-                Text(automatic
-                     ? "On. Thermyx texts your circle automatically at High risk, Critical and SOS. You can also send a text yourself."
-                     : "Automatic texts are off. Tap Text my circle to open Messages with your contacts and the alert filled in, then tap Send. The Critical alert and SOS offer the same button.")
-                    .font(ThermyxFont.caption)
-                    .foregroundStyle(Thermyx.Ink.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button { onText() } label: {
-                    Label("Text my circle", systemImage: "message.fill")
+            VStack(alignment: .leading, spacing: Thermyx.Space.m) {
+                HStack(spacing: Thermyx.Space.s) {
+                    Image(systemName: on ? "message.badge.filled.fill" : "message.badge")
+                        .foregroundStyle(on ? Thermyx.Ink.ice : Thermyx.Ink.amber)
+                    Text(on ? "Automatic texting is on" : "Automatic texting isn't set up")
+                        .font(ThermyxFont.rowTitle)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
                 }
-                .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
-                if !automatic {
-                    Button(showingHow ? "Hide how to turn on automatic texts" : "How to turn on automatic texts") {
-                        withAnimation(.easeOut(duration: 0.2)) { showingHow.toggle() }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Your circle gets a text when:")
+                        .font(ThermyxFont.caption.weight(.semibold))
+                        .foregroundStyle(Thermyx.Ink.textSecondary)
+                    rule("thermometer.sun.fill", Thermyx.Ink.ember,
+                         "A foot is \(TemperatureFormat.degrees(ThermyxTemperatureTexts.hotC, in: unit)) or hotter for 2 minutes")
+                    rule("snowflake", Thermyx.Ink.signal,
+                         "A foot is \(TemperatureFormat.degrees(ThermyxTemperatureTexts.coldC, in: unit)) or colder for 5 minutes")
+                    rule("exclamationmark.triangle.fill", Thermyx.Ink.amber, "Your risk reaches High or Critical, or you press SOS")
+                    Text("Then at most one reminder every 15 minutes while it lasts. A text also goes out when you tap I'm OK.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if on {
+                    Button(sending ? "Sending…" : "Send a test text") {
+                        sending = true
+                        Task {
+                            testResult = await alerts.sendTestText(settings: settings)
+                            sending = false
+                        }
                     }
-                    .font(ThermyxFont.captionSmall.weight(.semibold))
-                    .foregroundStyle(Thermyx.Ink.ice)
-                    .frame(minHeight: Thermyx.minimumTapTarget)
-                    if showingHow {
-                        Text("Automatic texts are sent by your Thermyx relay through Twilio, so they work even if you can't tap anything. 1) Connect this phone to the relay in Profile → Advanced. 2) On the relay, set SMS_ENABLED=true plus TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER from a Twilio account, then restart it. 3) Reopen this screen: it says On once the relay reports texting is enabled.")
-                            .font(ThermyxFont.captionSmall)
-                            .foregroundStyle(Thermyx.Ink.textSupporting)
-                            .fixedSize(horizontal: false, vertical: true)
+                    .buttonStyle(ThermyxSecondaryButtonStyle())
+                    .disabled(sending || !hasContacts)
+                    if let testResult {
+                        Text(testResult).font(ThermyxFont.caption).foregroundStyle(Thermyx.Ink.textSupporting)
                     }
+                } else {
+                    Button(showingSetup ? "Hide setup steps" : "How to set it up") {
+                        withAnimation(.easeOut(duration: 0.2)) { showingSetup.toggle() }
+                    }
+                    .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
+                    if showingSetup { setupSteps }
                 }
             }
         }
     }
-}
 
-/// Presents the system Messages composer. Nothing is sent until the
-/// wearer taps Send there. Devices that can't text (the Simulator, some
-/// iPads) get an explanation instead.
-struct MessageComposerPresenter: UIViewControllerRepresentable {
-    @Binding var draft: TextDraft?
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-    func makeUIViewController(context: Context) -> UIViewController { UIViewController() }
-
-    func updateUIViewController(_ host: UIViewController, context: Context) {
-        context.coordinator.parent = self
-        guard let draft, host.presentedViewController == nil else { return }
-        let controller: UIViewController
-        if MFMessageComposeViewController.canSendText() {
-            let composer = MFMessageComposeViewController()
-            composer.recipients = draft.recipients
-            composer.body = draft.body
-            composer.messageComposeDelegate = context.coordinator
-            controller = composer
-        } else {
-            let alert = UIAlertController(
-                title: "This device can't send texts",
-                message: "Use an iPhone with Messages set up. The message would have been: \(draft.body)",
-                preferredStyle: .alert
-            )
-            let coordinator = context.coordinator
-            alert.addAction(UIAlertAction(title: "OK", style: .cancel) { _ in coordinator.parent.draft = nil })
-            controller = alert
+    private func rule(_ symbol: String, _ tint: Color, _ text: String) -> some View {
+        HStack(alignment: .top, spacing: Thermyx.Space.s) {
+            Image(systemName: symbol).foregroundStyle(tint).frame(width: 20)
+            Text(text).font(ThermyxFont.caption).foregroundStyle(Thermyx.Ink.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        DispatchQueue.main.async { host.present(controller, animated: true) }
     }
 
-    final class Coordinator: NSObject, MFMessageComposeViewControllerDelegate {
-        var parent: MessageComposerPresenter
-        init(_ parent: MessageComposerPresenter) { self.parent = parent }
+    private var setupSteps: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            step(1, "Make a Twilio account at twilio.com and get a phone number. A trial account can text only numbers you verify in Twilio, which is fine for testing with your team.",
+                 done: false)
+            step(2, "In the ThermyxBackend folder, copy .env.example to .env and fill in SMS_ENABLED=true, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and TWILIO_FROM_NUMBER.",
+                 done: false)
+            step(3, "Start the relay (npm start), and keep it running on a computer or a host.", done: false)
+            step(4, "Connect this phone to the relay in Profile → Advanced.", done: settings.isPairedWithRelay)
+            step(5, "Turn on at least one trusted contact above.", done: hasContacts)
+            Text("When the relay reports texting is on, this card says so and offers a test text.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 
-        func messageComposeViewController(_ controller: MFMessageComposeViewController, didFinishWith result: MessageComposeResult) {
-            controller.dismiss(animated: true)
-            parent.draft = nil
+    private func step(_ n: Int, _ text: String, done: Bool) -> some View {
+        HStack(alignment: .top, spacing: Thermyx.Space.s) {
+            Image(systemName: done ? "checkmark.circle.fill" : "\(n).circle")
+                .foregroundStyle(done ? Thermyx.Ink.ice : Thermyx.Ink.textSupporting)
+            Text(text).font(ThermyxFont.captionSmall).foregroundStyle(Thermyx.Ink.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }

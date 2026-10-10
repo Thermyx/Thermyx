@@ -12,6 +12,7 @@ struct ThermyxAlertAPIClient {
         case server(Int)
         case invalidResponse
         case aiSummaryOff
+        case textingOff
 
         var errorDescription: String? {
             switch self {
@@ -23,6 +24,7 @@ struct ThermyxAlertAPIClient {
             case .server(let status): return "The relay returned an error (\(status))."
             case .invalidResponse: return "The relay sent a response the app didn't understand."
             case .aiSummaryOff: return "AI summaries aren't turned on for this relay yet."
+            case .textingOff: return "Texting isn't turned on at the relay yet."
             }
         }
     }
@@ -150,6 +152,16 @@ struct ThermyxAlertAPIClient {
         try await request("GET", "/v1/watch", baseURL: baseURL, token: token, body: Optional<String>.none)
     }
 
+    // MARK: Test text
+
+    /// Asks the relay to text the given numbers a test message.
+    func testText(recipients: [String], baseURL: String, token: String) async throws -> Int {
+        struct Body: Encodable { let recipients: [String] }
+        struct Result: Decodable { let texted: Int }
+        let result: Result = try await request("POST", "/v1/texts/test", baseURL: baseURL, token: token, body: Body(recipients: recipients))
+        return result.texted
+    }
+
     // MARK: Daily AI summary
 
     /// One day's aggregate numbers. Temperatures in °C; `unit` is how the
@@ -232,6 +244,7 @@ struct ThermyxAlertAPIClient {
             if path == "/v1/pair" { throw ClientError.codeRejected }
             // The relay has the AI summary switched off (a removed token is 401).
             if path == "/v1/summary" { throw ClientError.aiSummaryOff }
+            if path == "/v1/texts/test" { throw ClientError.textingOff }
             throw ClientError.accessRemoved
         case 429: throw ClientError.tooManyAttempts
         default: throw ClientError.server(http.statusCode)
