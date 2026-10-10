@@ -103,8 +103,9 @@ struct SafetyView: View {
 
     private var sosSubtitle: String {
         if enabledContacts.isEmpty { return "Opens your phone's dialer. Add a trusted contact to also text them" }
-        if !settings.isPairedWithRelay { return "Opens your phone's dialer. Connect to a relay under Advanced to also text your trusted circle" }
-        if !settings.relayTextingEnabled { return "Opens your phone's dialer. Texting your trusted circle isn't turned on yet" }
+        if !settings.isPairedWithRelay || !settings.relayTextingEnabled {
+            return "Opens your phone's dialer, and lets you text your trusted circle from Messages"
+        }
         return settings.shareLocationDuringEvents && alerts.location.isAuthorized
             ? "Opens your phone's dialer and texts your trusted circle your location"
             : "Opens your phone's dialer and texts your trusted circle"
@@ -395,6 +396,9 @@ struct SafetyView: View {
                     if alerts.notificationsAuthorized {
                         Button("Send a test notification") { alerts.sendTestNotification() }
                             .buttonStyle(ThermyxSecondaryButtonStyle())
+                    } else if alerts.notificationsUndecided {
+                        Button("Allow notifications") { Task { await alerts.requestPermission() } }
+                            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
                     } else {
                         Button("Turn on in Settings") {
                             if let url = URL(string: UIApplication.openNotificationSettingsURLString) {

@@ -5,6 +5,8 @@ import UserNotifications
 @MainActor
 final class ThermyxAlertCoordinator: ObservableObject {
     @Published private(set) var notificationsAuthorized = false
+    /// True until the wearer has answered the permission prompt once.
+    @Published private(set) var notificationsUndecided = false
     @Published private(set) var lastAlertLevel: ThermyxRiskLevel = .unavailable
     @Published private(set) var lastBackendError: String?
     /// When the trusted circle was last sent something, for the Safety screen.
@@ -87,6 +89,7 @@ final class ThermyxAlertCoordinator: ObservableObject {
 
     func requestPermission() async {
         notificationsAuthorized = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+        await refreshPermission()
     }
 
     /// Re-reads the permission, e.g. after the wearer comes back from
@@ -94,6 +97,7 @@ final class ThermyxAlertCoordinator: ObservableObject {
     func refreshPermission() async {
         let status = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
         notificationsAuthorized = status == .authorized || status == .provisional || status == .ephemeral
+        notificationsUndecided = status == .notDetermined
     }
 
     /// A harmless notification so the wearer can check alerts reach them.
