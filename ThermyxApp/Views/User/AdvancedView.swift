@@ -7,6 +7,7 @@ struct AdvancedView: View {
     @ObservedObject var roles: ThermyxRoleStore
     @ObservedObject var settings: ThermyxSettingsStore
     @ObservedObject var health: ThermyxHealthService
+    @Environment(\.isThermyxAdmin) private var isAdmin
 
     @State private var showingPairing = false
     @State private var showingRoleConfirmation = false
@@ -18,7 +19,10 @@ struct AdvancedView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Advanced") {
-            DemoModeSection(ble: viewModel.ble, unit: unit)
+            // Simulated insoles are a test tool, for admin accounts only.
+            if isAdmin {
+                DemoModeSection(ble: viewModel.ble, unit: unit)
+            }
             BoardSettingsSection(board: viewModel.board, ble: viewModel.ble)
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 DeviceHealthStrip(now: context.date)
@@ -185,7 +189,7 @@ struct AdvancedView: View {
 
     private var healthSection: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Apple Health")
+            AppleHealthLabel()
 
             ThermyxGroupedCard {
                 Toggle(isOn: $settings.healthKitEnabled) {

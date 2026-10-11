@@ -26,7 +26,7 @@
 //   DRV8833 AIN1 / AIN2       GPIO25 / GPIO26  (Peltier)
 //   DRV8833 BIN1              GPIO27           (fan; BIN2 to GND)
 //   DRV8833 nSLEEP            GPIO14           (10 kOhm pull-down to GND)
-//   FSR402 heel/arch/forefoot GPIO34 / 35 / 32 (optional; set HAS_FSR 1)
+//   FSR402 arch/heel/forefoot GPIO34 / 35 / 32 (optional; set FSR_SITES)
 //
 // Pins avoided on purpose: 0, 2, 12, 15 (boot straps) and ADC2 pins (they
 // stop reading while the radio is on).
@@ -54,16 +54,20 @@
 
 #define THERMYX_FOOT 1            // 1 = left, 2 = right (protocol byte 11)
 #define LED_TEST_RIG 1            // 1 = LEDs stand in for the Peltier; 0 = DRV8833 + Peltier + fan
-#define HAS_FSR 0                 // 1 once the three FSR402 dividers are wired
+#define FSR_SITES 1               // FSR402s wired: 0 none, 1 arch only (GPIO34), 3 heel + arch + forefoot
+#define HAS_FSR (FSR_SITES > 0)
 #define HAS_BATTERY_SENSE 0       // 1 once a battery divider is wired to PIN_BATTERY
 
 // Pin map (GPIO numbers on the ESP32-WROOM-32 dev board).
 static const int PIN_SDA = 21;
 static const int PIN_SCL = 22;
-static const int PIN_FSR_HEEL = 34;      // ADC1, input-only
-static const int PIN_FSR_ARCH = 35;      // ADC1, input-only
+static const int PIN_FSR_HEEL = 35;      // ADC1, input-only
+static const int PIN_FSR_ARCH = 34;      // ADC1, input-only (D34 on the board)
 static const int PIN_FSR_FOREFOOT = 32;  // ADC1
 static const int PIN_BATTERY = 33;       // ADC1; 2:1 divider, only if HAS_BATTERY_SENSE
+
+// Above this pressure (0..1 of full scale) the insole counts as stood on.
+static const float LOADED_LEVEL = 0.15f;
 static const int PIN_PELTIER_IN1 = 25;   // DRV8833 AIN1
 static const int PIN_PELTIER_IN2 = 26;   // DRV8833 AIN2
 static const int PIN_FAN = 27;           // DRV8833 BIN1; wire BIN2 to GND
@@ -449,13 +453,23 @@ static void sendTelemetry(bool haveFoot, float footC, bool haveAmbient, float am
   float stability = gaitStability(now);
   putUInt16(&packet[7], stability < 0 ? NO_VALUE : (uint16_t)lroundf(stability * 10000));
 
+  // Load: with all three sensors, the forefoot's share of the total; with
+  // the arch sensor alone, its own level (0..1 of full scale), and flag
+  // bit 7 tells the app which it is.
   float total = heel + arch + forefoot;
-  putUInt16(&packet[9], total < 0.05f ? NO_VALUE : (uint16_t)lroundf(forefoot / total * 10000));
+  if (FSR_SITES == 1) {
+    putUInt16(&packet[9], (uint16_t)lroundf(constrain(arch, 0.0f, 1.0f) * 10000));
+  } else {
+    putUInt16(&packet[9], total < 0.05f ? NO_VALUE : (uint16_t)lroundf(forefoot / total * 10000));
+  }
 
   // Flags: bits 0-1 foot; bits 2-3 the setting being followed (1 Cool,
   // 2 Auto, 3 Heat) so the app can confirm a command landed; bit 4 burn cutoff.
   uint8_t echo = commandedMode == MODE_COOLING ? 1 : commandedMode == MODE_HEATING ? 3 : 2;
-  packet[11] = THERMYX_FOOT | (echo << 2) | (burnCutoff ? 0x10 : 0);
+  // Bit 5: this insole senses a foot (any FSR fitted); bit 6: one is on it.
+  // Bit 7: the load field is the arch sensor's level, not a forefoot share.
+  uint8_t footSense = HAS_FSR ? (0x20 | (total > LOADED_LEVEL ? 0x40 : 0)) : 0;
+  packet[11] = THERMYX_FOOT | (echo << 2) | (burnCutoff ? 0x10 : 0) | footSense | (FSR_SITES == 1 ? 0x80 : 0);
 
   // Zones: this build has one contact sensor, not three, so the zone fields
   // carry the "absent" marker and the app hides the zone map.
@@ -480,6 +494,8 @@ static void sendTelemetry(bool haveFoot, float footC, bool haveAmbient, float am
 // no FSRs are fitted, so floating pins never pass for pressure.
 static float readFSR(int pin) {
 #if HAS_FSR
+  // With the arch sensor alone, the heel and forefoot pins float: read 0.
+  if (FSR_SITES == 1 && pin != PIN_FSR_ARCH) return 0.0f;
   return analogReadMilliVolts(pin) / 3300.0f;
 #else
   (void)pin;
@@ -531,7 +547,7 @@ void loop() {
   float heel = readFSR(PIN_FSR_HEEL);
   float arch = readFSR(PIN_FSR_ARCH);
   float forefoot = readFSR(PIN_FSR_FOREFOOT);
-  sampleMotion(now, heel + arch + forefoot > 0.15f);
+  sampleMotion(now, heel + arch + forefoot > LOADED_LEVEL);
 
   if (now - lastPacket < 1000) return;
   lastPacket = now;

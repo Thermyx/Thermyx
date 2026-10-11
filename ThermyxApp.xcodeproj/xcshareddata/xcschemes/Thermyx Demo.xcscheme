@@ -4,7 +4,8 @@
    version = "1.7">
    <BuildAction
       parallelizeBuildables = "YES"
-      buildImplicitDependencies = "YES">
+      buildImplicitDependencies = "YES"
+      runPostActionsOnFailure = "NO">
       <BuildActionEntries>
          <BuildActionEntry
             buildForTesting = "YES"
@@ -26,19 +27,32 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      shouldUseLaunchSchemeArgsEnv = "NO">
+      shouldUseLaunchSchemeArgsEnv = "YES"
+      onlyGenerateCoverageForSpecifiedTargets = "NO">
+      <MacroExpansion>
+         <BuildableReference
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "556EA8B52135F627F617D0EB"
+            BuildableName = "ThermyxApp.app"
+            BlueprintName = "ThermyxApp"
+            ReferencedContainer = "container:ThermyxApp.xcodeproj">
+         </BuildableReference>
+      </MacroExpansion>
       <Testables>
          <TestableReference
-            skipped = "NO">
+            skipped = "NO"
+            parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "2FDDB4580BE068991AFF463C"
+               BlueprintIdentifier = "D8F5FB456C9F6009296CBC95"
                BuildableName = "ThermyxAppTests.xctest"
                BlueprintName = "ThermyxAppTests"
                ReferencedContainer = "container:ThermyxApp.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
+      <CommandLineArguments>
+      </CommandLineArguments>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
@@ -53,12 +67,12 @@
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "556EA8B52135F627F617D0EB"
-               BuildableName = "ThermyxApp.app"
-               BlueprintName = "ThermyxApp"
-               ReferencedContainer = "container:ThermyxApp.xcodeproj">
-            </BuildableReference>
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "556EA8B52135F627F617D0EB"
+            BuildableName = "ThermyxApp.app"
+            BlueprintName = "ThermyxApp"
+            ReferencedContainer = "container:ThermyxApp.xcodeproj">
+         </BuildableReference>
       </BuildableProductRunnable>
       <CommandLineArguments>
          <CommandLineArgument
@@ -76,12 +90,12 @@
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "556EA8B52135F627F617D0EB"
-               BuildableName = "ThermyxApp.app"
-               BlueprintName = "ThermyxApp"
-               ReferencedContainer = "container:ThermyxApp.xcodeproj">
-            </BuildableReference>
+            BuildableIdentifier = "primary"
+            BlueprintIdentifier = "556EA8B52135F627F617D0EB"
+            BuildableName = "ThermyxApp.app"
+            BlueprintName = "ThermyxApp"
+            ReferencedContainer = "container:ThermyxApp.xcodeproj">
+         </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction

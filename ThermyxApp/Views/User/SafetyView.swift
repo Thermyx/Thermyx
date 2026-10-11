@@ -39,7 +39,8 @@ struct SafetyView: View {
                 escalationLadder
                 trustedCircle
                 WatchersSection(settings: settings, alerts: alerts, level: level)
-                ProfileSettingsSection(roles: roles, settings: settings)
+                ProfileSettingsSection(roles: roles, settings: settings, health: health)
+                AccountSection(roles: roles, settings: settings)
                 advancedRow
                 notificationNote
                 brandPlate

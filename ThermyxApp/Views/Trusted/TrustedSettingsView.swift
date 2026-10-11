@@ -4,6 +4,7 @@ struct TrustedSettingsView: View {
     @ObservedObject var roles: ThermyxRoleStore
     @ObservedObject var settings: ThermyxSettingsStore
     @ObservedObject var member: TrustedMemberViewModel
+    @Environment(\.isThermyxAdmin) private var isAdmin
 
     @State private var showingRoleConfirmation = false
     @State private var legalDocument: LegalDocument.Kind?
@@ -16,7 +17,8 @@ struct TrustedSettingsView: View {
                 watchedCard
                 profileSection
                 alertToggles
-                sampleSection
+                // The worked example is made-up data: admin accounts only.
+                if isAdmin { sampleSection }
                 connectionSection
                 unitSection
                 legalRow

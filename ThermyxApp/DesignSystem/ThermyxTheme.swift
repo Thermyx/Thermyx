@@ -47,6 +47,22 @@ enum Thermyx {
         )
     }
 
+    /// The website's palette (thermyx.web.app): true black, near-black
+    /// surfaces, white hairlines, and the same four accents as `Ink`.
+    /// Onboarding uses it so the app opens the way the site looks.
+    enum Site {
+        static let bg = Color.black
+        static let surface = Color(hex: 0x0B0C0F)
+        static let raised = Color(hex: 0x131519)
+        /// Glass over the topography: a dark wash under a material.
+        static let glass = Color(hex: 0x0E1014, opacity: 0.55)
+        static let hairline = Color.white.opacity(0.08)
+        static let hairlineStrong = Color.white.opacity(0.14)
+        static let text = Color(hex: 0xF1F4F8)
+        static let textMuted = Color(hex: 0xA4B1C2)
+        static let textFaint = Color(hex: 0x7F8A99)
+    }
+
     /// Tinted fills: a translucent wash plus a matching border.
     enum Tint {
         static let cautionFill = Color(hex: 0xFF6A13, opacity: 0.12)

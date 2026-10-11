@@ -16,7 +16,21 @@ enum ThermyxFont {
         static let extraBold = "Archivo-ExtraBold"
         static let narrowSemibold = "ArchivoNarrow-SemiBold"
         static let narrowBold = "ArchivoNarrow-Bold"
+        /// Instrument Serif, for display headlines, as on the website.
+        static let serif = "InstrumentSerif-Regular"
+        static let serifItalic = "InstrumentSerif-Italic"
     }
+
+    // Display — Instrument Serif. A high-contrast face set large and tight;
+    // the italic carries emphasis inside a headline.
+    static let display = archivo(Family.serif, 44, relativeTo: .largeTitle)
+    static let displayItalic = archivo(Family.serifItalic, 44, relativeTo: .largeTitle)
+    static let displayLarge = archivo(Family.serif, 52, relativeTo: .largeTitle)
+    static let displayLargeItalic = archivo(Family.serifItalic, 52, relativeTo: .largeTitle)
+    static let displaySmall = archivo(Family.serif, 32, relativeTo: .title)
+    static let displaySmallItalic = archivo(Family.serifItalic, 32, relativeTo: .title)
+    /// Large serif numerals for live readouts.
+    static let displayNumeral = archivo(Family.serif, 40, relativeTo: .title)
 
     /// Scales with Dynamic Type but stops short of breaking the dense
     /// dashboard layouts at the largest accessibility sizes.
@@ -25,8 +39,9 @@ enum ThermyxFont {
     }
 
     // Headlines and titles
-    static let screenTitle = archivo(Family.extraBold, 32, relativeTo: .largeTitle)
-    static let detailTitle = archivo(Family.extraBold, 28, relativeTo: .title)
+    // Screen titles are set in Instrument Serif, as on the website.
+    static let screenTitle = archivo(Family.serif, 40, relativeTo: .largeTitle)
+    static let detailTitle = archivo(Family.serif, 34, relativeTo: .title)
     static let onboardingHeadline = archivo(Family.extraBold, 36, relativeTo: .largeTitle)
     static let onboardingHeadlineLarge = archivo(Family.extraBold, 40, relativeTo: .largeTitle)
     static let articleHeadline = archivo(Family.extraBold, 29, relativeTo: .title)
@@ -67,7 +82,7 @@ enum ThermyxFont {
 
 /// Letter-spacing values from the handoff, kept next to the roles they belong to.
 enum ThermyxTracking {
-    static let screenTitle: CGFloat = -1.0
+    static let screenTitle: CGFloat = -0.4
     static let onboardingHeadline: CGFloat = -1.4
     static let onboardingHeadlineLarge: CGFloat = -1.6
     static let heroNumeral: CGFloat = -3.5
@@ -84,6 +99,10 @@ enum ThermyxTracking {
     static let statusPillWide: CGFloat = 2.2
     static let riskHeadline: CGFloat = 2.6
     static let wordmark: CGFloat = 4
+
+    /// Serif display sizes read best slightly tightened.
+    static let display: CGFloat = -0.6
+    static let displaySmall: CGFloat = -0.3
 }
 
 extension Text {
@@ -109,7 +128,8 @@ enum ThermyxFontRegistration {
             ThermyxFont.Family.regular, ThermyxFont.Family.medium,
             ThermyxFont.Family.semibold, ThermyxFont.Family.bold,
             ThermyxFont.Family.extraBold, ThermyxFont.Family.narrowSemibold,
-            ThermyxFont.Family.narrowBold
+            ThermyxFont.Family.narrowBold, ThermyxFont.Family.serif,
+            ThermyxFont.Family.serifItalic
         ]
         let missing = expected.filter { UIFont(name: $0, size: 12) == nil }
         if !missing.isEmpty {

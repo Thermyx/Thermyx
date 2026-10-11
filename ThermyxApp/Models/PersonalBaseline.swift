@@ -556,8 +556,25 @@ struct PersonalThermalModel: Codable, Equatable {
     /// Such a model never seeds the baseline, and Home asks for a real
     /// calibration once a real insole connects.
     var fromTestData: Bool? = nil
+    /// Usual outdoor foot temperature per activity. Kept apart from the
+    /// indoor profile so a hot afternoon never becomes the usual.
+    var outdoorFootByActivity: [CalibrationActivity: Stats]? = nil
+    /// Usual forefoot share of the load per activity, 0–1.
+    var loadByActivity: [CalibrationActivity: Stats]? = nil
+    /// Walking steadiness, from the walking phases.
+    var walkingStability: StabilityProfile? = nil
+    /// Walking cadence, steps per minute.
+    var walkingCadence: Stats? = nil
+    /// What each calibration phase measured, including dT/dt and ∫ dT/dt dt.
+    var phases: [CalibrationPhaseSummary]? = nil
+    /// The air outside during the outdoor half, from local weather, °C.
+    var outdoorAirC: Double? = nil
 
     var isTestData: Bool { fromTestData == true }
+
+    func phase(_ activity: CalibrationActivity, outdoor: Bool) -> CalibrationPhaseSummary? {
+        phases?.first { $0.activity == activity && $0.outdoor == outdoor }
+    }
 
     static let targetRange: ClosedRange<Double> = 26...38
     /// Smallest spread used for warnings, so a short, steady calibration
@@ -640,7 +657,7 @@ enum CalibrationTrainer {
         // Comfort target: resting temperature (sitting, else standing),
         // nudged by how comfortable the wearer said it felt.
         let resting = foot[.sitting]?.mean ?? foot[.standing]?.mean ?? foot.values.first!.mean
-        return PersonalThermalModel(
+        var model = PersonalThermalModel(
             classifier: ActivityClassifier(training: training),
             footByActivity: foot,
             comfortTargetC: PersonalThermalModel.comfortTarget(restingC: resting, comfort: comfort),
@@ -649,5 +666,31 @@ enum CalibrationTrainer {
             outdoorDone: segments.contains { $0.outdoor },
             trainedAt: now
         )
+
+        // Outdoor temperatures, load, walking and each phase's dT/dt and
+        // ∫ dT/dt dt. Shown to the wearer; none of it moves a fixed limit.
+        let outdoor = stats(segments.filter(\.outdoor)) { $0.footC }
+        model.outdoorFootByActivity = outdoor.isEmpty ? nil : outdoor
+        let load = stats(segments) { $0.load }
+        model.loadByActivity = load.isEmpty ? nil : load
+        let walking = segments.filter { $0.activity == .walking }.flatMap(\.samples)
+        model.walkingStability = StabilityProfile(walkingGait: walking.compactMap(\.gait))
+        model.walkingCadence = stats([CalibrationTrainer.Segment(activity: .walking, outdoor: false, samples: walking)]) { $0.cadence }[.walking]
+        model.phases = segments.map { CalibrationPhaseSummary(activity: $0.activity, outdoor: $0.outdoor, samples: $0.samples) }
+        return model
+    }
+
+    /// Mean and spread of one value per activity, from at least ten seconds
+    /// of data.
+    private static func stats(_ segments: [Segment], _ value: (CalibrationSample) -> Double?) -> [CalibrationActivity: PersonalThermalModel.Stats] {
+        var result: [CalibrationActivity: PersonalThermalModel.Stats] = [:]
+        for activity in CalibrationActivity.allCases {
+            let xs = segments.filter { $0.activity == activity }.flatMap(\.samples).compactMap(value)
+            guard xs.count >= 10 else { continue }
+            let mean = xs.reduce(0, +) / Double(xs.count)
+            let sd = (xs.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(xs.count)).squareRoot()
+            result[activity] = .init(mean: mean, sd: sd)
+        }
+        return result
     }
 }
