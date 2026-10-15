@@ -34,6 +34,12 @@ struct ThermyxReading: Equatable {
     /// Whether a foot is on the insole (flags bits 5–6), from firmware that
     /// senses it. Nil when the insole can't tell.
     var footDetected: Bool?
+    /// Flags bit 7: `pressureBalance` is a single arch sensor's level
+    /// (0–1 of full scale), not the forefoot's share of three sensors.
+    var loadIsArchLevel = false
+
+    /// What the load value is called on screen.
+    var loadLabel: String { loadIsArchLevel ? "Arch load" : "Forefoot load" }
 
     init(
         foot: Foot,

@@ -352,7 +352,7 @@ struct InsightsHubView: View {
         case .denied:
             ThermyxCard {
                 VStack(alignment: .leading, spacing: 6) {
-                    SectionLabel("Apple Health")
+                    AppleHealthLabel()
                     Text("Health access is off. Thermyx works normally without it — turn it back on in the Health app if you want step and workout context here.")
                         .font(ThermyxFont.caption)
                         .foregroundStyle(Thermyx.Ink.textMuted)
@@ -362,7 +362,7 @@ struct InsightsHubView: View {
         case .notEntitled:
             ThermyxCard(fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
                 VStack(alignment: .leading, spacing: 6) {
-                    SectionLabel("Apple Health", color: Thermyx.Ink.amber)
+                    AppleHealthLabel(color: Thermyx.Ink.amber)
                     Text("This build isn't signed with the HealthKit capability, so Health can't be reached. Everything else works normally. Sign the app with a development team to enable it.")
                         .font(ThermyxFont.caption)
                         .foregroundStyle(Thermyx.Ink.textSecondary)
@@ -377,7 +377,7 @@ struct InsightsHubView: View {
     private var healthPrompt: some View {
         ThermyxCard(fill: Thermyx.Tint.signalFill, border: Thermyx.Tint.signalBorder) {
             VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                SectionLabel("Apple Health", color: Thermyx.Ink.ice)
+                AppleHealthLabel(color: Thermyx.Ink.ice)
                 Text("Connect Health to see heat exposure alongside your steps and workouts, and to save Thermyx sessions with the rest of your health data.")
                     .font(ThermyxFont.caption)
                     .foregroundStyle(Thermyx.Ink.textSecondary)

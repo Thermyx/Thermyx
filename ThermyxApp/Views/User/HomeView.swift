@@ -66,9 +66,10 @@ struct HomeView: View {
                 showingPairing = true
             } label: {
                 HStack(spacing: Thermyx.Space.s) {
-                    Image("ThermyxBadge")
+                    Image("ThermyxMark")
                         .resizable().scaledToFit()
-                        .frame(width: 48, height: 48)
+                        .frame(width: 36, height: 40)
+                        .padding(.trailing, 2)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(deviceLabel)
                             .narrowLabel(ThermyxFont.zoneLabel, tracking: 2.2,
@@ -289,7 +290,7 @@ struct HomeView: View {
                 )
             } else {
                 MetricTile(
-                    label: "Forefoot load",
+                    label: reading.present.first?.loadLabel ?? "Forefoot load",
                     value: reading.pressureBalance.map { "\(Int(($0 * 100).rounded()))%" }
                 )
             }

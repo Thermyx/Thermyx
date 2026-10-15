@@ -222,7 +222,7 @@ final class ThermyxSettingsStore: ObservableObject {
 
 /// Minimal generic-password Keychain wrapper for the relay token.
 enum ThermyxKeychain {
-    private static let service = "com.thermyx.app"
+    private static let service = "com.thermyx.app.a"
 
     static func get(_ account: String) -> String? {
         let query: [String: Any] = [
@@ -254,16 +254,15 @@ enum ThermyxKeychain {
 }
 
 /// What the wearer tells Thermyx about themselves during onboarding. Every
-/// field is optional, and none of it leaves the phone.
+/// answer is required to finish onboarding, and none of it leaves the phone.
 struct UserProfile: Codable, Equatable {
     enum Sex: String, Codable, CaseIterable, Identifiable {
-        case female, male, other
+        case male, female
         var id: String { rawValue }
         var label: String {
             switch self {
             case .female: return "Female"
             case .male: return "Male"
-            case .other: return "Other"
             }
         }
     }
@@ -283,12 +282,43 @@ struct UserProfile: Codable, Equatable {
     var weightKg: Double?
     var sex: Sex?
     var focus: Focus?
-    /// Optional, self-reported, any number of them. Empty means none.
+    /// Self-reported, any number of them. Empty means the wearer answered
+    /// "None"; nil means they haven't answered yet.
     var conditions: [HealthCondition]?
 
     var conditionSet: Set<HealthCondition> {
         get { Set(conditions ?? []) }
         set { conditions = HealthCondition.allCases.filter(newValue.contains) }
+    }
+
+    /// Ranges a value must fall in to be saved, so a typo isn't kept.
+    /// Accounts are for 13 and over.
+    static let ageRange = 13...120
+    static let heightRangeCm = 80.0...250.0
+    static let weightRangeKg = 20.0...300.0
+
+    /// Every About you answer is in. Onboarding can't finish without it.
+    var isComplete: Bool {
+        age != nil && heightCm != nil && weightKg != nil && sex != nil && focus != nil && conditions != nil
+    }
+
+    init() {}
+
+    private enum CodingKeys: String, CodingKey {
+        case age, heightCm, weightKg, sex, focus, conditions
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        age = try c.decodeIfPresent(Int.self, forKey: .age)
+        heightCm = try c.decodeIfPresent(Double.self, forKey: .heightCm)
+        weightKg = try c.decodeIfPresent(Double.self, forKey: .weightKg)
+        // Earlier builds offered "Other". It now loads as unanswered, so the
+        // wearer is asked again rather than losing the whole profile.
+        let storedSex: String? = try? c.decodeIfPresent(String.self, forKey: .sex)
+        sex = storedSex.flatMap(Sex.init(rawValue:))
+        focus = try c.decodeIfPresent(Focus.self, forKey: .focus)
+        conditions = try c.decodeIfPresent([HealthCondition].self, forKey: .conditions)
     }
 }
 

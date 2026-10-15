@@ -21,9 +21,11 @@ struct TrustedInsightsView: View {
 
     /// Aggregate view used for the shift summary and the risk bars, where a
     /// single series is what the watcher needs.
+    /// The left foot's, or the right's when only a right insole is worn.
     private var digest: InsightsDigest {
-        InsightsDigest(range: .day, style: .rolling,
-                       samples: member.displayedHistory.filter { $0.foot == .left })
+        let history = member.displayedHistory
+        let foot: Foot = history.contains { $0.foot == .left } ? .left : .right
+        return InsightsDigest(range: .day, style: .rolling, samples: history.filter { $0.foot == foot })
     }
 
     private var hasData: Bool { bilateral.hasAny }

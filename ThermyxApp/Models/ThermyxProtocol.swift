@@ -28,6 +28,8 @@ enum ThermyxProtocol {
         /// Flags bit 5 says the insole senses whether a foot is on it; bit 6
         /// is whether one is. Nil from firmware that can't tell.
         var footDetected: Bool? = nil
+        /// Flags bit 7: the load field is the arch sensor's level.
+        var loadIsArchLevel = false
 
         func reading(for foot: Foot, at time: Date = .now) -> ThermyxReading {
             var reading = ThermyxReading(
@@ -46,6 +48,7 @@ enum ThermyxProtocol {
             reading.settingEcho = settingEcho
             reading.burnCutoff = burnCutoff
             reading.footDetected = footDetected
+            reading.loadIsArchLevel = loadIsArchLevel
             return reading
         }
     }
@@ -105,6 +108,7 @@ enum ThermyxProtocol {
             burnCutoff: flags & 0b1_0000 != 0
         )
         if flags & 0b10_0000 != 0 { telemetry.footDetected = flags & 0b100_0000 != 0 }
+        telemetry.loadIsArchLevel = flags & 0b1000_0000 != 0
 
         if version >= 2, let forefoot = temperature(12), let arch = temperature(14), let heel = temperature(16) {
             // All three or none: a heat map off one broken channel would mislead.
@@ -147,7 +151,7 @@ enum ThermyxProtocol {
         }
     }
 
-    static func flags(foot: Foot?, echo: ThermalSetting?, burnCutoff: Bool, footDetected: Bool? = nil) -> UInt8 {
+    static func flags(foot: Foot?, echo: ThermalSetting?, burnCutoff: Bool, footDetected: Bool? = nil, loadIsArchLevel: Bool = false) -> UInt8 {
         var footBits: UInt8 = 0
         if let foot { footBits = foot == .left ? 1 : 2 }
         var echoBits: UInt8 = 0
@@ -161,7 +165,7 @@ enum ThermyxProtocol {
             }
         }
         let footSense: UInt8 = footDetected.map { $0 ? 0b110_0000 : 0b10_0000 } ?? 0
-        return footBits | echoBits << 2 | (burnCutoff ? 0b1_0000 : 0) | footSense
+        return footBits | echoBits << 2 | (burnCutoff ? 0b1_0000 : 0) | footSense | (loadIsArchLevel ? 0b1000_0000 : 0)
     }
 
     // MARK: Commands
@@ -190,7 +194,7 @@ enum ThermyxProtocol {
         putTemp(t.ambientTemperatureC, at: 5)
         putFraction(t.gaitStability, at: 7)
         putFraction(t.pressureBalance, at: 9)
-        bytes[11] = flags(foot: t.declaredFoot, echo: t.settingEcho, burnCutoff: t.burnCutoff, footDetected: t.footDetected)
+        bytes[11] = flags(foot: t.declaredFoot, echo: t.settingEcho, burnCutoff: t.burnCutoff, footDetected: t.footDetected, loadIsArchLevel: t.loadIsArchLevel)
         putTemp(t.zones?.forefootC, at: 12)
         putTemp(t.zones?.archC, at: 14)
         putTemp(t.zones?.heelC, at: 16)

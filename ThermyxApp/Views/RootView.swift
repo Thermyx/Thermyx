@@ -1,24 +1,33 @@
 import SwiftUI
 import UserNotifications
 
-/// Chooses onboarding, the user experience, or the watcher experience.
+/// Chooses sign-in and onboarding, the user experience, or the watcher
+/// experience.
 struct AppRootView: View {
+    @EnvironmentObject private var account: ThermyxAccountStore
+    @EnvironmentObject private var viewModel: ThermyxViewModel
     @ObservedObject var roles: ThermyxRoleStore
     @ObservedObject var settings: ThermyxSettingsStore
 
     var body: some View {
         Group {
-            if roles.hasCompletedOnboarding, roles.role == .trustedMember {
-                TrustedMemberRoot(roles: roles, settings: settings)
-            } else if roles.hasCompletedOnboarding {
-                UserRoot(roles: roles, settings: settings)
-            } else {
+            if !account.isSignedIn || !roles.hasCompletedOnboarding {
                 OnboardingFlow(roles: roles, settings: settings)
+                    .transition(.opacity)
+            } else if roles.role == .trustedMember {
+                TrustedMemberRoot(roles: roles, settings: settings)
+            } else {
+                UserRoot(roles: roles, settings: settings)
             }
         }
+        .animation(.easeInOut(duration: 0.35), value: account.isSignedIn && roles.hasCompletedOnboarding)
         .tint(Thermyx.Ink.ice)
         .preferredColorScheme(.dark)
         .onAppear { ThermyxFontRegistration.verify() }
+        // Test tools belong to admin accounts: signing out of one ends them.
+        .onChange(of: account.isAdmin) { _, isAdmin in
+            if !isAdmin, viewModel.ble.isDemoMode { viewModel.ble.stopDemoMode() }
+        }
     }
 }
 
@@ -84,6 +93,9 @@ struct UserRoot: View {
             case .profile:
                 SafetyView(roles: roles, settings: settings, alerts: alerts, health: health)
             }
+        }
+        .onChange(of: settings.temperatureUnit, initial: true) { _, unit in
+            viewModel.widgets.fahrenheit = unit == .fahrenheit
         }
         .task {
             viewModel.healthService = health

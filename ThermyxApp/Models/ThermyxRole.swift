@@ -58,7 +58,8 @@ final class ThermyxRoleStore: ObservableObject {
             [65, 97, 114, 111, 110],
             [65, 97, 114, 111, 110, 32, 81, 105, 110]
         ]
-        return legacyNames.contains(Array(name.utf8))
+        // Earlier onboarding saved these stand-ins when no name was typed.
+        return legacyNames.contains(Array(name.utf8)) || ["Thermyx user", "Trusted member"].contains(name)
     }
 
     private static func isLegacyWatchedName(_ name: String) -> Bool {
@@ -69,7 +70,8 @@ final class ThermyxRoleStore: ObservableObject {
         self.role = role; profileName = name; watchedUserName = watched; pairingCode = code; hasCompletedOnboarding = true; save()
     }
     /// Bump when onboarding gains steps every wearer should see.
-    static let onboardingVersion = 2
+    /// 3: Google sign-in, required About you, 3-minute calibration.
+    static let onboardingVersion = 3
     /// TEMPORARY: set to false to stop Debug builds opening on onboarding
     /// after every install from Xcode.
     static let alwaysOnboardInDebug = true

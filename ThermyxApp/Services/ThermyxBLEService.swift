@@ -23,6 +23,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     // MARK: Published state
 
     @Published private(set) var state: CBManagerState = .unknown
+    /// Whether Thermyx may use Bluetooth. Until it's been asked, the radio
+    /// stays untouched so iOS doesn't prompt at launch; the insoles step
+    /// asks with `requestBluetooth()`.
+    @Published private(set) var authorization: CBManagerAuthorization = CBManager.authorization
     /// The latest reading from each foot. A foot with no entry has no data,
     /// and its screens show an empty state rather than the other foot's.
     @Published private(set) var readings: [Foot: ThermyxReading] = [:]
@@ -161,7 +165,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// and cleared, rather than left on screen looking live.
     nonisolated static let staleAfter: TimeInterval = 5
     private static let knownInsolesKey = "thermyx.knownInsoles"
-    private static let restoreIdentifier = "com.thermyx.app.central"
+    private static let restoreIdentifier = "com.thermyx.app.a.central"
 
     /// The simulated pair, when Demo Mode is on (Advanced → Demo Mode, or
     /// `-ThermyxUIPreview simulator` in development). While it runs, every
@@ -188,6 +192,16 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             return
         }
         #endif
+        if CBManager.authorization != .notDetermined { makeCentral() }
+    }
+
+    /// Asks iOS for Bluetooth (creating the manager is what prompts).
+    func requestBluetooth() {
+        guard central == nil, simulator == nil else { return }
+        makeCentral()
+    }
+
+    private func makeCentral() {
         // The restore identifier lets iOS relaunch the app in the background
         // and hand back its insole connections (needs the bluetooth-central
         // background mode in Info.plist).
@@ -257,11 +271,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         discovered.removeAll()
         userDisconnects.removeAll()
         if central == nil {
-            central = CBCentralManager(
-                delegate: self,
-                queue: nil,
-                options: [CBCentralManagerOptionRestoreIdentifierKey: Self.restoreIdentifier]
-            )
+            if CBManager.authorization != .notDetermined { makeCentral() }
         } else {
             state = central.state
             reconnectKnownInsoles()
@@ -708,8 +718,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
 extension ThermyxBLEService: CBCentralManagerDelegate {
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         let newState = central.state
+        let authorization = CBManager.authorization
         Task { @MainActor in
             self.state = newState
+            self.authorization = authorization
             if newState == .poweredOn {
                 self.reconnectKnownInsoles()
                 self.reconnectRememberedBoard()

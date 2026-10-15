@@ -33,6 +33,8 @@ final class ThermyxViewModel: ObservableObject {
     let ble = ThermyxBLEService()
     let history = ThermyxHistoryStore()
     let baseline = PersonalBaselineStore()
+    /// Widgets, the Live Activity and the Dynamic Island.
+    let widgets = ThermyxWidgetBridge()
     /// The single-sensor test board's live table. Fed only by
     /// `ble.boardPackets`, never by insole readings, and never read by the
     /// risk engine, alerts, or Apple Health.
@@ -93,6 +95,8 @@ final class ThermyxViewModel: ObservableObject {
                 for entry in next.present { self.ingest(entry) }
                 self.updateCommand()
                 self.syncFocus()
+                self.widgets.update(reading: next, isDemo: self.ble.isDemoMode,
+                                    setting: self.thermalSetting, assessment: self.assessment)
             }
             .store(in: &cancellables)
 

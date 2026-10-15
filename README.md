@@ -147,6 +147,30 @@ xcodebuild -project ThermyxApp.xcodeproj -scheme ThermyxApp \
 Device builds need a development team, because HealthKit is an entitlement.
 Simulator builds do not.
 
+Xcode 26 downloads the Metal compiler separately. If a build stops at the
+Topography shader with "missing Metal Toolchain", run
+`xcodebuild -downloadComponent MetalToolchain` once (no admin needed), or
+accept Xcode's prompt.
+
+### Accounts: Google sign-in and Firebase
+
+Onboarding starts with **Continue with Google**, through Firebase
+Authentication (`Services/ThermyxAccountStore.swift`). Setup is in
+`ThermyxApp/Resources/Firebase/README.md`: drop the project's
+`GoogleService-Info.plist` there, enable the Google provider in Firebase, copy
+its `REVERSED_CLIENT_ID` into `project.yml`, and run `xcodegen generate`.
+Without the plist the app builds, but nobody can sign in.
+
+- The account holds no readings. Profile, history and calibration stay on the
+  phone, as the privacy policy says.
+- **Admins** (`ThermyxAdmins` in the same file) are the only accounts that see
+  test tools: Demo Mode, the fake insole, the single-sensor board, the relay
+  during onboarding, and the trusted member's sample shift.
+- Profile → Account has Sign out and Delete account (which deletes the
+  Firebase user and revokes Google access, as App Review requires).
+- In the simulator without a plist, skip sign-in with the preview harness
+  (`-ThermyxUIPreview simulatorOnboarding`).
+
 ### Schemes and tests
 
 - **ThermyxApp** runs the app normally.
@@ -190,12 +214,17 @@ layouts can be reviewed without hardware. It is fenced three ways:
    screenshot taken with it on cannot be mistaken for live data.
 
 ```sh
-xcrun simctl launch booted com.thermyx.app -ThermyxUIPreview homeZones
+xcrun simctl launch booted com.thermyx.app.a -ThermyxUIPreview homeZones
 ```
 
 Use the `-ThermyxUIPreview` flag with one of these states:
 
-- Onboarding: `onboardingRole`, `onboardingPair`
+- Onboarding: `onboardingWelcome` (signed out), `onboardingRole`,
+  `onboardingAbout`, `onboardingPair`, `onboardingCalibrate`; with simulated
+  insoles, `simulatorPair` and `simulatorCalibrate` (fake insole connected).
+  Add `-ThermyxStartCalibration` to start calibration by itself,
+  `-ThermyxScrollToEnd` to open pages scrolled down, and `-ThermyxAdmin` to
+  run as an admin account.
 - Home: `home`, `homeZones`, `homeOneFoot`, `homeCaution`, `profile`, `tour`
 - Insights: `insights`, `health`, `temperature`, `movement`, `movementAdvanced`,
   `balance`, `learning`, `article`
@@ -215,8 +244,9 @@ medical-device release. Before distributing it through TestFlight:
 
 - Build and run the **Release** configuration from Xcode on a physical test
   device, then archive it through Xcode for TestFlight.
-- Fill every bracketed field in both legal documents, replace placeholder
-  Learning Center copy, and confirm the onboarding video is approved.
+- Fill every bracketed field in both legal documents and replace placeholder
+  Learning Center copy. Update the privacy policy for Google sign-in:
+  the account's name and email are now held by Firebase.
 - Deploy the relay behind HTTPS with a persistent volume, then pair each
   phone with a one-time code. No token is ever typed or committed.
 - Keep the alert relay under supervised use. Its SQLite store is a
@@ -328,17 +358,39 @@ it in this order and verify a Release archive manually:
 6. Regenerate the Xcode project, build a Release archive, and verify that a
    preview launch argument has no effect.
 
+### Welcome slides
+
+The first screen is four slides (`Views/Onboarding/OnboardingSlides.swift`):
+construction workers, athletes, soldiers, convenience. Copy and video names
+live in `WelcomeSlide.all`; drop the videos in `Resources/Media` (see its
+README). The last slide shows the insole model (`Resources/Models/insole.glb`,
+the website's `hardware-model.glb`, loaded with GLTFKit2) in the website's
+materials, top face toward the screen. The red button explodes it into the
+website's vertical stacks (same offsets as the site's `explode.js`); a drag
+spins it all the way round, side to side; a tap outlines a part in a glow and shows
+the site's description of it. Endorsements run across the top in gold
+(`EndorsementLoop`); add an organisation to its `items`. Preview with `-ThermyxUIPreview onboardingWelcome -ThermyxSlide 3`
+(add `-ThermyxExplode` to open taken apart).
+
 ## Credits and licences
 
 - **Archivo** and **Archivo Narrow** — Omnibus Type, SIL Open Font License 1.1.
   Static instances cut from the Google Fonts variable sources with `fonttools`.
   Licence ships in the bundle as `OFL.txt`.
+- **Instrument Serif** — The Instrument Serif Project Authors, SIL Open Font
+  License 1.1, from Google Fonts. Licence ships as `OFL-InstrumentSerif.txt`.
+- **Open-Meteo** — outdoor air temperature during calibration (free API, no key; free tier is for non-commercial use). Only a location rounded to about 1 km is sent.
+- **GLTFKit2** — Warren Moore, MIT, loads the insole model into SceneKit.
+- **Topography** background — ported to Metal from the website's shader, a
+  React Bits component (MIT).
+- **SiteGuardian US** logo — supplied by the Thermyx team for the endorsement.
 - **SF Symbols** — Apple, used under the SF Symbols licence.
 - **Swift Charts**, **HealthKit**, **CoreBluetooth** — Apple system frameworks.
 - Brand artwork (app icon, circular badge, horizontal wordmark) supplied by the
   Thermyx team. The horizontal wordmark is navy ink and is used only on light
   grounds — on the app background it sits at roughly 1.4:1. It is never
-  recoloured in code; a light-ink export is needed before it can go on dark.
+  recoloured in code. On dark grounds the app uses the website's light-ink
+  logo (`ThermyxLogoLight`) and the insole mark cut from it (`ThermyxMark`).
 
 ## HealthKit on a simulator
 
@@ -432,14 +484,28 @@ exists; showing them disabled says plainly that it does, just not yet. There is
 no EU scale.
 
 
-## The onboarding walkthrough
+## Onboarding
 
-The first onboarding screen plays `Resources/Media/onboarding-walkthrough.mp4`:
-muted, looping, no controls, no audio session, and it never interrupts what the
-user is listening to. Under Reduce Motion it holds on the poster frame. If the
-file is missing from the bundle it falls back to the animated sole rather than
-showing a black rectangle.
+Google sign-in → role → About you → insoles → calibration, about three
+minutes of wear in all. The welcome screen follows the website's app page
+(cream, navy logo, blue-to-orange serif italic, a soft Prism-style glow); the
+steps after it use the home page's language: Instrument Serif headlines,
+Archivo text, true black with the Topography contours.
 
-**The bundled file is a placeholder** — a simulator capture of this app running
-on preview data. `Resources/Media/README.md` covers what should replace it and
-the constraints for the replacement.
+A loading screen shows the insole's hardware model (`Resources/Models/insole.glb`,
+the website's `hardware-model.glb`, loaded with GLTFKit2) coming apart in
+random directions and back together: at launch, while signing in, and on the
+way into the app.
+
+- **About you** asks for name, age, sex (male or female), height, weight,
+  shoe size, Insights focus and health conditions, all required. Apple Health
+  can fill in age, sex, height and weight first.
+- **Insoles**: one search finds both; each row says Left or Right.
+- **Calibration** (`Views/Onboarding/Calibration.swift`): sit, stand and walk
+  for 30 seconds each, inside then outside. The readouts are on screen before
+  it starts and fill in live: foot temperature, rate of change (dT/dt, a
+  least-squares slope over 10 s), accumulated change (∫ dT/dt dt, trapezoid
+  rule), forefoot load, cadence and walking stability. Heating and cooling
+  pause while it records. The model learns usual temperatures indoors and
+  out, each step's dT/dt and ∫, load, cadence, and a walking-steadiness
+  profile with Steady / Variable / Unsteady levels (`Models/ThermalCalculus.swift`).

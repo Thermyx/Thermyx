@@ -8,7 +8,8 @@ import UIKit
 ///
 /// **Read** — step count, walking steadiness, and workouts, so Insights can
 /// put heat exposure next to what the user was actually doing rather than
-/// showing insole data in isolation.
+/// showing insole data in isolation; and date of birth, sex, height and
+/// weight, offered to fill in About you.
 ///
 /// **Write** — Thermyx sessions as `HKWorkout` only. Body temperature is
 /// deliberately *not* requested: foot-contact temperature is not core body
@@ -56,6 +57,13 @@ final class ThermyxHealthService: ObservableObject {
         if let steadiness = HKQuantityType.quantityType(forIdentifier: .appleWalkingSteadiness) {
             types.insert(steadiness)
         }
+        // About you: filled in from Health where it has the answer.
+        types.formUnion([
+            HKCharacteristicType(.dateOfBirth),
+            HKCharacteristicType(.biologicalSex),
+            HKQuantityType(.height),
+            HKQuantityType(.bodyMass),
+        ])
         return types
     }
 
@@ -113,6 +121,49 @@ final class ThermyxHealthService: ObservableObject {
         guard let url = URL(string: "x-apple-health://") else { return }
         Task { @MainActor in
             await UIApplication.shared.open(url)
+        }
+    }
+
+    // MARK: - About you
+
+    /// What Health knows of the About you answers. Anything it doesn't
+    /// know, or the wearer didn't share, stays nil for them to type in.
+    struct ProfileImport: Equatable {
+        var age: Int?
+        var sex: UserProfile.Sex?
+        var heightCm: Double?
+        var weightKg: Double?
+
+        var isEmpty: Bool { age == nil && sex == nil && heightCm == nil && weightKg == nil }
+    }
+
+    /// Asks for access, then reads date of birth, sex, and the latest height
+    /// and weight. Health never says which reads were refused, so a refusal
+    /// simply comes back empty.
+    func importProfile() async -> ProfileImport {
+        await requestAuthorization()
+        guard isAvailable, availability != .notEntitled else { return ProfileImport() }
+        var result = ProfileImport()
+        if let birth = try? store.dateOfBirthComponents(), let born = Calendar.current.date(from: birth) {
+            result.age = Calendar.current.dateComponents([.year], from: born, to: .now).year
+        }
+        switch (try? store.biologicalSex())?.biologicalSex {
+        case .male: result.sex = .male
+        case .female: result.sex = .female
+        default: break
+        }
+        result.heightCm = await latest(.height, unit: .meterUnit(with: .centi))
+        result.weightKg = await latest(.bodyMass, unit: .gramUnit(with: .kilo))
+        return result
+    }
+
+    private func latest(_ identifier: HKQuantityTypeIdentifier, unit: HKUnit) async -> Double? {
+        await withCheckedContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: HKQuantityType(identifier), predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                continuation.resume(returning: (samples?.first as? HKQuantitySample)?.quantity.doubleValue(for: unit))
+            }
+            store.execute(query)
         }
     }
 

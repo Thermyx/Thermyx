@@ -13,8 +13,12 @@ import UserNotifications
 enum ThermyxPreviewHarness {
 
     enum State: String {
+        /// Signed out, on the welcome screen.
+        case onboardingWelcome
         case onboardingRole
+        case onboardingAbout
         case onboardingPair
+        case onboardingCalibrate
         case home
         case homeZones
         case homeOneFoot
@@ -40,6 +44,10 @@ enum ThermyxPreviewHarness {
         case simulator
         /// Simulated insoles, starting from the beginning of onboarding.
         case simulatorOnboarding
+        /// Simulated insoles advertising, on the insoles step.
+        case simulatorPair
+        /// The fake insole connected, on the calibration step.
+        case simulatorCalibrate
     }
 
     static let state: State? = {
@@ -54,7 +62,7 @@ enum ThermyxPreviewHarness {
 
     /// True when the BLE layer is driving simulated insoles rather than the
     /// scripted preview stream.
-    static var isSimulated: Bool { state == .simulator || state == .simulatorOnboarding }
+    static var isSimulated: Bool { [.simulator, .simulatorOnboarding, .simulatorPair, .simulatorCalibrate].contains(state) }
 
     /// Shows notification banners while the app is open, so the risk alerts
     /// can be seen during a simulated session.
@@ -70,8 +78,7 @@ enum ThermyxPreviewHarness {
     }
 
     /// Drives a scripted walk through the tabs, so a screen recording of the
-    /// real app can be captured without a hand on the device. Used to produce
-    /// the placeholder onboarding walkthrough.
+    /// real app can be captured without a hand on the device.
     @MainActor
     final class Tour: ObservableObject {
         @Published var tab: UserTab = .home
@@ -103,6 +110,15 @@ enum ThermyxPreviewHarness {
 
     static var isTouring: Bool { state == .tour }
 
+    /// `-ThermyxStartCalibration`: calibration starts by itself.
+    static var startsCalibration: Bool { ProcessInfo.processInfo.arguments.contains("-ThermyxStartCalibration") }
+    /// `-ThermyxScrollToEnd`: onboarding pages open scrolled to the bottom.
+    static var scrollsToEnd: Bool { ProcessInfo.processInfo.arguments.contains("-ThermyxScrollToEnd") }
+
+    static var isOnboarding: Bool {
+        [.onboardingWelcome, .onboardingRole, .onboardingAbout, .onboardingPair, .onboardingCalibrate].contains(state)
+    }
+
     /// A watermark shown over the whole app whenever the harness is feeding
     /// synthetic readings.
     ///
@@ -117,11 +133,11 @@ enum ThermyxPreviewHarness {
             // a screen title or a reading, because the point is to be read,
             // not to obscure the thing it is warning about.
             content.safeAreaInset(edge: .bottom, spacing: 0) {
-                // Hidden during a tour: the recording is captured for use as
-                // the onboarding walkthrough, where the banner would be wrong.
-                // Every other preview state still carries it.
-                // Simulated insoles get the always-compiled Demo Mode banner.
-                if ThermyxPreviewHarness.isActive, !ThermyxPreviewHarness.isTouring, !ThermyxPreviewHarness.isSimulated {
+                // Hidden during a tour and on onboarding screens, which show
+                // no readings. Simulated insoles get the always-compiled Demo
+                // Mode banner.
+                if ThermyxPreviewHarness.isActive, !ThermyxPreviewHarness.isTouring, !ThermyxPreviewHarness.isSimulated,
+                   !ThermyxPreviewHarness.isOnboarding {
                     Text("Simulated — not live sensor data")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.onEmber)
                         .frame(maxWidth: .infinity)
@@ -145,12 +161,23 @@ enum ThermyxPreviewHarness {
     }
 
     /// Which onboarding step to open on.
-    static var initialOnboardingStep: Int {
+    static var initialOnboardingStep: OnboardingFlow.Step {
         switch state {
-        case .onboardingRole: return 1
-        case .onboardingPair: return 3
-        default: return 0
+        case .onboardingRole: return .role
+        case .onboardingAbout: return .about
+        case .onboardingPair, .simulatorPair: return .insoles
+        case .onboardingCalibrate, .simulatorCalibrate: return .calibrate
+        default: return .welcome
         }
+    }
+
+    /// The account a preview runs as: none on the welcome screen, otherwise
+    /// a stand-in. Simulated insoles, or `-ThermyxAdmin`, run as an admin.
+    static var account: ThermyxAccount? {
+        guard let state, state != .onboardingWelcome else { return nil }
+        let admin = isSimulated || ProcessInfo.processInfo.arguments.contains("-ThermyxAdmin")
+        return ThermyxAccount(uid: "preview", email: admin ? ThermyxAdmins.emails.sorted().first : nil,
+                              displayName: "Jordan Taylor")
     }
 
     /// Which tab a trusted-member state opens on.
@@ -194,7 +221,8 @@ enum ThermyxPreviewHarness {
         guard let state else { return }
 
         switch state {
-        case .onboardingRole, .onboardingPair, .simulatorOnboarding:
+        case .onboardingWelcome, .onboardingRole, .onboardingAbout, .onboardingPair, .onboardingCalibrate,
+             .simulatorOnboarding, .simulatorPair, .simulatorCalibrate:
             roles.reset()
         case .trusted, .trustedSample, .trustedSampleInsights:
             roles.complete(role: .trustedMember, name: "Watcher", watched: "Morgan Lee", code: "THERMYX-01")
@@ -226,10 +254,12 @@ enum ThermyxPreviewHarness {
                 viewModel.injectPreviewHistory(includeZones: true, feet: Foot.allCases)
                 viewModel.ble.simulator?.connectAll()
             }
+            if state == .simulatorCalibrate { viewModel.ble.startFakeInsoles() }
             return
         }
         guard let state,
-              state != .onboardingRole, state != .onboardingPair,
+              state != .onboardingWelcome, state != .onboardingRole, state != .onboardingAbout,
+              state != .onboardingPair, state != .onboardingCalibrate,
               state != .trusted, state != .trustedSample, state != .trustedSampleInsights
         else { return }
 

@@ -26,7 +26,7 @@ either. All multi-byte fields are little-endian.
 | 5–6 | Ambient temperature in °C × 100, signed int16 |
 | 7–8 | Gait stability × 10000, unsigned uint16; `0xFFFF` = not measured |
 | 9–10 | Pressure balance (forefoot share of load) × 10000, unsigned uint16; `0xFFFF` = not measured |
-| 11 | Flags: bits 0–1 which foot (see [Which foot an insole is on](#which-foot-an-insole-is-on)); bits 2–3 setting echo; bit 4 burn cutoff; bit 5 foot sensing present; bit 6 foot detected (meaningful only with bit 5); bit 7 reserved, send `0` |
+| 11 | Flags: bits 0–1 which foot (see [Which foot an insole is on](#which-foot-an-insole-is-on)); bits 2–3 setting echo; bit 4 burn cutoff; bit 5 foot sensing present; bit 6 foot detected (meaningful only with bit 5); bit 7 load is a single arch sensor's level (see below) |
 
 ### Version 2 — 18 bytes
 
@@ -148,6 +148,11 @@ to echo a new setting and says so plainly if one has not within six seconds.
 Firmware that sends `0` here is still supported: the app then confirms from
 byte 1 (Cool once it is cooling, Heat once it is heating or cut off, Auto on
 the next packet).
+
+**Bit 7: arch-only load.** Set by firmware with a single FSR under the arch
+(`FSR_SITES 1`). Bytes 9–10 then carry that sensor's level, 0–10000 for 0–1
+of full scale, instead of the forefoot's share of three sensors, and the app
+labels it "Arch load". Clear means the forefoot share, as before.
 
 **Bit 4: burn cutoff.** Set while the firmware is holding the heater off at
 the burn limit, so the app can tell "Heat refused for safety" from "Heat
