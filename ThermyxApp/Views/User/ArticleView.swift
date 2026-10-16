@@ -326,7 +326,7 @@ struct ArticleView: View {
                 .foregroundStyle(theme.muted)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
-                Text("Thermyx Learn")
+                Text("Aaron Qin")
                     .font(.custom(ThermyxFont.Family.semibold, size: 13, relativeTo: .caption))
                     .foregroundStyle(theme.text)
                 Text("· \(article.meta) · \(article.references.count) sources")

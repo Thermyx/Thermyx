@@ -154,8 +154,6 @@ struct SimulatorView: View {
                     .tracking(ThermyxTracking.screenTitle)
                     .foregroundStyle(Thermyx.Ink.textPrimary)
                     .accessibilityAddTraits(.isHeader)
-                Spacer()
-                SimulatedTag()
             }
             .padding(.top, Thermyx.Space.titleTop)
             Text("Try conditions you can't safely create for real, and watch Thermyx's actual decision engine respond. Nothing here is your data, and none of it is medical advice.")
@@ -805,18 +803,5 @@ struct SimulatorView: View {
             .font(ThermyxFont.bodySmall)
             .foregroundStyle(Thermyx.Ink.textMuted)
             .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// "Simulated", the label every simulator screen carries.
-struct SimulatedTag: View {
-    var body: some View {
-        Text("Simulated")
-            .font(.custom(ThermyxFont.Family.semibold, size: 13, relativeTo: .caption))
-            .foregroundStyle(Thermyx.Ink.amber)
-            .padding(.horizontal, 10)
-            .frame(height: 28)
-            .overlay { Capsule().strokeBorder(Thermyx.Tint.amberBorder, lineWidth: 1) }
-            .accessibilityLabel("Simulated. Not your data.")
     }
 }

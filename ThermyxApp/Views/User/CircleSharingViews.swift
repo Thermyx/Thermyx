@@ -25,7 +25,7 @@ struct CircleMessageBubble: View {
                 ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
                     Text(line)
                         .font(index == 0 ? .custom(ThermyxFont.Family.semibold, size: 15, relativeTo: .body) : ThermyxFont.bodySmall)
-                        .foregroundStyle(line.contains("https://") ? Thermyx.Ink.ice : Thermyx.Ink.textPrimary)
+                        .foregroundStyle(line.contains("https://") ? Color(hex: 0x0B3D1A) : Color(hex: 0x06210E))
                         .lineLimit(line.contains("https://") ? 1 : nil)
                         .truncationMode(.middle)
                         .fixedSize(horizontal: false, vertical: !line.contains("https://"))
@@ -33,23 +33,88 @@ struct CircleMessageBubble: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 11)
-            .background(Thermyx.Ink.elevated, in: BubbleShape())
+            .background(Color(hex: 0x39FF5A), in: BubbleShape())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Example text: \(text)")
     }
 
-    /// A message bubble with a small tail at the bottom left.
-    private struct BubbleShape: Shape {
-        func path(in rect: CGRect) -> Path {
-            var path = Path(roundedRect: rect, cornerRadius: 18, style: .continuous)
-            path.move(to: CGPoint(x: rect.minX + 2, y: rect.maxY - 14))
-            path.addQuadCurve(to: CGPoint(x: rect.minX - 5, y: rect.maxY + 1), control: CGPoint(x: rect.minX + 1, y: rect.maxY - 2))
-            path.addQuadCurve(to: CGPoint(x: rect.minX + 14, y: rect.maxY - 3), control: CGPoint(x: rect.minX + 6, y: rect.maxY + 1))
-            path.closeSubpath()
-            return path
-        }
+    /// A message bubble: rounded on every corner except the bottom left,
+    /// which comes to a point, like a text message.
+private struct BubbleShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let r: CGFloat = 18
+        let tailWidth: CGFloat = 13
+        let tailHeight: CGFloat = 7
+        
+        var p = Path()
+        
+        // Top edge and upper-right corner
+        p.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        p.addArc(
+            center: CGPoint(x: rect.maxX - r, y: rect.minY + r),
+            radius: r,
+            startAngle: .degrees(-90),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        
+        // Right edge and lower-right corner
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - r))
+        p.addArc(
+            center: CGPoint(x: rect.maxX - r, y: rect.maxY - r),
+            radius: r,
+            startAngle: .degrees(0),
+            endAngle: .degrees(90),
+            clockwise: false
+        )
+        
+        // Bottom edge into a smooth, tapered left tail
+        p.addLine(to: CGPoint(
+            x: rect.minX + tailWidth,
+            y: rect.maxY
+        ))
+        
+        p.addQuadCurve(
+            to: CGPoint(
+                x: rect.minX - 2,
+                y: rect.maxY + tailHeight
+            ),
+            control: CGPoint(
+                x: rect.minX + 5,
+                y: rect.maxY + 1
+            )
+        )
+        
+        p.addQuadCurve(
+            to: CGPoint(
+                x: rect.minX + 1,
+                y: rect.maxY - tailHeight - 3
+            ),
+            control: CGPoint(
+                x: rect.minX + 1,
+                y: rect.maxY - 2
+            )
+        )
+        
+        // Left edge and upper-left corner
+        p.addLine(to: CGPoint(
+            x: rect.minX,
+            y: rect.minY + r
+        ))
+        p.addArc(
+            center: CGPoint(x: rect.minX + r, y: rect.minY + r),
+            radius: r,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        
+        p.closeSubpath()
+        return p
+    }
     }
 }
 

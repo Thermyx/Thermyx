@@ -302,7 +302,7 @@ struct HomeView: View {
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
-                    Text("Why")
+                    Text("Why?")
                         .font(ThermyxFont.controlLabel)
                         .foregroundStyle(assessment.level.tint)
                 }
