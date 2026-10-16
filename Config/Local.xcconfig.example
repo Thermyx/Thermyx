@@ -1,0 +1,7 @@
+// Copy to Config/Local.xcconfig on the PAID Apple Developer team.
+//
+// Signs the app with push (and Time Sensitive notifications), so watchers are
+// alerted with the app closed. Needs, in the Apple Developer portal, the
+// Push Notifications capability on the app's identifier (com.thermyx.app.a).
+// A free Personal Team can't do this; leave this file out there.
+CODE_SIGN_ENTITLEMENTS = ThermyxApp/ThermyxApp.Push.entitlements

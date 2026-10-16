@@ -18,7 +18,7 @@ struct CalculusSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                    VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                         SiteEyebrow(title)
                         Text("The math")
                             .font(ThermyxFont.display)
@@ -92,33 +92,36 @@ struct CalculusSheet: View {
 
     private func curves(_ steps: [CalculusStep], selected: Int) -> some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.m) {
-            curve("Foot temperature  T(t)", unitLabel: "°C", steps: steps, selected: selected) { $0.c }
-            curve("Rate  dT/dt", unitLabel: "°C/min", steps: steps, selected: selected) { $0.ratePerMinute }
-            curve("Accumulated  ∫ dT/dt dt", unitLabel: "°C", steps: steps, selected: selected) { $0.accumulated }
+            curve("Foot temperature  T(t)", unitLabel: "°C", scale: .footTemperature(.celsius), steps: steps, selected: selected) { $0.c }
+            curve("Rate  dT/dt", unitLabel: "°C/min", scale: .change(unitSize: 1), steps: steps, selected: selected) { $0.ratePerMinute }
+            curve("Accumulated  ∫ dT/dt dt", unitLabel: "°C", scale: .change(unitSize: 0.6), steps: steps, selected: selected) { $0.accumulated }
         }
     }
 
-    private func curve(_ label: String, unitLabel: String, steps: [CalculusStep], selected: Int,
+    private func curve(_ label: String, unitLabel: String, scale: ChartValueScale, steps: [CalculusStep], selected: Int,
                        value: @escaping (CalculusStep) -> Double?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let values = steps.compactMap(value)
+        let low = values.min() ?? 0, high = values.max() ?? 0
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(label).mathNotation(size: 13)
                 Spacer()
                 Text(value(steps[selected]).map { String(format: "%.3f %@", $0, unitLabel) } ?? "—")
                     .font(ThermyxFont.captionSmall)
                     .monospacedDigit()
-                    .foregroundStyle(Thermyx.Site.text)
+                    .foregroundStyle(value(steps[selected]).map(scale.color(at:)) ?? Thermyx.Site.text)
             }
             Chart {
                 ForEach(steps) { s in
                     if let v = value(s) {
                         LineMark(x: .value("t", s.t), y: .value(label, v))
-                            .foregroundStyle(Thermyx.Ink.ice)
+                            .foregroundStyle(scale.gradient(from: low, to: high))
+                            .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
                             .interpolationMethod(.monotone)
                     }
                 }
                 RuleMark(x: .value("t", steps[selected].t))
-                    .foregroundStyle(Thermyx.Ink.ember.opacity(0.8))
+                    .foregroundStyle(Thermyx.Ink.textPrimary.opacity(0.5))
             }
             .chartYScale(domain: .automatic(includesZero: false))
             .chartXAxis {

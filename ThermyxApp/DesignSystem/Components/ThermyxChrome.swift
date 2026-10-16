@@ -2,7 +2,10 @@ import SwiftUI
 
 // MARK: - Card container
 
-/// The standard Deck card: a filled surface, a hairline border, and a radius.
+/// A section. In v2 most sections are not boxed: they sit on the background
+/// under a hairline, which is what `ThermyxCard` draws by default. Passing a
+/// tinted fill or a coloured border (an alert, a highlighted state) still
+/// gives a rounded panel, because that colour is the message.
 struct ThermyxCard<Content: View>: View {
     var padding: CGFloat = Thermyx.Space.xl
     var radius: CGFloat = Thermyx.Radius.section
@@ -11,21 +14,33 @@ struct ThermyxCard<Content: View>: View {
     var borderWidth: CGFloat = Thermyx.Stroke.hairline
     @ViewBuilder var content: Content
 
+    private var isPanel: Bool { fill != Thermyx.Ink.deck || border != Thermyx.Ink.hairline }
+
     var body: some View {
-        content
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(fill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(border, lineWidth: borderWidth)
-            }
+        if isPanel {
+            content
+                .padding(padding)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(fill == Thermyx.Ink.deck ? Color.clear : fill,
+                            in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(border, lineWidth: borderWidth)
+                }
+        } else {
+            content
+                .padding(.vertical, max(padding - 2, Thermyx.Space.m))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .top) { ThermyxDivider() }
+        }
     }
 }
 
 // MARK: - Section label
 
-/// `THERMAL MODE`, `EVENTS`, `TRUSTED CIRCLE` — Archivo Narrow, tracked, caps.
+/// "What happens at each level", "Trusted circle": 17 pt semibold, sentence
+/// case. A colour other than the default tints the title (an Apple Health
+/// prompt, a warning).
 struct SectionLabel: View {
     let text: String
     var color: Color = Thermyx.Ink.textSupporting
@@ -46,19 +61,52 @@ struct SectionLabel: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(text)
-                .narrowLabel(ThermyxFont.sectionLabel, tracking: ThermyxTracking.sectionLabel, color: color)
+                .font(ThermyxFont.sectionTitle)
+                .foregroundStyle(color == Thermyx.Ink.textSupporting ? Thermyx.Ink.textPrimary : color)
             if let trailing {
                 Spacer(minLength: Thermyx.Space.xs)
                 trailing
+                    .font(ThermyxFont.bodySmall)
             }
         }
         .accessibilityAddTraits(.isHeader)
     }
 }
 
+/// The "Apple Health" section label with Apple's Health logo in its own
+/// colours, in place of the plain text-only label.
+struct AppleHealthLabel: View {
+    var color: Color = Thermyx.Ink.textSupporting
+
+    var body: some View {
+        HStack(spacing: Thermyx.Space.xs) {
+            AppleHealthIcon(size: 22)
+            SectionLabel("Apple Health", color: color)
+        }
+    }
+}
+
+/// Apple Health's app icon, from the asset in the project, in its own
+/// colours: the white tile with the heart, as it appears on the Home
+/// Screen. Never recoloured or redrawn.
+struct AppleHealthIcon: View {
+    var size: CGFloat = 40
+
+    var body: some View {
+        Image("AppleHealth")
+            .renderingMode(.original)
+            .resizable()
+            .interpolation(.high)
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.225, style: .continuous))
+            .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Status pill
 
-/// A dot plus a tracked caps label on a tinted ground — `LIVE`, `OFFLINE`, `ON`.
+/// A dot and a short label — "Live", "Offline", "On".
 struct StatusPill: View {
     let text: String
     let tint: Color
@@ -80,11 +128,11 @@ struct StatusPill: View {
     }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 6) {
             if showsDot {
                 Circle()
                     .fill(tint)
-                    .frame(width: 7, height: 7)
+                    .frame(width: 6, height: 6)
                     .opacity(isPulsing && !reduceMotion ? (pulse ? 1 : 0.45) : 1)
                     .onAppear {
                         guard isPulsing, !reduceMotion else { return }
@@ -94,12 +142,9 @@ struct StatusPill: View {
                     }
             }
             Text(text)
-                .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: tint)
+                .font(ThermyxFont.statusPill)
+                .foregroundStyle(tint)
         }
-        .padding(.horizontal, 11)
-        .padding(.vertical, 6)
-        .background(fill, in: Capsule())
-        .overlay { Capsule().strokeBorder(border, lineWidth: Thermyx.Stroke.hairline) }
         .accessibilityElement(children: .combine)
     }
 
@@ -124,19 +169,20 @@ struct MetricTile: View {
     var accessibilityValue: String?
 
     var body: some View {
-        ThermyxCard(padding: Thermyx.Space.m, radius: Thermyx.Radius.control) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(label)
-                    .narrowLabel(ThermyxFont.zoneLabel, tracking: 1.4, color: Thermyx.Ink.textSupporting)
-                Text(value ?? "—")
-                    .font(numeralFont)
-                    .tracking(ThermyxTracking.metricNumeral)
-                    .monospacedDigit()
-                    .foregroundStyle(value == nil ? Thermyx.Ink.textFaint : tint)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-            }
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Text(value ?? "—")
+                .font(numeralFont)
+                .monospacedDigit()
+                .foregroundStyle(value == nil ? Thermyx.Ink.textFaint : tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(label)
         .accessibilityValue(accessibilityValue ?? value ?? "No reading")
@@ -145,7 +191,7 @@ struct MetricTile: View {
 
 // MARK: - Segmented control
 
-/// The pill segmented control used for °C/°F and DAY/WEEK/MONTH.
+/// A segmented control in a dark well: °C/°F, Day/Week/Month.
 struct ThermyxSegmentedControl<Value: Hashable>: View {
     let options: [Value]
     let label: (Value) -> String
@@ -156,20 +202,20 @@ struct ThermyxSegmentedControl<Value: Hashable>: View {
     var accessibilityPrefix: String = ""
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 4) {
             ForEach(options, id: \.self) { option in
                 let isSelected = option == selection
                 Button {
                     selection = option
                 } label: {
                     Text(label(option))
-                        .font(font)
-                        .tracking(tracking)
-                        .textCase(uppercase ? .uppercase : nil)
-                        .foregroundStyle(isSelected ? Thermyx.Ink.textPrimary : Thermyx.Ink.textSupporting)
-                        .padding(.horizontal, 12)
+                        .font(ThermyxFont.controlLabel)
+                        .foregroundStyle(isSelected ? Thermyx.Ink.onPrimary : Thermyx.Ink.textMuted)
+                        .padding(.horizontal, 14)
+                        .frame(minWidth: 44)
                         .frame(maxHeight: .infinity)
-                        .background(isSelected ? Thermyx.Ink.elevated : .clear)
+                        .background(isSelected ? Thermyx.Ink.textPrimary : .clear,
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -177,15 +223,17 @@ struct ThermyxSegmentedControl<Value: Hashable>: View {
                 .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
             }
         }
-        .frame(height: Thermyx.minimumTapTarget * 0.75)
-        .clipShape(Capsule())
-        .overlay { Capsule().strokeBorder(Thermyx.Tint.neutralBorder, lineWidth: Thermyx.Stroke.hairline) }
+        .padding(4)
+        .frame(height: 44)
+        .background(Thermyx.Tint.neutralFill, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .animation(SiteMotion.press, value: selection)
     }
 }
 
 // MARK: - Rows
 
-/// A tappable list row with an icon tile, a title, optional detail, and a chevron.
+/// A tappable row: an optional symbol, a title, optional detail, a chevron,
+/// and a hairline under it.
 struct ThermyxNavigationRow: View {
     let title: String
     var detail: String?
@@ -196,44 +244,33 @@ struct ThermyxNavigationRow: View {
     var emphasized: Bool = false
 
     var body: some View {
-        HStack(spacing: Thermyx.Space.l) {
+        HStack(spacing: Thermyx.Space.m) {
             if let systemImage {
-                RoundedRectangle(cornerRadius: Thermyx.Radius.button, style: .continuous)
-                    .fill(iconFill)
-                    .frame(width: iconSize, height: iconSize)
-                    .overlay {
-                        Image(systemName: systemImage)
-                            .font(.system(size: iconSize * 0.45, weight: .semibold))
-                            .foregroundStyle(iconTint)
-                    }
+                Image(systemName: systemImage)
+                    .font(.system(size: 17, weight: .medium))
+                    .foregroundStyle(iconTint)
+                    .frame(width: 28)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(ThermyxFont.rowTitle)
+                    .font(emphasized ? ThermyxFont.rowTitle : ThermyxFont.rowTitleRegular)
                     .foregroundStyle(Thermyx.Ink.textPrimary)
                     .multilineTextAlignment(.leading)
                 if let detail {
                     Text(detail)
-                        .font(ThermyxFont.caption)
+                        .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textMuted)
                         .multilineTextAlignment(.leading)
                 }
             }
             Spacer(minLength: Thermyx.Space.xs)
             Image(systemName: "chevron.right")
-                .font(.system(size: 14, weight: .bold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(emphasized ? Thermyx.Ink.ice : Thermyx.Ink.textFaint)
         }
-        .padding(Thermyx.Space.xl)
+        .padding(.vertical, 14)
         .frame(minHeight: Thermyx.minimumTapTarget)
-        .background(
-            emphasized ? Thermyx.Tint.signalFill : Thermyx.Ink.deck,
-            in: RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous)
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous)
-                .strokeBorder(emphasized ? Thermyx.Tint.signalBorder : Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
-        }
+        .overlay(alignment: .bottom) { ThermyxDivider() }
         .contentShape(.rect)
     }
 }
@@ -250,7 +287,7 @@ struct ThermyxValueRow: View {
         HStack(spacing: Thermyx.Space.m) {
             Text(label)
                 .font(ThermyxFont.body)
-                .foregroundStyle(Thermyx.Ink.textSupporting)
+                .foregroundStyle(Thermyx.Ink.textPrimary)
             Spacer(minLength: Thermyx.Space.xs)
             Group {
                 if monospaced {
@@ -261,26 +298,22 @@ struct ThermyxValueRow: View {
             }
             .font(valueFont)
             .tracking(valueTracking)
-            .foregroundStyle(Thermyx.Ink.textPrimary)
+            .foregroundStyle(Thermyx.Ink.textMuted)
             .multilineTextAlignment(.trailing)
         }
-        .padding(.horizontal, Thermyx.Space.xl)
-        .padding(.vertical, 13)
+        .padding(.vertical, 14)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Wraps rows in a bordered card with hairline dividers between them.
+/// Rows between hairlines, flush with the screen's gutter.
 struct ThermyxGroupedCard<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous)
-                    .strokeBorder(Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
-            }
+            .overlay(alignment: .top) { ThermyxDivider() }
+            .overlay(alignment: .bottom) { ThermyxDivider() }
     }
 }
 
@@ -294,48 +327,57 @@ struct ThermyxDivider: View {
 
 // MARK: - Buttons
 
-/// The Signal Blue primary action. Ink-on-blue label, 48pt minimum.
+/// The primary action: a white, 56 pt, 16-radius slab with near-black type.
+/// Pass a fill for a coloured action (Ember for an emergency).
 struct ThermyxPrimaryButtonStyle: ButtonStyle {
-    var fill: Color = Thermyx.Ink.signal
-    var foreground: Color = Thermyx.Ink.onSignal
+    var fill: Color = Thermyx.Ink.textPrimary
+    var foreground: Color = Thermyx.Ink.onPrimary
+
+    @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(ThermyxFont.buttonLabel)
-            .foregroundStyle(foreground)
+            .foregroundStyle(isEnabled ? foreground : Thermyx.Ink.textFaint)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: Thermyx.minimumTapTarget)
+            .frame(minHeight: 56)
             .padding(.horizontal, Thermyx.Space.xl)
-            .background(fill, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
-            .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .background(isEnabled ? fill : Thermyx.Tint.neutralFill,
+                        in: RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .opacity(configuration.isPressed ? 0.85 : 1)
+            .animation(SiteMotion.press, value: configuration.isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous))
     }
 }
 
-/// The outlined secondary action.
+/// The outlined secondary action: same slab, hairline border, no fill.
 struct ThermyxSecondaryButtonStyle: ButtonStyle {
-    var tint: Color = Thermyx.Ink.textSecondary
+    var tint: Color = Thermyx.Ink.textPrimary
     var border: Color = Thermyx.Tint.neutralBorder
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(ThermyxFont.controlLabel)
+            .font(ThermyxFont.buttonLabel)
             .foregroundStyle(tint)
             .frame(maxWidth: .infinity)
-            .frame(minHeight: Thermyx.minimumTapTarget)
+            .frame(minHeight: 56)
             .padding(.horizontal, Thermyx.Space.xl)
             .overlay {
-                RoundedRectangle(cornerRadius: Thermyx.Radius.button + 1, style: .continuous)
-                    .strokeBorder(border, lineWidth: Thermyx.Stroke.emphasis)
+                RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous)
+                    .strokeBorder(border, lineWidth: Thermyx.Stroke.hairline)
             }
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.7 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(SiteMotion.press, value: configuration.isPressed)
+            .contentShape(RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous))
     }
 }
 
 // MARK: - Screen scaffold
 
-/// A dark screen with the standard gutters and a large title.
+/// A tab-level screen: a 30 pt title with an optional accessory, then the
+/// content, over the scaffold's topography (so it draws no background).
 struct ThermyxScreen<Content: View, Accessory: View>: View {
     let title: String
     var accessory: Accessory
@@ -355,8 +397,9 @@ struct ThermyxScreen<Content: View, Accessory: View>: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.xl) {
                 HStack(alignment: .center, spacing: Thermyx.Space.m) {
                     Text(title)
                         .font(ThermyxFont.screenTitle)
@@ -366,71 +409,141 @@ struct ThermyxScreen<Content: View, Accessory: View>: View {
                     Spacer(minLength: Thermyx.Space.xs)
                     accessory
                 }
-                .padding(.top, Thermyx.Space.m)
+                .padding(.top, Thermyx.Space.titleTop)
 
                 content
+                Color.clear.frame(height: 1).id("end")
             }
             .padding(.horizontal, horizontalPadding)
             .padding(.bottom, Thermyx.Space.xxl)
         }
+        .debugScroll(proxy)
+        }
         .scrollIndicators(.hidden)
-        .background(Thermyx.Ink.midnight)
         .thermyxTopScrim()
     }
 }
 
-/// A pushed detail screen: back chevron, title, optional trailing caption.
+/// A pushed screen: a back link, then a 30 pt title, as in the design's
+/// Device screen. Draws the topography itself, since a navigation stack
+/// covers the scaffold's.
 struct ThermyxDetailScreen<Content: View>: View {
     let title: String
     var caption: String?
     var horizontalPadding: CGFloat = Thermyx.Space.screen
+    /// What the back link says: the screen it returns to.
+    var backTitle: String = "Back"
     @ViewBuilder var content: Content
 
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: Thermyx.Space.l) {
-                HStack(spacing: Thermyx.Space.m) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.xl) {
+                VStack(alignment: .leading, spacing: 6) {
                     Button {
                         dismiss()
                     } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundStyle(Thermyx.Ink.ice)
-                            .frame(width: Thermyx.minimumTapTarget, height: Thermyx.minimumTapTarget)
-                            .contentShape(.rect)
+                        HStack(spacing: 2) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 18, weight: .semibold))
+                            Text(backTitle)
+                                .font(.custom(ThermyxFont.Family.medium, size: 17, relativeTo: .body))
+                        }
+                        .foregroundStyle(Thermyx.Ink.ice)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
                     }
                     .buttonStyle(.plain)
+                    .padding(.leading, -6)
                     .accessibilityLabel("Back")
 
-                    Text(title)
-                        .font(ThermyxFont.detailTitle)
-                        .tracking(ThermyxTracking.screenTitle)
-                        .foregroundStyle(Thermyx.Ink.textPrimary)
-                        .accessibilityAddTraits(.isHeader)
-
-                    Spacer(minLength: Thermyx.Space.xs)
-
-                    if let caption {
-                        Text(caption)
-                            .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.textSupporting)
+                    HStack(alignment: .firstTextBaseline, spacing: Thermyx.Space.m) {
+                        Text(title)
+                            .font(ThermyxFont.detailTitle)
+                            .tracking(ThermyxTracking.screenTitle)
+                            .foregroundStyle(Thermyx.Ink.textPrimary)
+                            .accessibilityAddTraits(.isHeader)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: Thermyx.Space.xs)
+                        if let caption {
+                            Text(caption)
+                                .font(ThermyxFont.statusPill)
+                                .foregroundStyle(Thermyx.Ink.textMuted)
+                        }
                     }
                 }
-                // The chevron's 48pt frame supplies its own leading inset.
-                .padding(.leading, -Thermyx.minimumTapTarget / 3)
 
                 content
+                Color.clear.frame(height: 1).id("end")
             }
             .padding(.horizontal, horizontalPadding)
             .padding(.bottom, Thermyx.Space.xxl)
         }
+        .debugScroll(proxy)
+        }
         .scrollIndicators(.hidden)
-        .background(Thermyx.Ink.midnight)
+        .thermyxBackground()
         .thermyxTopScrim()
         .navigationBarBackButtonHidden()
         .toolbar(.hidden, for: .navigationBar)
     }
+}
+
+extension View {
+    /// Debug builds: scrolls to `-ThermyxScrollTo <id>` once laid out.
+    @ViewBuilder
+    func debugScroll(_ proxy: ScrollViewProxy) -> some View {
+        #if DEBUG
+        task {
+            guard let target = ThermyxPreviewHarness.scrollTarget else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            proxy.scrollTo(target, anchor: target == "end" ? .bottom : .top)
+        }
+        #else
+        self
+        #endif
+    }
+}
+
+// MARK: - Background
+
+extension View {
+    /// Black with the topographic contours, for screens and sheets the tab
+    /// scaffold doesn't sit behind.
+    func thermyxBackground() -> some View {
+        background {
+            ZStack {
+                Color.black
+                TopographyBackground().opacity(ThermyxBackdrop.opacity)
+            }
+            .ignoresSafeArea()
+        }
+    }
+
+    /// The root of a tab's navigation stack: lets the scaffold's topography
+    /// show through (iOS 18+), or draws its own on iOS 17.
+    @ViewBuilder
+    func thermyxNavigationRoot() -> some View {
+        if #available(iOS 18.0, *) {
+            containerBackground(.clear, for: .navigation)
+        } else {
+            thermyxBackground()
+        }
+    }
+
+    /// A sheet's background: the same black and contours.
+    func thermyxSheetBackground() -> some View {
+        thermyxBackground()
+            .presentationBackground(.black)
+    }
+}
+
+/// How strongly the contours show behind app screens: enough to read as
+/// the website's ground, quiet enough that numbers stay the loudest thing.
+enum ThermyxBackdrop {
+    static let opacity = 0.5
 }
 
 // MARK: - Empty state
@@ -445,35 +558,29 @@ struct ThermyxEmptyState: View {
     var action: (() -> Void)?
 
     var body: some View {
-        VStack(spacing: Thermyx.Space.m) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 26, weight: .regular))
-                    .foregroundStyle(Thermyx.Ink.textSupporting)
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+                    .padding(.bottom, 2)
             }
             Text(title)
-                .font(ThermyxFont.rowTitle)
+                .font(ThermyxFont.sectionTitle)
                 .foregroundStyle(Thermyx.Ink.textPrimary)
-                .multilineTextAlignment(.center)
             Text(message)
-                .font(ThermyxFont.caption)
+                .font(ThermyxFont.bodySmall)
                 .foregroundStyle(Thermyx.Ink.textMuted)
-                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
                 Button(actionTitle, action: action)
-                    .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
-                    .padding(.top, 2)
+                    .buttonStyle(ThermyxSecondaryButtonStyle())
+                    .padding(.top, Thermyx.Space.xs)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, Thermyx.Space.xxl)
-        .padding(.horizontal, Thermyx.Space.xl)
-        .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.section, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.section, style: .continuous)
-                .strokeBorder(Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, Thermyx.Space.xl)
+        .overlay(alignment: .top) { ThermyxDivider() }
         .accessibilityElement(children: .combine)
     }
 }

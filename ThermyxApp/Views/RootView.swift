@@ -11,6 +11,23 @@ struct AppRootView: View {
 
     var body: some View {
         Group {
+            #if DEBUG
+            if ThermyxPreviewHarness.state == .widgets {
+                WidgetGallery()
+            } else { content }
+            #else
+            content
+            #endif
+        }
+        .animation(.easeInOut(duration: 0.35), value: account.isSignedIn && roles.hasCompletedOnboarding)
+        .tint(Thermyx.Ink.ice)
+        .preferredColorScheme(.dark)
+        .onAppear { ThermyxFontRegistration.verify() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        Group {
             if !account.isSignedIn || !roles.hasCompletedOnboarding {
                 OnboardingFlow(roles: roles, settings: settings)
                     .transition(.opacity)
@@ -20,21 +37,13 @@ struct AppRootView: View {
                 UserRoot(roles: roles, settings: settings)
             }
         }
-        .animation(.easeInOut(duration: 0.35), value: account.isSignedIn && roles.hasCompletedOnboarding)
-        .tint(Thermyx.Ink.ice)
-        .preferredColorScheme(.dark)
-        .onAppear { ThermyxFontRegistration.verify() }
-        // Test tools belong to admin accounts: signing out of one ends them.
-        .onChange(of: account.isAdmin) { _, isAdmin in
-            if !isAdmin, viewModel.ble.isDemoMode { viewModel.ble.stopDemoMode() }
-        }
     }
 }
 
 // MARK: - User
 
 enum UserTab: Hashable {
-    case home, insights, learn, profile
+    case home, insights, learn, simulator, safety
 }
 
 struct UserRoot: View {
@@ -42,6 +51,7 @@ struct UserRoot: View {
     @ObservedObject var roles: ThermyxRoleStore
     @ObservedObject var settings: ThermyxSettingsStore
 
+    @ObservedObject private var tutorial = TutorialCenter.shared
     @StateObject private var alerts = ThermyxAlertCoordinator()
     @StateObject private var health = ThermyxHealthService()
     @State private var showingCritical = false
@@ -60,10 +70,11 @@ struct UserRoot: View {
     }()
 
     private static let tabs: [ThermyxTabBar<UserTab>.Item] = [
-        .init(.home, label: "Home", systemImage: "house.fill"),
-        .init(.insights, label: "Insights", systemImage: "chart.xyaxis.line"),
-        .init(.learn, label: "Learn", systemImage: "book.fill"),
-        .init(.profile, label: "Profile", systemImage: "person.crop.circle.fill")
+        .init(.home, label: "Home", systemImage: "house", selectedImage: "house.fill"),
+        .init(.insights, label: "Insights", systemImage: "chart.bar", selectedImage: "chart.bar.fill"),
+        .init(.learn, label: "Learn", systemImage: "newspaper", selectedImage: "newspaper.fill"),
+        .init(.simulator, label: "Simulator", systemImage: "dial.medium", selectedImage: "dial.medium.fill"),
+        .init(.safety, label: "Safety", systemImage: "shield", selectedImage: "shield.fill")
     ]
 
     /// The tour drives the tab when it is running; otherwise the user does.
@@ -77,11 +88,10 @@ struct UserRoot: View {
     }
 
     var body: some View {
-        // The control bar sits between the content and the tab bar, on every
-        // tab-level screen. Pushed reading screens omit it: they need the
-        // vertical room for charts and are one tap from back.
+        // The thermal control sits between the content and the tab bar on
+        // every screen, pushed ones included.
         ThermyxTabScaffold(items: Self.tabs, selection: tabBinding) {
-            ThermalControlBar(viewModel: viewModel)
+            ThermalControlBar(viewModel: viewModel, settings: settings)
         } content: { tab in
             switch tab {
             case .home:
@@ -89,10 +99,33 @@ struct UserRoot: View {
             case .insights:
                 InsightsHubView(settings: settings, health: health)
             case .learn:
-                LearnTab()
-            case .profile:
+                LearnTab(settings: settings)
+            case .simulator:
+                SimulatorTab(settings: settings)
+            case .safety:
                 SafetyView(roles: roles, settings: settings, alerts: alerts, health: health)
             }
+        }
+        .overlayPreferenceValue(SpotlightAnchors.self) { anchors in
+            if tutorial.isShowing {
+                SpotlightTutorial(anchors: anchors, viewModel: viewModel, center: tutorial)
+                    .transition(.opacity)
+            }
+        }
+        .animation(SiteMotion.settle, value: tutorial.isShowing)
+        .onChange(of: tutorial.replayRequest) { _, _ in tab = .home }
+        .onChange(of: tutorial.requestedTab) { _, requested in
+            if let requested { withAnimation(SiteMotion.fade) { tab = requested } }
+        }
+        .task {
+            // Once, after onboarding, on Home.
+            try? await Task.sleep(for: .seconds(0.8))
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-ThermyxTutorial") { tutorial.replay(); return }
+            if ThermyxPreviewHarness.isActive { return }
+            #endif
+            if !tutorial.hasSeen { tab = .home }
+            tutorial.showIfFirstRun()
         }
         .onChange(of: settings.temperatureUnit, initial: true) { _, unit in
             viewModel.widgets.fahrenheit = unit == .fahrenheit
@@ -101,7 +134,9 @@ struct UserRoot: View {
             viewModel.healthService = health
             await viewModel.history.loadIfNeeded()
             #if DEBUG
-            if !ThermyxPreviewHarness.isActive || ThermyxPreviewHarness.isSimulated {
+            // `-ThermyxNoPrompts`: screenshots without permission alerts.
+            if !ProcessInfo.processInfo.arguments.contains("-ThermyxNoPrompts"),
+               !ThermyxPreviewHarness.isActive || ThermyxPreviewHarness.isSimulated {
                 await alerts.requestPermission()
                 alerts.location.requestPermission()
             }
@@ -110,6 +145,9 @@ struct UserRoot: View {
             alerts.location.requestPermission()
             #endif
             health.refreshAuthorizationState()
+            // Yesterday's AI summary, if it was worn and never got one.
+            alerts.catchUpSummary(history: viewModel.history, settings: settings)
+            ThermyxWeeklyReminder.schedule()
             if settings.healthKitEnabled, health.availability == .authorized {
                 await health.refreshContext()
             }
@@ -118,7 +156,7 @@ struct UserRoot: View {
             let assessment = viewModel.assessment
             alerts.isDemoMode = viewModel.ble.isDemoMode
             alerts.evaluate(assessment, reading: reading, settings: settings)
-            alerts.evaluateComfort(reading, unit: settings.temperatureUnit)
+            alerts.evaluateComfort(reading, unit: settings.temperatureUnit, conditions: settings.profile.conditionSet)
             if assessment.level == .critical {
                 let snoozed = criticalSnoozedUntil.map { Date.now < $0 } ?? false
                 if !snoozed, !showingCritical { showingCritical = true }
@@ -182,11 +220,12 @@ struct TrustedMemberRoot: View {
             }
         }
         .task {
+            member.start(settings: settings)
             #if DEBUG
-            if ThermyxPreviewHarness.showsSampleShift { member.isShowingSample = true }
+            if ThermyxPreviewHarness.isActive { return }
             #endif
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
-            member.start(settings: settings)
+            ThermyxPushRegistrar.shared.register()
         }
         .onDisappear { member.stop() }
     }

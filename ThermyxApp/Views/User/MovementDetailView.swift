@@ -41,7 +41,6 @@ struct MovementDetailView: View {
 
             articleLink
         }
-        .hidesThermalControlBar()
     }
 
     // MARK: - Gait
@@ -65,7 +64,8 @@ struct MovementDetailView: View {
                         ChartSeries(
                             id: "gait-\(foot.rawValue)", name: "\(foot.label) gait stability",
                             points: digest.points { $0.gaitMean.map { $0 * 100 } },
-                            color: Thermyx.Ink.ice, isFilled: true
+                            color: Thermyx.Ink.ice, isFilled: true,
+                            scale: .steadiness
                         )
                     ],
                     range: settings.insightsRange,
@@ -89,9 +89,9 @@ struct MovementDetailView: View {
                     SectionLabel(pairs.count > 1 ? "\(foot.label) pressure" : "Pressure distribution")
 
                     VStack(spacing: Thermyx.Space.s) {
-                        LabeledProgressBar(label: "Forefoot", value: split.forefoot, tint: Thermyx.Ink.amber)
-                        LabeledProgressBar(label: "Arch", value: split.arch, tint: Thermyx.Ink.textSupporting)
-                        LabeledProgressBar(label: "Heel", value: split.heel, tint: Thermyx.Ink.ice)
+                        LabeledProgressBar(label: "Forefoot", value: split.forefoot, tint: Thermyx.Ink.amber, scale: .load)
+                        LabeledProgressBar(label: "Arch", value: split.arch, tint: Thermyx.Ink.textSupporting, scale: .load)
+                        LabeledProgressBar(label: "Heel", value: split.heel, tint: Thermyx.Ink.ice, scale: .load)
                     }
 
                     Text(interpretation(split))

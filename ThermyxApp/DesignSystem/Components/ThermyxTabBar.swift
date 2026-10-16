@@ -2,27 +2,25 @@ import SwiftUI
 
 /// The Thermyx tab bar.
 ///
-/// This started as a native `TabView` themed through `UITabBarAppearance`,
-/// which is the better default — it brings tap-to-top, VoiceOver ordering and
-/// safe-area handling for free. On iOS 26 the system tab bar ignores that
-/// appearance and renders its own floating bar with system-font labels, which
-/// breaks the Archivo Narrow type system the rest of the app is built on.
-///
-/// So the bar is drawn here instead, to the handoff spec, with the
-/// accessibility affordances a native bar would have supplied: each tab is a
-/// button carrying `.isSelected`, targets clear 48pt, and the whole bar is one
-/// tab-bar container for VoiceOver.
+/// Drawn rather than a system `TabView`: on iOS 26 the system bar floats and
+/// sets its own type, which breaks the design's flat #0A0A0B bar with Geist
+/// labels. The affordances a native bar would supply are kept: each tab is a
+/// button carrying `.isSelected`, targets clear 48 pt, and the bar is one
+/// container for VoiceOver.
 struct ThermyxTabBar<Tab: Hashable>: View {
     struct Item: Identifiable {
         let tab: Tab
         let label: String
         let systemImage: String
+        /// The filled variant shown while selected.
+        let selectedImage: String
         var id: Tab { tab }
 
-        init(_ tab: Tab, label: String, systemImage: String) {
+        init(_ tab: Tab, label: String, systemImage: String, selectedImage: String? = nil) {
             self.tab = tab
             self.label = label
             self.systemImage = systemImage
+            self.selectedImage = selectedImage ?? systemImage
         }
     }
 
@@ -37,34 +35,32 @@ struct ThermyxTabBar<Tab: Hashable>: View {
                     guard !isSelected else { return }
                     selection = item.tab
                 } label: {
-                    VStack(spacing: 5) {
-                        Image(systemName: item.systemImage)
-                            .font(.system(size: 20, weight: .semibold))
-                            .frame(height: 22)
+                    VStack(spacing: 3) {
+                        Image(systemName: isSelected ? item.selectedImage : item.systemImage)
+                            .font(.system(size: 20, weight: isSelected ? .semibold : .regular))
+                            .frame(height: 26)
                         Text(item.label)
-                            .narrowLabel(
-                                ThermyxFont.tabLabel,
-                                tracking: ThermyxTracking.tabLabel,
-                                color: isSelected ? Thermyx.Ink.ice : Thermyx.Ink.textFaint
-                            )
+                            .font(ThermyxFont.tabLabel)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
-                    .foregroundStyle(isSelected ? Thermyx.Ink.ice : Thermyx.Ink.textFaint)
+                    .foregroundStyle(isSelected ? Thermyx.Ink.textPrimary : Thermyx.Ink.textFaint)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: Thermyx.minimumTapTarget)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                .sensoryFeedback(.selection, trigger: isSelected) { _, now in now }
                 .accessibilityLabel(item.label)
                 .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                .accessibilityIdentifier("tab.\(item.label)")
             }
         }
-        .padding(.top, Thermyx.Space.s)
+        .padding(.top, 6)
         .padding(.bottom, 2)
         .background {
             Thermyx.Ink.bar
-                .overlay(alignment: .top) {
-                    Rectangle().fill(Thermyx.Ink.divider).frame(height: 1)
-                }
+                .overlay(alignment: .top) { ThermyxDivider() }
                 .ignoresSafeArea(edges: .bottom)
         }
         .accessibilityElement(children: .contain)
@@ -72,15 +68,13 @@ struct ThermyxTabBar<Tab: Hashable>: View {
     }
 }
 
-/// Hosts the tab content and pins the bar — and, for the wearer, the thermal
-/// control bar — beneath it.
+/// Hosts the tab content over one shared topography, and pins the bar —
+/// and, for the wearer, the thermal control — beneath it.
 struct ThermyxTabScaffold<Tab: Hashable, Content: View, Accessory: View>: View {
     let items: [ThermyxTabBar<Tab>.Item]
     @Binding var selection: Tab
     @ViewBuilder var content: (Tab) -> Content
     @ViewBuilder var accessory: Accessory
-
-    @State private var accessoryHidden = false
 
     init(
         items: [ThermyxTabBar<Tab>.Item],
@@ -105,22 +99,21 @@ struct ThermyxTabScaffold<Tab: Hashable, Content: View, Accessory: View>: View {
                         // what a native TabView does.
                         .allowsHitTesting(item.tab == selection)
                         .accessibilityHidden(item.tab != selection)
-                        // Only the visible tab decides whether the control
-                        // bar shows; a screen in a background tab can't hide it.
-                        .transformPreference(ThermalControlBarHidden.self) { hidden in
-                            if item.tab != selection { hidden = false }
-                        }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .onPreferenceChange(ThermalControlBarHidden.self) { hidden in
-                accessoryHidden = hidden
-            }
 
-            if !accessoryHidden { accessory }
+            accessory
             ThermyxTabBar(items: items, selection: $selection)
+                .spotlightTarget(.tabBar)
         }
-        .background(Thermyx.Ink.midnight)
+        .background {
+            ZStack {
+                Color.black
+                TopographyBackground().opacity(ThermyxBackdrop.opacity)
+            }
+            .ignoresSafeArea()
+        }
         .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 }

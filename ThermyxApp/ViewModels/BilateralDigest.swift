@@ -95,6 +95,20 @@ struct BilateralDigest {
         byFoot.values.map(\.comfortSeconds).max()
     }
 
+    /// Steps and time sitting, standing and walking, from whichever foot
+    /// recorded more (they walk together; a dropped link shouldn't halve it).
+    func activity(for filter: FootFilter) -> (steps: Double?, sitting: TimeInterval?, standing: TimeInterval?, walking: TimeInterval?)? {
+        let digests = digests(for: filter).map(\.1).filter(\.hasActivity)
+        guard !digests.isEmpty else { return nil }
+        return (digests.compactMap(\.steps).max(), digests.compactMap(\.sittingSeconds).max(),
+                digests.compactMap(\.standingTime).max(), digests.compactMap(\.walkingSeconds).max())
+    }
+
+    /// The heat-exposure bars for the feet in `filter`, merged.
+    func exposureBars(for filter: FootFilter) -> [ExposureBar] {
+        ExposureBar.merged(digests(for: filter).map { $0.1.exposureBars() })
+    }
+
     var heatExposureFraction: Double? {
         byFoot.values.compactMap(\.heatExposureFraction).max()
     }
@@ -107,12 +121,12 @@ struct BilateralDigest {
     func asymmetrySeries(_ value: @escaping (ThermyxHistorySample) -> Double?) -> [SeriesPoint] {
         guard let left = byFoot[.left], let right = byFoot[.right] else { return [] }
         let rightByStart = Dictionary(right.samples.map { ($0.start, $0) }, uniquingKeysWith: { a, _ in a })
-        return left.samples.compactMap { sample in
+        return SeriesPoint.averaged(left.samples.compactMap { sample in
             guard let counterpart = rightByStart[sample.start],
                   let l = value(sample), let r = value(counterpart)
             else { return nil }
             return SeriesPoint(date: sample.start, value: l - r)
-        }
+        }, window: range.chartWindow)
     }
 
     var temperatureAsymmetry: [SeriesPoint] { asymmetrySeries(\.footMeanC) }

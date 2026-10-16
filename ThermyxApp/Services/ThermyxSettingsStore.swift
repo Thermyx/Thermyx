@@ -18,9 +18,16 @@ final class ThermyxSettingsStore: ObservableObject {
     /// Whether the relay offers contact-number confirmation. Off unless the
     /// team turns it on after testing with real phones.
     @Published var relayContactVerification: Bool { didSet { save() } }
-    /// The wearer's explicit consent to include their location in what
-    /// approved watchers see, and only during a High, Critical, or SOS event.
+    /// Whether the wearer's location goes to their circle, only during a High
+    /// risk, Critical or SOS event, for at most an hour. On by default once
+    /// they've read what the circle gets (`circlePrivacyAcknowledged`); they
+    /// can turn it off at any time.
     @Published var shareLocationDuringEvents: Bool { didSet { save() } }
+    /// The name trusted contacts and watchers see in alerts ("Thermyx
+    /// Critical Alert — Miheer").
+    @Published var circleName: String { didSet { save() } }
+    /// Set once the wearer has read what their circle is sent, and when.
+    @Published var circlePrivacyAcknowledged: Bool { didSet { save() } }
     @Published var contacts: [ThermyxContact] { didSet { save() } }
 
     /// Applied to every temperature display in the app.
@@ -32,11 +39,24 @@ final class ThermyxSettingsStore: ObservableObject {
 
     /// Profile
     @Published var soleSize: SoleSize? { didSet { save() } }
+    /// The sizing system the wearer gave their shoe size in, for showing it
+    /// back the same way.
+    @Published var shoeSizeSystem: ShoeSizeSystem { didSet { save() } }
+
+    /// The shoe size as the wearer gave it: "US women's 9.5".
+    var shoeSizeLabel: String? {
+        soleSize.map { shoeSizeSystem.format($0.size(in: shoeSizeSystem)) }
+    }
     /// The wearer's details from onboarding. Kept on this phone only.
     @Published var profile: UserProfile { didSet { save() } }
     /// Opt-in for the on-device next-step suggestions shown on Home
     /// (`ThermyxSuggestion`). Off by default.
     @Published var aiSuggestionsEnabled: Bool { didSet { save() } }
+    /// Opt-in for AI Insights: the daily summary and its suggestions, written
+    /// by Anthropic's Claude API through the relay with the relay's key.
+    /// The only feature that sends anything to an outside AI model. Off by
+    /// default, and nothing is sent while it's off.
+    @Published var aiInsightsEnabled: Bool { didSet { save() } }
     /// The hold-at temperature commanded from the Advanced screen, in °C.
     @Published var targetTemperatureC: Double { didSet { save() } }
 
@@ -57,6 +77,11 @@ final class ThermyxSettingsStore: ObservableObject {
     /// Which foot the per-foot screens open on.
     @Published var preferredFoot: Foot { didSet { save() } }
 
+    /// What the wearer mostly uses Thermyx for, from onboarding ("Outdoor
+    /// work", "Cold weather"…). Picks the Simulator's first scenario.
+    @Published var usage: [String] { didSet { save() } }
+    static let usageOptions = ["Outdoor work", "Sports and training", "Cold weather", "Everyday comfort"]
+
     private let defaults = UserDefaults.standard
 
     init() {
@@ -73,6 +98,8 @@ final class ThermyxSettingsStore: ObservableObject {
         relayTextingEnabled = defaults.bool(forKey: "thermyx.relayTextingEnabled")
         relayContactVerification = defaults.bool(forKey: "thermyx.relayContactVerification")
         shareLocationDuringEvents = defaults.bool(forKey: "thermyx.shareLocationDuringEvents")
+        circleName = defaults.string(forKey: "thermyx.circleName") ?? ""
+        circlePrivacyAcknowledged = defaults.bool(forKey: "thermyx.circlePrivacyAcknowledged")
         let storedContacts: [ThermyxContact]
         if let data = defaults.data(forKey: "thermyx.contacts"), let decoded = try? JSONDecoder().decode([ThermyxContact].self, from: data) {
             storedContacts = decoded
@@ -97,9 +124,13 @@ final class ThermyxSettingsStore: ObservableObject {
         profile = defaults.data(forKey: "thermyx.userProfile")
             .flatMap { try? JSONDecoder().decode(UserProfile.self, from: $0) } ?? UserProfile()
         let storedSize = defaults.double(forKey: "thermyx.soleSize")
-        soleSize = SoleSize.all.first { $0.usMens == storedSize }
+        soleSize = storedSize > 0 ? SoleSize.make(usMens: storedSize) : nil
+        shoeSizeSystem = defaults.string(forKey: "thermyx.shoeSizeSystem").flatMap(ShoeSizeSystem.init(rawValue:))
+            ?? (Locale.current.measurementSystem == .us ? .usMen : .eu)
         aiSuggestionsEnabled = defaults.object(forKey: "thermyx.aiSuggestionsEnabled") as? Bool ?? false
+        aiInsightsEnabled = defaults.object(forKey: "thermyx.aiInsightsEnabled") as? Bool ?? false
         preferredFoot = defaults.string(forKey: "thermyx.preferredFoot").flatMap(Foot.init(rawValue:)) ?? .left
+        usage = defaults.stringArray(forKey: "thermyx.usage") ?? []
         let storedTarget = defaults.double(forKey: "thermyx.targetTemperatureC")
         targetTemperatureC = storedTarget == 0 ? 31 : min(max(storedTarget, Self.targetRange.lowerBound), Self.targetRange.upperBound)
 
@@ -204,14 +235,19 @@ final class ThermyxSettingsStore: ObservableObject {
         defaults.set(relayTextingEnabled, forKey: "thermyx.relayTextingEnabled")
         defaults.set(relayContactVerification, forKey: "thermyx.relayContactVerification")
         defaults.set(shareLocationDuringEvents, forKey: "thermyx.shareLocationDuringEvents")
+        defaults.set(circleName, forKey: "thermyx.circleName")
+        defaults.set(circlePrivacyAcknowledged, forKey: "thermyx.circlePrivacyAcknowledged")
         defaults.set(try? JSONEncoder().encode(contacts), forKey: "thermyx.contacts")
         defaults.set(temperatureUnit.rawValue, forKey: "thermyx.temperatureUnit")
         defaults.set(insightsRange.rawValue, forKey: "thermyx.insightsRange")
         defaults.set(periodStyle.rawValue, forKey: "thermyx.periodStyle")
         defaults.set(soleSize?.usMens ?? 0, forKey: "thermyx.soleSize")
+        defaults.set(shoeSizeSystem.rawValue, forKey: "thermyx.shoeSizeSystem")
         defaults.set(try? JSONEncoder().encode(profile), forKey: "thermyx.userProfile")
         defaults.set(aiSuggestionsEnabled, forKey: "thermyx.aiSuggestionsEnabled")
+        defaults.set(aiInsightsEnabled, forKey: "thermyx.aiInsightsEnabled")
         defaults.set(preferredFoot.rawValue, forKey: "thermyx.preferredFoot")
+        defaults.set(usage, forKey: "thermyx.usage")
         defaults.set(targetTemperatureC, forKey: "thermyx.targetTemperatureC")
         defaults.set(alertOnCaution, forKey: "thermyx.alertOnCaution")
         defaults.set(alertOnHighRisk, forKey: "thermyx.alertOnHighRisk")
@@ -273,7 +309,7 @@ struct UserProfile: Codable, Equatable {
         var id: String { rawValue }
         var label: String { self == .health ? "Health" : "Performance" }
         var detail: String {
-            self == .health ? "Comfort and foot safety first." : "Training, effort and recovery first."
+            self == .health ? "Safety, comfort and circulation first." : "Training, recovery and gait efficiency first."
         }
     }
 
@@ -297,9 +333,10 @@ struct UserProfile: Codable, Equatable {
     static let heightRangeCm = 80.0...250.0
     static let weightRangeKg = 20.0...300.0
 
-    /// Every About you answer is in. Onboarding can't finish without it.
+    /// Every required About you answer is in. Health conditions are
+    /// optional. Onboarding can't finish without the rest.
     var isComplete: Bool {
-        age != nil && heightCm != nil && weightKg != nil && sex != nil && focus != nil && conditions != nil
+        age != nil && heightCm != nil && weightKg != nil && sex != nil && focus != nil
     }
 
     init() {}

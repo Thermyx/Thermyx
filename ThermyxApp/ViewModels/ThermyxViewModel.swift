@@ -28,11 +28,17 @@ final class ThermyxViewModel: ObservableObject {
     private var stillness = SessionStillness()
     /// Battery-life estimate for the weaker insole, from the last hour.
     @Published private(set) var batteryHoursLeft: Double?
+    /// Each insole's measured drain and time left, once there's enough
+    /// history to measure it (see `BatteryEstimator`).
+    @Published private(set) var batteryEstimates: [Foot: BatteryEstimator.Estimate] = [:]
     private var battery = BatteryEstimator()
 
     let ble = ThermyxBLEService()
     let history = ThermyxHistoryStore()
     let baseline = PersonalBaselineStore()
+    /// Thermal Recovery Test recoveries, and the test itself.
+    let recovery = ThermyxRecoveryStore()
+    let coach = RecoveryCoach()
     /// Widgets, the Live Activity and the Dynamic Island.
     let widgets = ThermyxWidgetBridge()
     /// The single-sensor test board's live table. Fed only by
@@ -59,6 +65,10 @@ final class ThermyxViewModel: ObservableObject {
     private var noticeTask: Task<Void, Never>?
 
     init() {
+        // Buttons on the widgets, the Live Activity and the Dynamic Island
+        // leave a mode request; apply it as it arrives.
+        ThermyxModeInbox.onRequest = { [weak self] in Task { @MainActor in self?.applyWidgetRequest() } }
+        ThermyxModeInbox.startListening()
         // Demo Mode writes no history, board values included.
         let ble = self.ble
         board.recordsHistory = { !ble.isDemoMode }
@@ -86,6 +96,9 @@ final class ThermyxViewModel: ObservableObject {
                 self.reading = next
                 for r in next.present { self.battery.add(r) }
                 self.batteryHoursLeft = next.present.compactMap { self.battery.hoursLeft($0.foot) }.min()
+                self.batteryEstimates = Dictionary(uniqueKeysWithValues: next.present.compactMap { r in
+                    self.battery.estimate(r.foot).map { (r.foot, $0) }
+                })
                 self.updateTrend()
                 self.trackAsymmetry(next)
                 // Simulated readings never teach the baseline.
@@ -97,6 +110,7 @@ final class ThermyxViewModel: ObservableObject {
                 self.syncFocus()
                 self.widgets.update(reading: next, isDemo: self.ble.isDemoMode,
                                     setting: self.thermalSetting, assessment: self.assessment)
+                self.coach.observe(next, level: self.assessment.level)
             }
             .store(in: &cancellables)
 
@@ -197,6 +211,10 @@ final class ThermyxViewModel: ObservableObject {
         return ThermyxRiskEngine.assess(entry)
     }
 
+    /// When the current wearing session began: the earlier foot's first
+    /// reading. Nil with no insole on.
+    var wearingSince: Date? { sessionStart.values.min() }
+
     func isConnected(_ foot: Foot) -> Bool { ble.isConnected(foot) }
     var anyConnected: Bool { ble.anyConnected }
     var bothConnected: Bool { ble.bothConnected }
@@ -225,7 +243,13 @@ final class ThermyxViewModel: ObservableObject {
         if isHeatLockedOut {
             return "Heat locked · \(reading.thermalMode?.statusLabel ?? "mixed")"
         }
-        guard let mode = reading.thermalMode else { return "Feet differ" }
+        guard let mode = reading.thermalMode else {
+            let modes = Set(reading.present.map(\.thermalMode))
+            if modes.contains(.heating), modes.contains(.cooling) { return "Warming one foot, cooling the other" }
+            if modes.contains(.cooling) { return "Cooling one foot" }
+            if modes.contains(.heating) { return "Warming one foot" }
+            return "Holding"
+        }
         if thermalSetting == .off, mode == .off { return "Off" }
         // Cool and Heat are explicit requests; when the insole reports
         // something else, say both rather than implying it obeyed.
@@ -236,6 +260,14 @@ final class ThermyxViewModel: ObservableObject {
     }
 
     var thermalStatusTint: Color {
+        if thermalSetting == .auto, command.failureMessage == nil, !isHeatLockedOut, !command.isPending,
+           let mode = reading.thermalMode, mode == .ventilation || mode == .off {
+            return Thermyx.Ink.ice
+        }
+        return modeTint
+    }
+
+    private var modeTint: Color {
         guard isControlAvailable else { return Thermyx.Ink.textSupporting }
         if command.failureMessage != nil || isHeatLockedOut { return Thermyx.Ink.amber }
         if command.isPending { return Thermyx.Ink.textSupporting }
@@ -265,6 +297,12 @@ final class ThermyxViewModel: ObservableObject {
         }
     }
 
+    /// The Scan again button: clears what the last search found and starts
+    /// a fresh one (or asks for Bluetooth, if that's what's in the way).
+    func rescan() {
+        isScanning = ble.rescan()
+    }
+
     /// Starts a scan aimed at one foot, from the minimised sole on Home.
     func scanFor(_ foot: Foot) {
         focusedFoot = foot
@@ -277,6 +315,24 @@ final class ThermyxViewModel: ObservableObject {
     }
 
     func disconnect(_ foot: Foot) { ble.disconnect(foot) }
+
+    /// A mode asked for from a widget, the Live Activity or the Dynamic
+    /// Island. Applied the way the in-app control applies it, so the heat
+    /// lockout and the "not connected" rules still hold.
+    func applyWidgetRequest() {
+        // Left alone (until it expires) while there's nothing to control, so
+        // a button pressed as the insoles reconnect still lands.
+        guard let mode = ThermyxModeInbox.pending(), isControlAvailable else { return }
+        ThermyxModeInbox.clear()
+        let setting: ThermalSetting = switch mode {
+        case .auto: .auto
+        case .cool: .cool
+        case .heat: .heat
+        case .off: .off
+        }
+        guard setting != thermalSetting else { return }
+        select(setting)
+    }
 
     func select(_ setting: ThermalSetting) {
         guard isControlAvailable else { return }
@@ -306,13 +362,90 @@ final class ThermyxViewModel: ObservableObject {
         if let message = command.failureMessage { commandError = message }
     }
 
+    // MARK: - Demo
+
+    /// What the demo starts with. The defaults are the plain demo; the
+    /// debug previews use the rest to land on particular screens.
+    struct DemoOptions {
+        var feet: [Foot] = Foot.allCases
+        /// Three-zone readings, for previewing that board.
+        var zones = false
+        /// Applied to the simulated pair after it's seeded, before it
+        /// connects (a preview's hot afternoon, say).
+        var configure: ((ThermyxInsoleSimulator) -> Void)?
+    }
+
+    @Published private(set) var isStartingDemo = false
+
+    // The demo is held in memory, so iOS ending the app in the background (it
+    // does, when it needs the memory) used to drop it. Remember that it was
+    // on and start it again at the next launch; Exit demo clears this.
+    private static let demoActiveKey = "thermyx.demo.active"
+    private static let demoZonesKey = "thermyx.demo.zones"
+
+    /// Whether the demo was running when the app last closed.
+    var shouldResumeDemo: Bool { UserDefaults.standard.bool(forKey: Self.demoActiveKey) }
+
+    /// Brings the demo back after a relaunch. Admin accounts only; the caller
+    /// checks that.
+    func resumeDemoIfNeeded() async {
+        guard shouldResumeDemo, !ble.isDemoMode else { return }
+        await startDemo(.init(zones: UserDefaults.standard.bool(forKey: Self.demoZonesKey)))
+    }
+
+    /// Starts the demo: a month of made-up history in place of the real
+    /// history (which is kept and comes back on exit), a demo calibration
+    /// if there's no real one, and the simulated pair carrying on live from
+    /// where that history ends. Admin accounts only, from the UI.
+    func startDemo(_ options: DemoOptions = .init()) async {
+        guard !isStartingDemo else { return }
+        isStartingDemo = true
+        defer { isStartingDemo = false }
+        UserDefaults.standard.set(true, forKey: Self.demoActiveKey)
+        UserDefaults.standard.set(options.zones, forKey: Self.demoZonesKey)
+        await history.loadIfNeeded()
+        let feet = options.feet, zones = options.zones
+        // The history is from days when Auto held its usual target; the live
+        // insoles then follow whatever the target is now.
+        let demo = await Task.detached(priority: .userInitiated) {
+            ThermyxDemoHistory.make(feet: feet, targetC: 31, zones: zones)
+        }.value
+        history.enterDemo(minutes: demo.minutes, hours: demo.hours, events: demo.events)
+        recovery.enterDemo(ThermyxRecoveryStore.demoRecords())
+        battery = BatteryEstimator()
+        for reading in demo.batteryTrail.values.flatMap({ $0 }).sorted(by: { $0.timestamp < $1.timestamp }) { battery.add(reading) }
+        if baseline.model == nil, let model = CalibrationEngine.demoModel() {
+            baseline.adopt(model, indoorSamples: [])
+        }
+        if ble.simulator == nil { ble.startDemoMode(connect: false) }
+        guard let simulator = ble.simulator else { return }
+        simulator.shiftStart = demo.shiftStart
+        simulator.dayHeat = demo.todayHeat
+        simulator.reportsZones = zones
+        simulator.seed(from: demo.last)
+        options.configure?(simulator)
+        simulator.connect(feet: feet)
+    }
+
+    /// Leaves the demo: real Bluetooth, the real history as it was, and the
+    /// demo calibration gone.
+    func exitDemo() {
+        UserDefaults.standard.set(false, forKey: Self.demoActiveKey)
+        ble.stopDemoMode()
+        history.exitDemo()
+        recovery.exitDemo()
+        coach.close()
+        battery = BatteryEstimator()
+        batteryEstimates = [:]
+        if baseline.model?.isTestData == true { baseline.clearModel() }
+    }
+
     /// Saves a model trained in calibration and makes its comfort target
     /// Auto's hold temperature. Demo Mode readings never train anything.
     func applyCalibration(_ model: PersonalThermalModel, indoorSamples: [CalibrationSample], settings: ThermyxSettingsStore) {
-        // Demo Mode's random data never trains anything. The fake insole's
-        // scripted data may, but only as a labelled test model: it sets
-        // Auto's target so the flow can be tried, and never seeds the
-        // personal baseline.
+        // Simulated readings (debug builds' preview harness) never train the
+        // personal baseline; a debug-only scripted model may set Auto's
+        // target so the flow can be checked.
         guard !ble.isDemoMode || (ble.isFakeInsole && model.isTestData) else { return }
         baseline.adopt(model, indoorSamples: model.isTestData ? [] : indoorSamples)
         if let target = model.comfortTargetC {
@@ -485,12 +618,21 @@ struct BatteryEstimator {
 
     private var latest: [Foot: (time: Date, percent: Int)] = [:]
 
-    func hoursLeft(_ foot: Foot) -> Double? {
+    /// The measured drain over the last hour and what it leaves.
+    struct Estimate: Equatable {
+        /// Percent per hour.
+        let perHour: Double
+        let hoursLeft: Double
+    }
+
+    func estimate(_ foot: Foot) -> Estimate? {
         guard let first = history[foot]?.first, let now = latest[foot] else { return nil }
         let span = now.time.timeIntervalSince(first.time)
         let drop = Double(first.percent - now.percent)
         guard span >= Self.minimumSpan, drop >= Self.minimumDrop else { return nil }
         let perHour = drop / (span / 3600)
-        return Double(now.percent) / perHour
+        return Estimate(perHour: perHour, hoursLeft: Double(now.percent) / perHour)
     }
+
+    func hoursLeft(_ foot: Foot) -> Double? { estimate(foot)?.hoursLeft }
 }

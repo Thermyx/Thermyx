@@ -13,54 +13,87 @@ final class ThermyxAlertCoordinator: ObservableObject {
     let location = ThermyxLocationProvider()
     private let apiClient = ThermyxAlertAPIClient()
 
-    /// The rules for when to notify, alert, and post a heartbeat.
+    /// The rules for when to notify, alert, follow up, and post a heartbeat.
     private var policy = ThermyxAlertPolicy()
+    /// Trend and data confidence for the circle's messages.
+    private var tracker = ThermyxCircleTracker()
+    /// The latest assessment, for the status card on an SOS or check-in.
+    private var lastAssessment: ThermyxRiskAssessment = .unavailable
 
     /// Set while Demo Mode runs: nothing is posted to the relay, and the
     /// wearer's own notifications say they are simulated.
     var isDemoMode = false
 
-    // MARK: End-of-session AI summary
+    // MARK: Daily AI summary
+    //
+    // One summary per day, written in the evening: the first time a session
+    // ends after 6 pm. A day that never got one (no evening wear, or the app
+    // wasn't open) is caught up the next time the app opens. Once a day keeps
+    // the Claude API cost down; the summary is kept and shown, never redone.
 
-    /// At most this often, so a stop-start day doesn't spam.
-    static let summaryGap: TimeInterval = 2 * 3600
-    private static let lastSummaryKey = "thermyx.aiSummary.lastAt"
+    /// The evening starts here, local time.
+    static let eveningHour = 18
+    private static let pendingKey = "thermyx.aiSummary.pending"
 
     static func summaryKey(for day: Date, calendar: Calendar = .current) -> String {
         let c = calendar.dateComponents([.year, .month, .day], from: day)
         return String(format: "thermyx.aiSummary.%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
-    /// The last AI summary written for a day, if any.
+    /// The summary written for a day, if any.
     static func storedSummary(for day: Date) -> String? {
         UserDefaults.standard.string(forKey: summaryKey(for: day))
     }
 
-    /// When a session ends: asks the relay for a short summary of today with
-    /// two or three suggestions, keeps it for the day page, and sends it as a
-    /// notification. Only for a paired wearer, never in Demo Mode, and only
-    /// if the relay has AI summaries turned on.
-    func deliverSessionSummary(history: ThermyxHistoryStore, settings: ThermyxSettingsStore, now: Date = .now) {
-        guard !isDemoMode, settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
+    static func store(_ summary: String, for day: Date) {
+        UserDefaults.standard.set(summary, forKey: summaryKey(for: day))
+    }
+
+    /// Whether this phone may ask for summaries at all.
+    private func canSummarize(_ settings: ThermyxSettingsStore) -> Bool {
+        !isDemoMode && settings.aiInsightsEnabled && settings.isPairedWithRelay && settings.relayRole == "wearer"
+    }
+
+    /// When a session ends: in the evening, today's summary, once.
+    func deliverSessionSummary(history: ThermyxHistoryStore, settings: ThermyxSettingsStore, now: Date = .now,
+                               calendar: Calendar = .current) {
+        guard canSummarize(settings), calendar.component(.hour, from: now) >= Self.eveningHour else { return }
+        deliverSummary(for: now, history: history, settings: settings, title: "Your day with Thermyx", calendar: calendar)
+    }
+
+    /// On launch: yesterday's summary, if it was worn and never got one.
+    func catchUpSummary(history: ThermyxHistoryStore, settings: ThermyxSettingsStore, now: Date = .now,
+                        calendar: Calendar = .current) {
+        guard canSummarize(settings),
+              let yesterday = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: now)) else { return }
+        deliverSummary(for: yesterday, history: history, settings: settings, title: "Yesterday with Thermyx", calendar: calendar)
+    }
+
+    private func deliverSummary(for date: Date, history: ThermyxHistoryStore, settings: ThermyxSettingsStore,
+                                title: String, calendar: Calendar) {
+        let day = calendar.startOfDay(for: date)
+        let key = Self.summaryKey(for: day, calendar: calendar)
         let defaults = UserDefaults.standard
-        if let last = defaults.object(forKey: Self.lastSummaryKey) as? Date, now.timeIntervalSince(last) < Self.summaryGap { return }
-        let calendar = Calendar.current
-        let samples = history.hourSamples.filter { calendar.isDate($0.start, inSameDayAs: now) }
+        guard Self.storedSummary(for: day) == nil, defaults.string(forKey: Self.pendingKey) != key else { return }
+        let samples = history.hourSamples.filter { calendar.isDate($0.start, inSameDayAs: day) }
         guard !samples.isEmpty else { return }
-        let today = ThermyxDailySummary.summary(
-            day: calendar.startOfDay(for: now),
+        let summary = ThermyxDailySummary.summary(
+            day: day,
             samples: samples,
-            events: history.events.filter { calendar.isDate($0.timestamp, inSameDayAs: now) }
+            events: history.events.filter { calendar.isDate($0.timestamp, inSameDayAs: day) }
         )
-        defaults.set(now, forKey: Self.lastSummaryKey)
-        let body = ThermyxAlertAPIClient.SummaryRequest(today, unit: settings.temperatureUnit, focus: settings.profile.focus)
+        guard summary.wornSeconds >= ThermyxWeeklyReport.minimumWear else { return }
+        defaults.set(key, forKey: Self.pendingKey)
+        let body = ThermyxAlertAPIClient.SummaryRequest(summary, unit: settings.temperatureUnit, focus: settings.profile.focus,
+                                                        usage: settings.usage)
         let url = settings.backendURL
         let token = settings.backendToken
         Task {
+            defer { if defaults.string(forKey: Self.pendingKey) == key { defaults.removeObject(forKey: Self.pendingKey) } }
             guard let text = try? await apiClient.summary(body, baseURL: url, token: token) else { return }
-            defaults.set(text, forKey: Self.summaryKey(for: now))
+            Self.store(text, for: day)
             let content = UNMutableNotificationContent()
-            content.title = "Your Thermyx summary"
+            content.title = title
             content.body = text
             content.sound = .default
             try? await UNUserNotificationCenter.current().add(
@@ -75,7 +108,8 @@ final class ThermyxAlertCoordinator: ObservableObject {
     /// Called on every reading alongside `evaluate`: notifies the wearer when
     /// a foot stays cold or an insole battery runs low. Never sent to the
     /// relay or the trusted circle.
-    func evaluateComfort(_ reading: BilateralReading, unit: TemperatureUnit, now: Date = .now) {
+    func evaluateComfort(_ reading: BilateralReading, unit: TemperatureUnit, conditions: Set<HealthCondition> = [], now: Date = .now) {
+        comfort.circulationRisk = !conditions.isDisjoint(with: ThermyxComfortWatch.circulationConditions)
         for notice in comfort.update(reading, now: now) {
             let content = UNMutableNotificationContent()
             content.title = isDemoMode ? "Thermyx demo — simulated, not live data" : notice.title
@@ -90,37 +124,59 @@ final class ThermyxAlertCoordinator: ObservableObject {
     }
 
     /// Called on every reading. ThermyxAlertPolicy decides; this carries it out.
-    func evaluate(_ assessment: ThermyxRiskAssessment, reading: BilateralReading, settings: ThermyxSettingsStore) {
+    func evaluate(_ assessment: ThermyxRiskAssessment, reading: BilateralReading, settings: ThermyxSettingsStore, now: Date = .now) {
         let level = assessment.level
-        let decision = policy.evaluate(level, alertsEnabled: settings.shouldAlert(for: level))
+        tracker.record(reading, now: now)
+        lastAssessment = assessment
+        let decision = policy.evaluate(level, alertsEnabled: settings.shouldAlert(for: level), now: now)
         if lastAlertLevel != policy.announced { lastAlertLevel = policy.announced }
 
         if decision.notifyWearer { notifyWearer(level) }
         if decision.alert {
             location.refresh()
-            send(kind: .alert, level: level, reasons: assessment.reasons, focus: assessment.foot, reading: reading, settings: settings, texts: true)
+            send(kind: .alert, level: level, assessment: assessment, reading: reading, settings: settings, texts: true)
+        } else if let followUp = decision.followUp {
+            if case .still = followUp { location.refresh() }
+            send(kind: .update, level: level, assessment: assessment, reading: reading, settings: settings, texts: true) { detail in
+                switch followUp {
+                case .still(let minutes): detail.update = "still"; detail.minutes = minutes
+                case .recovering: detail.update = "recovering"
+                case .resolved: detail.update = "resolved"
+                }
+            }
         } else if decision.heartbeat {
-            send(kind: .status, level: level, reasons: assessment.reasons, focus: assessment.foot, reading: reading, settings: settings, texts: false)
+            send(kind: .status, level: level, assessment: assessment, reading: reading, settings: settings, texts: false)
         }
     }
 
-    /// The Call 911 button: texts the trusted circle with location.
+    /// Why an SOS went out.
+    enum SOSTrigger: String {
+        /// The wearer pressed Call 911.
+        case pressed
+        /// Nobody answered a Critical alert's countdown.
+        case noResponse
+    }
+
+    /// An SOS: texts the trusted circle with location.
     func notifyTrustedCircle(
         level: ThermyxRiskLevel,
         reading: BilateralReading,
         settings: ThermyxSettingsStore,
-        reason: String,
-        kind: ThermyxAlertEvent.Kind = .sos
+        trigger: SOSTrigger
     ) {
         location.refresh()
-        send(kind: kind, level: level, reasons: [reason], focus: nil, reading: reading, settings: settings, texts: true)
+        send(kind: .sos, level: level, assessment: lastAssessment, reading: reading, settings: settings, texts: true) { detail in
+            detail.sos = trigger.rawValue
+        }
     }
 
-    /// The wearer checked in: tell the trusted circle they're OK.
-    func sendImOK(level: ThermyxRiskLevel, reading: BilateralReading, settings: ThermyxSettingsStore) {
-        policy.imOK()
+    /// The wearer checked in: tell the trusted circle they're OK, and when.
+    func sendImOK(level: ThermyxRiskLevel, reading: BilateralReading, settings: ThermyxSettingsStore, now: Date = .now) {
+        policy.imOK(now: now)
         let current = level == .unavailable ? .normal : level
-        send(kind: .ok, level: current, reasons: ["The wearer says they're OK."], focus: nil, reading: reading, settings: settings, texts: true)
+        send(kind: .ok, level: current, assessment: lastAssessment, reading: reading, settings: settings, texts: true) { detail in
+            detail.checkedIn = ThermyxCircleDetail.localTime(now)
+        }
     }
 
     private func notifyWearer(_ level: ThermyxRiskLevel) {
@@ -131,18 +187,18 @@ final class ThermyxAlertCoordinator: ObservableObject {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thermyx.\(level.rawValue)", content: content, trigger: nil))
     }
 
-    /// Pushes an event to the relay. Approved watchers see its level and
-    /// freshness. Trusted contacts' numbers go along only when the relay has
-    /// texting turned on, and location only when the wearer consented and a
-    /// safety event (High, Critical, SOS) is active.
+    /// Pushes an event to the relay with the status card. Approved watchers
+    /// see the card; trusted contacts are texted it as sentences when texting
+    /// is on. Their numbers go along only then, and location only when the
+    /// wearer shares it and a safety event (High, Critical, SOS) is active.
     private func send(
         kind: ThermyxAlertEvent.Kind,
         level: ThermyxRiskLevel,
-        reasons: [String],
-        focus: Foot?,
+        assessment: ThermyxRiskAssessment,
         reading: BilateralReading,
         settings: ThermyxSettingsStore,
-        texts: Bool
+        texts: Bool,
+        adjust: (inout ThermyxCircleDetail) -> Void = { _ in }
     ) {
         guard !isDemoMode, settings.isPairedWithRelay, settings.relayRole == "wearer" else { return }
 
@@ -151,13 +207,16 @@ final class ThermyxAlertCoordinator: ObservableObject {
         let recipients = texts && settings.relayTextingEnabled
             ? settings.contacts.filter(\.enabled).map(\.phoneNumber)
             : nil
+        var detail = ThermyxCircleDetail.make(assessment: assessment, reading: reading, tracker: tracker,
+                                              name: settings.circleName, unit: settings.temperatureUnit)
+        adjust(&detail)
         let event = ThermyxAlertAPIClient.Event(
             level: level.rawValue,
             kind: kind.rawValue,
-            reasons: texts ? reasons : [],
             recipients: recipients,
             location: consented && activeEvent ? location.recent : nil,
-            locationConsent: consented
+            locationConsent: consented,
+            detail: detail
         )
 
         let url = settings.backendURL
@@ -179,17 +238,35 @@ final class ThermyxAlertCoordinator: ObservableObject {
     func stopSharingLocation(level: ThermyxRiskLevel, settings: ThermyxSettingsStore) {
         settings.shareLocationDuringEvents = false
         let current = level == .unavailable ? ThermyxRiskLevel.normal : level
-        send(kind: .status, level: current, reasons: [], focus: nil, reading: .empty, settings: settings, texts: false)
+        send(kind: .status, level: current, assessment: lastAssessment, reading: .empty, settings: settings, texts: false)
     }
 
-    /// The text a trusted contact would receive, for the labelled preview
-    /// shown while texting is off.
-    static func previewMessage(level: ThermyxRiskLevel, reasons: [String], deviceID: String, includesLocation: Bool) -> String {
-        var parts = [deviceID.isEmpty ? "Thermyx \(level.rawValue) alert." : "Thermyx \(level.rawValue) on \(deviceID)."]
-        if !reasons.isEmpty { parts.append(reasons.joined(separator: " ")) }
-        if includesLocation { parts.append("Location: (a map link to where you are)") }
-        parts.append("Please check on them.")
-        return parts.joined(separator: " ")
+    /// The text a trusted contact would get, for the preview on Safety: the
+    /// real one when the wearer is at High risk or above right now, else a
+    /// labelled example (the right foot at 101.5 °F and rising) in their name,
+    /// unit and time, so it never pairs a normal reading with an alarm.
+    func previewMessage(reading: BilateralReading, settings: ThermyxSettingsStore, shareLocation: Bool? = nil) -> String {
+        let shareLocation = shareLocation ?? settings.shareLocationDuringEvents
+        let live = lastAssessment.level.severity >= ThermyxRiskLevel.high.severity
+        var detail: ThermyxCircleDetail
+        if live {
+            detail = ThermyxCircleDetail.make(assessment: lastAssessment, reading: reading, tracker: tracker,
+                                              name: settings.circleName, unit: settings.temperatureUnit)
+        } else {
+            detail = ThermyxCircleDetail.make(assessment: .init(level: .high, reasons: []), reading: .empty, tracker: .init(),
+                                              name: settings.circleName, unit: settings.temperatureUnit)
+            detail.foot = "right"
+            detail.causes = [ThermyxRiskCause.hot.rawValue]
+            detail.footC = 38.6
+            detail.trend = "rising"
+            detail.confidence = "confirmed"
+            detail.connection = nil
+        }
+        return ThermyxCircleMessage.text(
+            level: (live ? lastAssessment.level : .high).rawValue, kind: "alert", detail: detail,
+            locationConsent: shareLocation,
+            location: shareLocation ? .init(latitude: 29.76043, longitude: -95.36981) : nil
+        )
     }
 }
 
@@ -255,12 +332,15 @@ final class ThermyxLocationProvider: NSObject, ObservableObject, CLLocationManag
 ///
 /// - Cold: a foot at or below `ThermyxRiskEngine.coldFootC` for a minute.
 ///   Once per 20 minutes per foot, and reset when the foot warms past 27 °C.
-/// - Battery: once at 20% and once at 10% per insole, reset after charging
-///   above 25%.
+///   For a wearer with poor circulation, Raynaud's, diabetes or neuropathy,
+///   sooner: at 27 °C, after 30 seconds, every 15 minutes. These are
+///   reminders; the risk levels never change.
+/// - Battery: once at 10% and once at 5% per insole, reset after charging
+///   above 15% (`ThermyxBattery`).
 struct ThermyxComfortWatch {
     struct Notice: Equatable {
         enum Kind: Equatable {
-            case cold(Double)
+            case cold(Double, circulation: Bool = false)
             case battery(Int, critical: Bool)
         }
         let foot: Foot
@@ -282,12 +362,14 @@ struct ThermyxComfortWatch {
 
         func body(unit: TemperatureUnit) -> String {
             switch kind {
-            case .cold(let c):
-                return "It's been at \(TemperatureFormat.degrees(c, in: unit)) for a minute. Switch to Auto or Heat to warm it up."
+            case .cold(let c, let circulation):
+                return circulation
+                    ? "It's at \(TemperatureFormat.degrees(c, in: unit)). With your circulation, cold feet need attention sooner, and can be hard to feel. Switch to Auto or Heat and warm them gradually."
+                    : "It's been at \(TemperatureFormat.degrees(c, in: unit)) for a minute. Switch to Auto or Heat to warm it up."
             case .battery(let percent, let critical):
                 return critical
-                    ? "\(percent)% left. Charge it now or it will stop heating and cooling soon."
-                    : "\(percent)% left. Charge it soon."
+                    ? "\(percent)% left. Charge it now: heating and cooling stop when it runs out, and so do your safety alerts."
+                    : "\(percent)% left, about an hour of heating or cooling. Charge it soon."
             }
         }
     }
@@ -295,9 +377,18 @@ struct ThermyxComfortWatch {
     static let coldHold: TimeInterval = 60
     static let coldRepeat: TimeInterval = 20 * 60
     static let warmResetC = 27.0
-    static let batteryLow = 20
-    static let batteryCritical = 10
-    static let batteryReset = 25
+
+    /// Conditions that make cold feet worse or harder to feel.
+    static let circulationConditions: Set<HealthCondition> = [.poorCirculation, .diabetes, .neuropathy]
+    /// Set from the wearer's health conditions.
+    var circulationRisk = false
+    private var coldAtC: Double { circulationRisk ? 27 : ThermyxRiskEngine.coldFootC }
+    private var hold: TimeInterval { circulationRisk ? 30 : Self.coldHold }
+    private var repeatAfter: TimeInterval { circulationRisk ? 15 * 60 : Self.coldRepeat }
+    private var resetAtC: Double { circulationRisk ? 29 : Self.warmResetC }
+    static let batteryLow = ThermyxBattery.low
+    static let batteryCritical = ThermyxBattery.critical
+    static let batteryReset = ThermyxBattery.reset
 
     private var coldSince: [Foot: Date] = [:]
     private var coldNotifiedAt: [Foot: Date] = [:]
@@ -308,17 +399,17 @@ struct ThermyxComfortWatch {
         for r in reading.present {
             let foot = r.foot
             if let c = r.footTemperatureC {
-                if c <= ThermyxRiskEngine.coldFootC {
+                if c <= coldAtC {
                     let since = coldSince[foot] ?? now
                     coldSince[foot] = since
-                    let due = coldNotifiedAt[foot].map { now.timeIntervalSince($0) >= Self.coldRepeat } ?? true
-                    if now.timeIntervalSince(since) >= Self.coldHold, due {
+                    let due = coldNotifiedAt[foot].map { now.timeIntervalSince($0) >= repeatAfter } ?? true
+                    if now.timeIntervalSince(since) >= hold, due {
                         coldNotifiedAt[foot] = now
-                        notices.append(Notice(foot: foot, kind: .cold(c)))
+                        notices.append(Notice(foot: foot, kind: .cold(c, circulation: circulationRisk)))
                     }
                 } else {
                     coldSince[foot] = nil
-                    if c >= Self.warmResetC { coldNotifiedAt[foot] = nil }
+                    if c >= resetAtC { coldNotifiedAt[foot] = nil }
                 }
             }
             if let b = r.batteryPercent {

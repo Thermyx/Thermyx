@@ -236,15 +236,35 @@ final class AlertPolicyTests: XCTestCase {
         for _ in 0..<30 { XCTAssertFalse(step(.high).alert) }
     }
 
-    func testHoldingHighRemindsEveryFiveMinutes() {
+    func testHoldingHighFollowsUpAtTwoMinutesThenEveryFive() {
         _ = step(.high)
-        XCTAssertFalse(step(.high, after: ThermyxAlertPolicy.reminderInterval - 10).alert)
-        XCTAssertTrue(step(.high, after: 20).alert)
+        XCTAssertNil(step(.high, after: 110).followUp)
+        XCTAssertEqual(step(.high, after: 10).followUp, .still(minutes: 2))
+        XCTAssertNil(step(.high, after: ThermyxAlertPolicy.reminderInterval - 10).followUp)
+        XCTAssertEqual(step(.high, after: 10).followUp, .still(minutes: 7))
+        XCTAssertFalse(step(.high).alert, "Follow-ups are not new alerts")
     }
 
     func testCautionDoesNotNag() {
         XCTAssertTrue(step(.caution).alert)
-        XCTAssertFalse(step(.caution, after: ThermyxAlertPolicy.reminderInterval * 3).alert)
+        XCTAssertNil(step(.caution, after: ThermyxAlertPolicy.reminderInterval * 3).followUp)
+    }
+
+    func testEasingOffSaysRecoveringThenResolved() {
+        _ = step(.critical)
+        _ = step(.caution, after: 30)
+        XCTAssertNil(step(.caution, after: 60).followUp, "Not until it has held for two minutes")
+        XCTAssertEqual(step(.caution, after: 61).followUp, .recovering)
+        _ = step(.normal, after: 10)
+        XCTAssertEqual(step(.normal, after: ThermyxAlertPolicy.settleInterval).followUp, .resolved)
+        XCTAssertNil(step(.normal, after: ThermyxAlertPolicy.settleInterval).followUp)
+    }
+
+    func testNoFollowUpsWhenTheCircleWasNeverAlerted() {
+        _ = step(.high, alerts: false)
+        XCTAssertNil(step(.high, after: ThermyxAlertPolicy.firstFollowUp + 1).followUp)
+        _ = step(.normal, after: 10)
+        XCTAssertNil(step(.normal, after: ThermyxAlertPolicy.settleInterval).followUp)
     }
 
     func testAFlapInsideTwoMinutesStaysQuiet() {
@@ -277,14 +297,14 @@ final class AlertPolicyTests: XCTestCase {
     func testImOKQuietsRemindersButNotARise() {
         _ = step(.high)
         policy.imOK(now: now)
-        XCTAssertFalse(step(.high, after: ThermyxAlertPolicy.reminderInterval + 1).alert)
+        XCTAssertNil(step(.high, after: ThermyxAlertPolicy.reminderInterval + 1).followUp)
         XCTAssertTrue(step(.critical, after: 1).alert)
     }
 
     func testImOKWearsOff() {
         _ = step(.high)
         policy.imOK(now: now)
-        XCTAssertTrue(step(.high, after: ThermyxAlertPolicy.okQuietInterval + 1).alert)
+        XCTAssertNotNil(step(.high, after: ThermyxAlertPolicy.okQuietInterval + 1).followUp)
     }
 
     func testAlertsOffStillNotifyTheWearerAndPostStatus() {

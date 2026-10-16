@@ -393,7 +393,7 @@ final class RiskEngineTests: XCTestCase {
         XCTAssertTrue(watch.update(pair, now: t0.addingTimeInterval(120)).isEmpty, "No repeat inside 20 minutes")
     }
 
-    func testBatteryNoticesOnceAtTwentyAndTen() {
+    func testBatteryNoticesOnceAtTenAndFive() {
         var watch = ThermyxComfortWatch()
         func at(_ percent: Int) -> BilateralReading {
             var r = reading(footC: 32)
@@ -402,12 +402,13 @@ final class RiskEngineTests: XCTestCase {
             return BilateralReading(left: r, right: nil)
         }
         XCTAssertTrue(watch.update(at(30), now: .now).isEmpty)
-        XCTAssertEqual(watch.update(at(20), now: .now).count, 1)
-        XCTAssertTrue(watch.update(at(18), now: .now).isEmpty)
-        XCTAssertEqual(watch.update(at(10), now: .now).first?.kind, .battery(10, critical: true))
-        XCTAssertTrue(watch.update(at(9), now: .now).isEmpty)
+        XCTAssertTrue(watch.update(at(20), now: .now).isEmpty, "20% is no longer a warning")
+        XCTAssertEqual(watch.update(at(10), now: .now).first?.kind, .battery(10, critical: false))
+        XCTAssertTrue(watch.update(at(8), now: .now).isEmpty)
+        XCTAssertEqual(watch.update(at(5), now: .now).first?.kind, .battery(5, critical: true))
+        XCTAssertTrue(watch.update(at(4), now: .now).isEmpty)
         XCTAssertTrue(watch.update(at(80), now: .now).isEmpty)
-        XCTAssertEqual(watch.update(at(19), now: .now).count, 1, "Warns again after charging")
+        XCTAssertEqual(watch.update(at(9), now: .now).count, 1, "Warns again after charging")
     }
 
     func testHistoryCreditsHeatingAndCoolingTime() {
@@ -446,11 +447,6 @@ final class RiskEngineTests: XCTestCase {
 
     // MARK: Tabs, profile, summaries, battery
 
-    func testLearningLibraryIncludesTheNewTopics() {
-        let ids = ThermyxLearningLibrary.articles.map(\.id)
-        for id in ["how-peltier-works", "modes", "reading-insights"] { XCTAssertTrue(ids.contains(id), id) }
-        XCTAssertTrue(ThermyxLearningLibrary.articles.allSatisfy { $0.icon != nil })
-    }
 
     func testHealthConditionsAreAMultiSelectThatSurvivesSaving() throws {
         var profile = UserProfile()

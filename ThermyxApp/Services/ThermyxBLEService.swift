@@ -1,6 +1,7 @@
 import Combine
 import CoreBluetooth
 import Foundation
+import UIKit
 
 /// Talks to both insoles at once.
 ///
@@ -173,16 +174,25 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// to the relay, written to history, Apple Health, or the baseline.
     private(set) var simulator: ThermyxInsoleSimulator?
     @Published private(set) var isDemoMode = false
-    /// TEMPORARY test tool: the "fake insole", a scripted pair with
+    /// Debug builds only: the preview harness's scripted pair, with
     /// repeatable data that follows calibration's instructions. Runs on the
-    /// same simulated radio as Demo Mode (so nothing reaches history, Health
-    /// or the relay) and is labelled "Fake insole" everywhere.
+    /// same simulated radio as the harness (so nothing reaches history,
+    /// Health or the relay). Always false in a release build.
     @Published private(set) var isFakeInsole = false
-    /// Set to false to remove every "Connect fake insole" button.
-    static let fakeInsoleAvailable = true
+
+    /// When the app last came back to the foreground. iOS suspends the app
+    /// (and its timers) in the background, so silence across that gap isn't
+    /// an insole that stopped sending; judge staleness from here instead.
+    private var resumedAt = Date.distantPast
+    private var resumeObserver: NSObjectProtocol?
 
     override init() {
         super.init()
+        resumeObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.resumedAt = .now }
+        }
         startWatchdog()
         #if DEBUG
         if ThermyxPreviewHarness.isSimulated {
@@ -201,6 +211,49 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         makeCentral()
     }
 
+    /// A manager made only to show iOS's "Turn On Bluetooth" alert, whose
+    /// Settings button goes straight to Bluetooth. Apps can't switch the
+    /// radio on themselves; this is the supported way to ask.
+    private var powerPrompt: CBCentralManager?
+
+    /// Shows iOS's alert for turning Bluetooth on, when it's off.
+    func promptPowerOn() {
+        guard simulator == nil else { return }
+        powerPrompt = CBCentralManager(delegate: nil, queue: nil, options: [CBCentralManagerOptionShowPowerAlertKey: true])
+    }
+
+    /// Starts the search over: stops any scan, forgets every device heard so
+    /// far (including ones that have since gone quiet), clears the last
+    /// error, and scans again. If Bluetooth isn't usable yet it asks for it
+    /// instead: the permission prompt, or iOS's turn-on alert. Returns
+    /// whether a scan actually started.
+    @discardableResult
+    func rescan(showAll: Bool = false) -> Bool {
+        stopScan()
+        discovered.removeAll()
+        lastHeard.removeAll()
+        lastShown.removeAll()
+        errorMessage = nil
+        if simulator != nil {
+            scan(showAll: showAll)
+            return true
+        }
+        if central == nil {
+            requestBluetooth()
+            return false
+        }
+        switch state {
+        case .poweredOn:
+            scan(showAll: showAll)
+            return true
+        case .poweredOff:
+            promptPowerOn()
+            return false
+        default:
+            return false
+        }
+    }
+
     private func makeCentral() {
         // The restore identifier lets iOS relaunch the app in the background
         // and hand back its insole connections (needs the bluetooth-central
@@ -212,19 +265,29 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         )
     }
 
-    // MARK: - Demo Mode
+    // MARK: - Simulated radio
+    //
+    // Demo Mode: admin accounts can start it from Advanced (or Home, with no
+    // insoles connected) to show Thermyx without hardware, and the debug
+    // preview harness uses it for every screen. The whole app is stamped
+    // "Simulated insoles" while it runs. The scripted fake insole is debug
+    // only.
 
     /// Swaps the real radio for the simulated pair. Real insoles are
     /// disconnected first so simulated and live readings can never mix.
-    func startDemoMode() { startSimulated(scripted: false) }
+    /// With `connect` off, the pair is set up but not yet connected, so it
+    /// can be configured first.
+    func startDemoMode(connect: Bool = true) { startSimulated(scripted: false, connect: connect) }
 
-    /// TEMPORARY: connects the scripted fake pair (see `isFakeInsole`).
+    #if DEBUG
+    /// The scripted pair (see `isFakeInsole`).
     func startFakeInsoles() {
         if simulator != nil { stopDemoMode() }
         startSimulated(scripted: true)
     }
+    #endif
 
-    private func startSimulated(scripted: Bool) {
+    private func startSimulated(scripted: Bool, connect: Bool = true) {
         guard simulator == nil else { return }
         // Drop real links without forgetting the insoles, so they reconnect
         // when Demo Mode ends. Pending reconnects are cancelled too.
@@ -254,7 +317,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
         isDemoMode = true
         isFakeInsole = scripted
         state = .poweredOn
-        simulator?.connectAll()
+        if connect { simulator?.connectAll() }
     }
 
     /// Ends Demo Mode and returns to real Bluetooth.
@@ -306,8 +369,8 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     private func checkForStaleFeet() {
         for foot in connected {
             guard readings[foot] != nil,
-                  let last = packetTimestamps[foot]?.last,
-                  Date.now.timeIntervalSince(last) > Self.staleAfter
+                  let packet = packetTimestamps[foot]?.last,
+                  Date.now.timeIntervalSince(max(packet, resumedAt)) > Self.staleAfter
             else { continue }
             readings[foot] = nil
             errorMessage = "\(foot.label) insole stopped sending data. Readings will return when it does."
@@ -376,7 +439,7 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             return
         }
         guard state == .poweredOn else {
-            errorMessage = "Bluetooth is unavailable or permission has not been granted."
+            errorMessage = Self.unavailableMessage(state)
             return
         }
         errorMessage = nil
@@ -415,6 +478,17 @@ final class ThermyxBLEService: NSObject, ObservableObject {
             }
         }
         discovered.sort(by: DiscoveredDevice.listOrder)
+    }
+
+    /// Why a scan can't run, in words that say what to do about it.
+    static func unavailableMessage(_ state: CBManagerState) -> String {
+        switch state {
+        case .poweredOff: return "Bluetooth is off. Turn it on to find your insoles."
+        case .unauthorized: return "Bluetooth isn't allowed for Thermyx. Allow it in Settings."
+        case .unsupported: return "This device has no Bluetooth LE, so it can't reach the insoles. Use an iPhone."
+        case .resetting, .unknown: return "Bluetooth is starting up. Scan again in a moment."
+        default: return "Bluetooth isn't ready. Scan again in a moment."
+        }
     }
 
     func stopScan() {
@@ -1058,29 +1132,6 @@ extension ThermyxBLEService: CBPeripheralDelegate {
     }
 }
 
-#if DEBUG
-extension ThermyxBLEService {
-    /// Development-only. Pushes a synthetic reading through the same path a
-    /// real packet takes. Compiled out of Release builds.
-    func injectPreviewReading(_ reading: ThermyxReading) {
-        let foot = reading.foot
-        connected.insert(foot)
-        names[foot] = "thermyx-\(foot.rawValue)-01 (preview)"
-        rssi[foot] = foot == .left ? -58 : -63
-        readings[foot] = reading
-        var stamps = packetTimestamps[foot] ?? []
-        stamps.append(.now)
-        if stamps.count > 32 { stamps.removeFirst(stamps.count - 32) }
-        packetTimestamps[foot] = stamps
-    }
-
-    func injectPreviewDisconnect(_ foot: Foot) {
-        connected.remove(foot)
-        readings[foot] = nil
-        rssi[foot] = nil
-    }
-}
-#endif
 
 // MARK: - Simulated insoles
 //
@@ -1148,6 +1199,17 @@ final class ThermyxInsoleSimulator: ObservableObject {
     @Published var knob: Double = 0.5
     private var boardConnected = false
 
+    /// The day the simulated wearer is having (see `DemoWearer`): when the
+    /// shift began, which sets the walk/stand/sit cycle, and how hot a day
+    /// it is. When `followsDay` is off, `ambientC` is used as set.
+    var followsDay = true
+    var shiftStart = Date.now
+    var dayHeat = 0.6
+    /// Today's hardware has one temperature sensor and one arch pressure
+    /// sensor per insole. Zone temperatures are for previewing the
+    /// three-sensor board only.
+    var reportsZones = false
+
     enum SimulatedBoardSensor: String, CaseIterable, Identifiable {
         case knob, ntc, fsr, tmp102
         var id: String { rawValue }
@@ -1171,6 +1233,8 @@ final class ThermyxInsoleSimulator: ObservableObject {
         /// What the firmware is actually doing, which it reports back.
         var active: ThermalMode = .ventilation
         var isConnected = false
+        /// A charge level to start from, set before connecting.
+        var seeded = false
     }
 
     private weak var ble: ThermyxBLEService?
@@ -1288,12 +1352,41 @@ final class ThermyxInsoleSimulator: ObservableObject {
         for foot in Foot.allCases { attach(foot) }
     }
 
+    /// Connects only these insoles (a one-insole demo).
+    func connect(feet: [Foot]) {
+        for foot in feet { attach(foot) }
+    }
+
+    /// Carries on from where the back-filled history left off: the same
+    /// foot temperature, steadiness and charge, so the live line continues
+    /// the drawn one instead of jumping.
+    func seed(from readings: [Foot: ThermyxReading]) {
+        for (foot, reading) in readings {
+            guard var insole = insoles[foot] else { continue }
+            if let c = reading.footTemperatureC { insole.contactC = c }
+            if let g = reading.gaitStability { insole.gait = g }
+            if let b = reading.batteryPercent { insole.battery = Double(b) }
+            insole.active = reading.thermalMode
+            insole.seeded = true
+            insoles[foot] = insole
+        }
+    }
+
+    /// Minutes into the simulated shift, and what the wearer is doing.
+    private var shiftMinute: Double { max(0, Date.now.timeIntervalSince(shiftStart) / 60) }
+    private var currentActivity: CalibrationActivity { DemoWearer.activity(minute: Int(shiftMinute)) }
+    private var currentAmbientC: Double {
+        followsDay ? DemoWearer.ambientC(progress: shiftMinute / 480, heat: dayHeat) : ambientC
+    }
+
     private func attach(_ foot: Foot) {
         guard let ble, var insole = insoles[foot], !insole.isConnected else { return }
         insole.isConnected = true
-        insole.contactC = isScripted
-            ? FakeInsoleScript.steadyFootC(activity: scriptActivity, outdoor: scriptOutdoor, foot: foot)
-            : naturalContact(foot) + Double.random(in: -0.4...0.4)
+        if isScripted {
+            insole.contactC = FakeInsoleScript.steadyFootC(activity: scriptActivity, outdoor: scriptOutdoor, foot: foot)
+        } else if !insole.seeded {
+            insole.contactC = naturalContact(foot) - 0.6
+        }
         insoles[foot] = insole
         ble.simAttach(foot, name: isScripted ? "Fake insole · \(foot.label)" : "Thermyx \(foot.label) (simulated)")
         ble.simSetDiscovered(ble.discovered.filter { $0.id != Self.deviceIDs[foot] })
@@ -1325,9 +1418,11 @@ final class ThermyxInsoleSimulator: ObservableObject {
 
     // MARK: Physics
 
-    /// Where the foot settles with the insole passive: warmer air, warmer foot.
+    /// Where the foot settles with the insole passive: warmer air, warmer
+    /// foot, a little warmer walking than sitting.
     private func naturalContact(_ foot: Foot) -> Double {
-        30.5 + (ambientC - 22) * 0.4 + (fatigued ? 0.6 : 0) + (foot == .right ? 0.35 : 0)
+        DemoWearer.naturalContactC(ambientC: currentAmbientC, activity: currentActivity, foot: foot,
+                                   fatigue: min(1, shiftMinute / 480)) + (fatigued ? 0.6 : 0)
     }
 
     /// Hold temperature for Auto: what the app last sent, else the default.
@@ -1349,11 +1444,10 @@ final class ThermyxInsoleSimulator: ObservableObject {
             // What the firmware does with the command it was given.
             switch coolingFault ? .off : insole.commanded {
             case .ventilation:
-                // Auto: regulate towards the target with a little hysteresis.
-                let target = autoTargetC(foot)
-                if insole.contactC > target + 0.6 { insole.active = .cooling }
-                else if insole.contactC < target - 0.6 { insole.active = .heating }
-                else if abs(insole.contactC - target) < 0.2 { insole.active = .ventilation }
+                // Auto: heat below the target, cool above it, fan near it.
+                insole.active = DemoWearer.autoDecision(contactC: insole.contactC, targetC: autoTargetC(foot),
+                                                        previous: insole.active)
+                if insole.active == .heating, insole.contactC >= ThermyxRiskEngine.burnLimitC { insole.active = .ventilation }
             case .heating:
                 // Firmware burn-protection cutoff: drops out of heating at
                 // the 40 °C limit and resumes below 38.5 °C.
@@ -1363,20 +1457,20 @@ final class ThermyxInsoleSimulator: ObservableObject {
                 insole.active = insole.commanded
             }
 
-            var (target, rate): (Double, Double) = switch insole.active {
-            case .heating: (42, 0.035)
-            case .cooling: (natural - 8, 0.035)
-            case .ventilation: (natural - 1.2, 0.02)
-            case .off: (natural, 0.015)
+            // The foot heads for where the actuator can take it, with the
+            // lag of a real foot in a shoe (about half a minute).
+            var target = DemoWearer.settlingC(natural: natural, active: insole.active)
+            if coolingFault { target = natural + 2 }
+            insole.contactC += (target - insole.contactC) * 0.03 + Double.random(in: -0.015...0.015)
+
+            // Steadiness is measured while walking and held otherwise.
+            if currentActivity == .walking {
+                let steady = DemoWearer.steadiness(progress: min(1, shiftMinute / 480), heat: dayHeat, seconds: tick)
+                let gaitTarget = fatigued ? 0.73 : steady
+                insole.gait += (gaitTarget - insole.gait) * 0.08 + Double.random(in: -0.004...0.004)
             }
-            if coolingFault { (target, rate) = (natural + 2, 0.04) }
-            insole.contactC += (target - insole.contactC) * rate + Double.random(in: -0.04...0.04)
 
-            let gaitTarget = fatigued ? 0.73 : 0.91
-            insole.gait += (gaitTarget - insole.gait) * 0.08 + Double.random(in: -0.01...0.01)
-
-            let drain = insole.active == .ventilation ? 0.01 : 0.03
-            insole.battery = max(3, insole.battery - drain)
+            insole.battery = max(3, insole.battery - DemoWearer.drainPerMinute(insole.active) / 60)
 
             insoles[foot] = insole
             publish(foot)
@@ -1390,26 +1484,31 @@ final class ThermyxInsoleSimulator: ObservableObject {
     private func publish(_ foot: Foot) {
         guard let ble, let insole = insoles[foot] else { return }
         let contact = insole.contactC
-        let sway = sin(tick / 7 + (foot == .left ? 0 : 1.3)) * 0.02
-        let loadBias = foot == .right ? (fatigued ? 0.07 : 0.015) : 0
-        let ambient = ambientC + sin(tick / 40) * 0.3 + Double.random(in: -0.05...0.05)
-        let reading = ThermyxReading(
+        let activity = currentActivity
+        let ambient = currentAmbientC + sin(tick / 40) * 0.2 + Double.random(in: -0.03...0.03)
+        let load = DemoWearer.archLoad(activity, seconds: tick, foot: foot) + (fatigued && foot == .right ? 0.08 : 0)
+        let cadence = DemoWearer.cadence(activity, minute: shiftMinute) * (fatigued ? 0.85 : 1)
+        var reading = ThermyxReading(
             foot: foot,
             timestamp: .now,
             footTemperatureC: contact,
             ambientTemperatureC: ambient,
-            pressureBalance: min(1, max(0, 0.5 + sway + loadBias)),
+            pressureBalance: min(1, max(0, load)),
             gaitStability: min(1, max(0, insole.gait)),
             batteryPercent: Int(insole.battery.rounded()),
             thermalMode: insole.active,
-            zones: FootZoneTemperatures(
-                forefootC: contact + 1.3 + Double.random(in: -0.08...0.08),
-                archC: contact + 0.6 + Double.random(in: -0.08...0.08),
-                heelC: contact - 1.9 + Double.random(in: -0.08...0.08)
-            ),
-            cadenceStepsPerMinute: (fatigued ? 88 : 104) + Double.random(in: -2...2),
-            standingFraction: fatigued ? 0.42 : 0.28
+            zones: reportsZones
+                ? FootZoneTemperatures(
+                    forefootC: contact + 1.3 + Double.random(in: -0.05...0.05),
+                    archC: contact + 0.6 + Double.random(in: -0.05...0.05),
+                    heelC: contact - 1.9 + Double.random(in: -0.05...0.05)
+                  )
+                : nil,
+            cadenceStepsPerMinute: cadence > 0 ? cadence + Double.random(in: -1.5...1.5) : 0,
+            standingFraction: DemoWearer.standingFraction(activity)
         )
+        reading.loadIsArchLevel = !reportsZones
+        reading.footDetected = true
         // Like the firmware: echo the setting being followed, and flag the
         // burn cutoff while it holds the heater off.
         var echoed = reading

@@ -7,9 +7,16 @@
 //   - The wearer's phone makes one-time watcher codes. A watcher who redeems
 //     one is "pending" and sees nothing until the wearer approves them. The
 //     wearer can revoke any watcher at any time; approval lasts 90 days.
-//   - Watchers see only the current safety level, its kind (alert/SOS/OK) and
-//     how fresh it is, plus a location only during an active safety event the
-//     wearer consented to share.
+//   - Watchers see a status card: the safety level and how fresh it is, the
+//     name the wearer chose, which foot, its temperature and trend, whether
+//     the data is confirmed, a low battery or weak connection, the current
+//     event's timeline (alert, check-in, recovery), and a location only during
+//     an active safety event the wearer shares it for.
+//   - Trusted contacts are texted the same facts as plain sentences
+//     (message.js). Their numbers arrive with each event and are not stored;
+//     during an active High risk, Critical or SOS event they are held in
+//     memory so the relay can text "no update" if the wearer's phone goes
+//     quiet, and forgotten when the event ends.
 //   - Tokens and codes are stored hashed; logs never contain tokens, codes,
 //     phone numbers, or locations.
 //
@@ -19,17 +26,31 @@
 //   SMS_ENABLED            "true" to allow texting; OFF by default until tested with real phones
 //   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER   (only when SMS_ENABLED)
 //   SMS_REMINDER_MINUTES   repeat-text gap at the same level, default 5
+//   SILENCE_MINUTES        during an active event, text "no update" after this
+//                          long without hearing from the wearer's phone, default 3
+//   APNS_KEY_FILE (or APNS_KEY), APNS_KEY_ID, APNS_TEAM_ID, APNS_TOPIC
+//                          push notifications to approved watchers' phones.
+//                          Needs a paid Apple Developer account; off until all
+//                          four are set. See README.md.
 //   CONTACT_VERIFICATION_ENABLED  "true" to text trusted contacts a code that
 //                          confirms their number; also needs SMS_ENABLED. OFF by default.
 //   AI_SUMMARY_ENABLED     "true" to allow the daily AI summary. OFF by default.
-//   ANTHROPIC_API_KEY      needed when AI_SUMMARY_ENABLED
+//   ANTHROPIC_API_KEY      needed when AI_SUMMARY_ENABLED. The key lives here,
+//                          on the server, and never in the app, where it could
+//                          be pulled out of the binary.
 //   AI_MODEL               default claude-haiku-4-5
+//
+// Any of these can be kept in ThermyxBackend/.env (git-ignored; copy
+// .env.example), which is read at startup. Real environment variables win.
 const http = require("node:http");
 const path = require("node:path");
 const { openStore } = require("./store");
+const { cleanDetail, composeMessage, composeSilence, composeReconnected, composePush, pushFromText, LEVELS } = require("./message");
+const { apnsConfig, createApnsSender } = require("./apns");
 
-const LEVELS = ["Normal", "Caution", "High risk", "Critical"];
-const KINDS = ["status", "alert", "sos", "ok"];
+const KINDS = ["status", "alert", "sos", "ok", "update"];
+/// An active event's numbers are forgotten this long after the last update.
+const ACTIVE_EVENT_TTL_MS = 60 * 60_000;
 const TWILIO_KEYS = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
 const MAX_BODY = 16_000;
 const MAX_RECIPIENTS = 5;
@@ -65,8 +86,12 @@ function validateEvent(event) {
 
 const SUMMARY_NUMBERS = [
   "wornMinutes", "heatingMinutes", "coolingMinutes", "averageFootC", "peakFootC", "lowFootC",
-  "averageAmbientC", "hotHours", "cadence", "standingMinutes", "gait", "events"
+  "averageAmbientC", "hotHours", "cadence", "standingMinutes", "gait", "events",
+  "steps", "walkingMinutes", "sittingMinutes"
 ];
+
+/// What the wearer said Thermyx is mostly for, from the app's fixed list.
+const USAGE = ["Outdoor work", "Sports and training", "Cold weather", "Everyday comfort"];
 
 /// Keeps only the aggregate numbers a daily summary may use, so nothing
 /// else the app might send reaches the model. Returns null when invalid.
@@ -85,6 +110,10 @@ function cleanSummaryRequest(body) {
     clean.peakRisk = body.peakRisk;
   }
   if (body.focus === "health" || body.focus === "performance") clean.focus = body.focus;
+  if (Array.isArray(body.usage)) {
+    const usage = body.usage.filter(u => USAGE.includes(u));
+    if (usage.length) clean.usage = [...new Set(usage)];
+  }
   clean.unit = body.unit === "F" ? "F" : "C";
   if (clean.wornMinutes === undefined) return null;
   return clean;
@@ -96,7 +125,8 @@ const SUMMARY_SYSTEM = [
   "Write 2 or 3 plain, friendly sentences in second person, then 2 or 3 short recommended actions for tomorrow, each on its own line starting with \"• \". No headings, no emoji. Keep the whole reply under 90 words.",
   "Temperatures are given in Celsius; present them in the requested unit (C or F) with one decimal.",
   "Do not diagnose or make medical claims. If something stands out (a lot of heat, a cold foot, a High risk or Critical level), suggest common-sense steps like resting, drinking water, or checking shoe fit, and suggest talking to a doctor if they're worried.",
-  "If the focus is performance, lead with movement (cadence, standing time); if health, lead with temperature and comfort."
+  "Frame the day by the wearer's focus. Health: safety, comfort and circulation first (time above the comfort band, cold feet, rest and fluids). Performance: training, recovery and gait efficiency first (steps, cadence, walking steadiness, time on their feet). With no focus, use health.",
+  "If they said what Thermyx is mostly for (usage), make the actions fit it, for example breaks in the shade for outdoor work, cool-down and recovery for training, warming up gradually for cold weather."
 ].join(" ");
 
 function anthropicSummarize(env) {
@@ -132,22 +162,6 @@ function normalisePhone(raw) {
   return null;
 }
 
-function composeMessage(event, deviceID) {
-  const kind = event.kind || "alert";
-  const lines = [];
-  if (kind === "ok") lines.push(`Thermyx: the wearer on ${deviceID} checked in and says they're OK.`);
-  else if (kind === "sos") lines.push(`Thermyx SOS from ${deviceID}: the wearer pressed Call 911.`);
-  else lines.push(`Thermyx ${event.level} on ${deviceID}.`);
-  const reasons = Array.isArray(event.reasons) ? event.reasons.filter(Boolean).join(" ") : "";
-  if (reasons) lines.push(reasons);
-  if (event.locationConsent && event.location && typeof event.location.latitude === "number") {
-    const { latitude, longitude } = event.location;
-    lines.push(`Location: https://maps.google.com/?q=${latitude.toFixed(5)},${longitude.toFixed(5)}`);
-  }
-  if (kind !== "ok") lines.push("Please check on them.");
-  return lines.join(" ");
-}
-
 /// A small fixed-window rate limiter keyed by token hash or IP.
 function rateLimiter(limit, windowMs, now) {
   const hits = new Map();
@@ -171,6 +185,17 @@ function createRelay(options = {}) {
   const smsEnabled = env.SMS_ENABLED === "true";
   const contactVerification = smsEnabled && env.CONTACT_VERIFICATION_ENABLED === "true";
   const reminderMs = Number(env.SMS_REMINDER_MINUTES || 5) * 60_000;
+  const silenceMs = Number(env.SILENCE_MINUTES || 3) * 60_000;
+  const apns = options.sendPush || (apnsConfig(env) ? createApnsSender(apnsConfig(env), now) : null);
+  /// Pushes in flight; tests wait for them with `settle()`.
+  const pending = new Set();
+  /// The last push per device, in memory: the highest level pushed this
+  /// event, when, and when the last follow-up went.
+  const pushed = new Map();
+  /// Active High risk, Critical or SOS events that were texted, by device:
+  /// the recipients (memory only), the name and level for a "no update"
+  /// text, when the phone last posted, and whether that text went out.
+  const active = new Map();
   const sendSMS = options.sendSMS || twilioSend(env);
   const pairLimit = rateLimiter(10, 60_000, now);   // per IP: slows code guessing
   const apiLimit = rateLimiter(120, 60_000, now);   // per token
@@ -182,6 +207,70 @@ function createRelay(options = {}) {
   store.purgeExpired();
   const purgeTimer = setInterval(() => store.purgeExpired(), 10 * 60_000);
   purgeTimer.unref();
+  const silenceTimer = setInterval(() => { checkSilence().catch(error => log("Silence check failed:", error.message)); }, 15_000);
+  silenceTimer.unref();
+
+  /// Texts the circle once when an active event goes quiet.
+  async function checkSilence() {
+    const t = now();
+    for (const [deviceID, event] of active) {
+      if (t - event.lastAt >= ACTIVE_EVENT_TTL_MS) { active.delete(deviceID); continue; }
+      if (event.silenceSent || t - event.lastAt < silenceMs) continue;
+      event.silenceSent = true;
+      const minutes = Math.round((t - event.lastAt) / 60_000);
+      const message = composeSilence({ ...event, location: event.locationConsent ? store.activeLocation(deviceID) : null }, minutes);
+      pushWatchers(deviceID, pushFromText(message, true));
+      if (smsEnabled && event.recipients.length) {
+        const { delivered, failed } = await textAll(event.recipients, message);
+        store.recordText(deviceID, "silence", LEVELS.indexOf(event.level), delivered, failed);
+      }
+      store.addTimelineEntry(deviceID, { kind: "silence", level: event.level, minutes });
+    }
+  }
+
+  /// Sends a notification to every approved watcher's phone that has
+  /// registered one. Never throws; a dead token is forgotten.
+  function pushWatchers(deviceID, notification) {
+    if (!apns) return 0;
+    const targets = store.pushTargets(deviceID);
+    for (const target of targets) {
+      const job = Promise.resolve(apns(target.token, target.environment, notification))
+        .then(result => {
+          if (result && result.ok === false) {
+            log(`Push to watcher ${target.watcher_id.slice(0, 8)} failed: ${result.reason || result.status}`);
+            if (result.gone) store.forgetPushToken(target.token);
+          }
+        })
+        .catch(error => log("Push failed:", error.message))
+        .finally(() => pending.delete(job));
+      pending.add(job);
+    }
+    return targets.length;
+  }
+
+  /// Whether this event is worth a push: an SOS or a check-in always; an
+  /// alert on a rise (or at the reminder gap); a follow-up once the event
+  /// has been pushed, at most once a minute.
+  function pushDue(event, deviceID) {
+    const kind = event.kind || "alert";
+    if (kind === "status") return false;
+    if (kind === "sos" || kind === "ok") return true;
+    const last = pushed.get(deviceID);
+    if (kind === "update") return Boolean(last) && now() - (last.updateAt || 0) >= 60_000;
+    const severity = LEVELS.indexOf(event.level);
+    if (severity <= 0) return false;
+    return !last || severity > last.severity || now() - last.at >= reminderMs;
+  }
+
+  async function textAll(recipients, message) {
+    let delivered = 0;
+    let failed = 0;
+    for (const to of recipients) {
+      try { await sendWithRetry(sendSMS, to, message); delivered += 1; }
+      catch (error) { failed += 1; log(`SMS to …${to.slice(-4)} failed:`, error.message); }
+    }
+    return { delivered, failed };
+  }
 
   function bearer(req) {
     const header = req.headers.authorization || "";
@@ -212,13 +301,22 @@ function createRelay(options = {}) {
     });
   }
 
+  /// Whether this event texts the circle. SOS and check-ins always do. An
+  /// alert does on a rise, and again at the reminder gap. A follow-up
+  /// ("still High risk", "recovering", "back to Normal") only follows an
+  /// alert that was texted in this event, at most once a minute.
   function shouldText(event, deviceID) {
     const kind = event.kind || "alert";
     if (kind === "status") return false;
     if (kind === "sos" || kind === "ok") return true;
+    const previous = store.lastText(deviceID);
+    if (kind === "update") {
+      if (!store.eventTexted(deviceID)) return false;
+      const lastUpdate = store.lastTextOfKind(deviceID, "update");
+      return !lastUpdate || now() - lastUpdate.at >= 60_000;
+    }
     const severity = LEVELS.indexOf(event.level);
     if (severity <= 0) return false;
-    const previous = store.lastText(deviceID);
     if (!previous) return true;
     if (severity > previous.severity) return true;
     return now() - previous.at >= reminderMs;
@@ -228,31 +326,82 @@ function createRelay(options = {}) {
     const problem = validateEvent(event);
     if (problem) return json(res, 400, { error: problem });
     const kind = event.kind || "alert";
-    store.updateStatus(identity.deviceID, {
+    const deviceID = identity.deviceID;
+    const detail = cleanDetail(event.detail);
+    const recipients = [...new Set((event.recipients || []).map(normalisePhone).filter(Boolean))].slice(0, MAX_RECIPIENTS);
+
+    // Decide before the status (and the episode) changes underneath.
+    const texts = recipients.length > 0 && smsEnabled && shouldText(event, deviceID);
+    const pushing = Boolean(apns) && pushDue(event, deviceID);
+    const tracked = active.get(deviceID);
+    const reconnecting = Boolean(tracked && tracked.silenceSent);
+    if (tracked) {
+      tracked.lastAt = now();
+      tracked.silenceSent = false;
+      tracked.level = event.level === "Normal" ? tracked.level : event.level;
+      if (recipients.length) tracked.recipients = recipients;
+      if (detail && detail.name) tracked.name = detail.name;
+      tracked.locationConsent = event.locationConsent === true;
+    }
+
+    store.updateStatus(deviceID, {
       level: event.level,
       kind,
       location: event.location,
-      locationConsent: event.locationConsent === true
+      locationConsent: event.locationConsent === true,
+      detail
     });
-    if (event.level === "Normal" && kind !== "ok") store.clearLastText(identity.deviceID);
+    // The event is over: forget the numbers and the episode's text history.
+    if (event.level === "Normal" && kind !== "ok" && kind !== "sos") {
+      active.delete(deviceID);
+      if (!texts) store.clearLastText(deviceID);
+    }
 
-    const recipients = [...new Set((event.recipients || []).map(normalisePhone).filter(Boolean))].slice(0, MAX_RECIPIENTS);
-    if (!recipients.length || kind === "status") return json(res, 202, { stored: true, texted: 0, smsEnabled });
+    // Push to approved watchers, alongside the texts rather than after them.
+    let watchersPushed = 0;
+    if (pushing) {
+      watchersPushed = pushWatchers(deviceID, composePush(event, detail));
+      const last = pushed.get(deviceID) || { severity: 0, at: 0, updateAt: 0 };
+      if (kind === "update") last.updateAt = now();
+      else if (kind === "alert") { last.severity = Math.max(last.severity, LEVELS.indexOf(event.level)); last.at = now(); }
+      else last.at = now();
+      pushed.set(deviceID, last);
+    } else if (reconnecting && apns) {
+      watchersPushed = pushWatchers(deviceID, pushFromText(composeReconnected(event, detail), false));
+    }
+    if (event.level === "Normal" && kind !== "ok" && kind !== "sos") pushed.delete(deviceID);
+    // A pushed High risk, Critical or SOS is watched for silence even when
+    // nobody is texted.
+    const severeNow = kind === "sos" || event.level === "High risk" || event.level === "Critical";
+    if (watchersPushed && severeNow && kind !== "ok" && !active.has(deviceID)) {
+      active.set(deviceID, {
+        recipients: smsEnabled ? recipients : [], name: detail && detail.name,
+        level: kind === "sos" && event.level === "Normal" ? "SOS" : event.level,
+        lastAt: now(), silenceSent: false, locationConsent: event.locationConsent === true
+      });
+    }
+
+    if (!recipients.length || (kind === "status" && !reconnecting)) return json(res, 202, { stored: true, texted: 0, smsEnabled });
     if (!smsEnabled) return json(res, 202, { stored: true, texted: 0, smsEnabled: false, reason: "sms_disabled" });
-    if (!shouldText(event, identity.deviceID)) return json(res, 202, { stored: true, texted: 0, smsEnabled, reason: "throttled" });
+    if (!texts && !reconnecting) return json(res, 202, { stored: true, texted: 0, smsEnabled, reason: "throttled" });
     if (!options.sendSMS && TWILIO_KEYS.some(key => !env[key])) {
       log("SMS enabled but Twilio is not configured");
       return json(res, 503, { error: "sms_not_configured" });
     }
 
-    const message = composeMessage(event, identity.deviceID);
-    let delivered = 0;
-    let failed = 0;
-    for (const to of recipients) {
-      try { await sendWithRetry(sendSMS, to, message); delivered += 1; }
-      catch (error) { failed += 1; log(`SMS to …${to.slice(-4)} failed:`, error.message); }
+    const message = texts ? composeMessage(event, detail) : composeReconnected(event, detail);
+    const { delivered, failed } = await textAll(recipients, message);
+    store.recordText(deviceID, texts ? kind : "reconnect", LEVELS.indexOf(event.level), delivered, failed);
+    if (texts && event.level === "Normal" && kind === "update") store.clearLastText(deviceID);
+
+    // A texted High risk, Critical or SOS event is watched for silence.
+    const severe = kind === "sos" || event.level === "High risk" || event.level === "Critical";
+    if (delivered && severe && kind !== "ok" && !active.has(deviceID)) {
+      active.set(deviceID, {
+        recipients, name: detail && detail.name, level: kind === "sos" && event.level === "Normal" ? "SOS" : event.level,
+        lastAt: now(), silenceSent: false, locationConsent: event.locationConsent === true
+      });
     }
-    store.recordText(identity.deviceID, kind, LEVELS.indexOf(event.level), delivered, failed);
     return json(res, failed && !delivered ? 502 : 202, { stored: true, texted: delivered, failed, smsEnabled });
   }
 
@@ -260,7 +409,7 @@ function createRelay(options = {}) {
     const url = new URL(req.url, "http://relay.local");
     const route = `${req.method} ${url.pathname}`;
 
-    if (route === "GET /health") return json(res, 200, { ok: true, smsEnabled, contactVerification, aiSummary });
+    if (route === "GET /health") return json(res, 200, { ok: true, smsEnabled, contactVerification, aiSummary, push: Boolean(apns) });
 
     // Pairing is the only unauthenticated write, and it is rate-limited per IP.
     if (route === "POST /v1/pair") {
@@ -282,6 +431,20 @@ function createRelay(options = {}) {
       // A watcher can always stop watching; this ends its own access only.
       if (route === "DELETE /v1/watch") {
         store.leaveAsWatcher(identity.watcherID);
+        return json(res, 200, { removed: true });
+      }
+      // The phone's push token, so alerts reach the watcher with the app closed.
+      if (route === "PUT /v1/watch/push") {
+        return readBody(req, res, body => {
+          const environment = body.environment;
+          if (typeof body.token !== "string" || !/^[0-9a-fA-F]{32,200}$/.test(body.token)) return json(res, 400, { error: "invalid_token" });
+          if (environment !== "development" && environment !== "production") return json(res, 400, { error: "invalid_environment" });
+          store.setPushToken(identity.watcherID, body.token.toLowerCase(), environment);
+          return json(res, 200, { registered: true, pushEnabled: Boolean(apns) });
+        });
+      }
+      if (route === "DELETE /v1/watch/push") {
+        store.clearPushToken(identity.watcherID);
         return json(res, 200, { removed: true });
       }
       if (route !== "GET /v1/watch") return json(res, 403, { error: "forbidden" });
@@ -353,8 +516,8 @@ function createRelay(options = {}) {
     return json(res, 404, { error: "not_found" });
   });
 
-  server.on("close", () => clearInterval(purgeTimer));
-  return { server, store };
+  server.on("close", () => { clearInterval(purgeTimer); clearInterval(silenceTimer); if (apns && apns.close) apns.close(); });
+  return { server, store, checkSilence, settle: () => Promise.all([...pending]) };
 }
 
 async function sendWithRetry(send, to, message) {
@@ -382,6 +545,13 @@ function twilioSend(env) {
 module.exports = { createRelay, validateEvent, normalisePhone, composeMessage, cleanSummaryRequest };
 
 if (require.main === module) {
+  // Settings from .env beside this file, if there is one. Variables already
+  // set in the environment take precedence.
+  try {
+    process.loadEnvFile(path.join(__dirname, ".env"));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
   const relay = createRelay();
   const port = Number(process.env.PORT || 8787);
   relay.server.listen(port, () => log(`Thermyx relay listening on ${port} (texting ${process.env.SMS_ENABLED === "true" ? "ON" : "OFF"})`));

@@ -27,9 +27,10 @@
 	</dict>
 	<key>UIAppFonts</key>
 	<array>
-		<string>InstrumentSerif-Regular.ttf</string>
 		<string>Archivo-Medium.ttf</string>
 		<string>Archivo-SemiBold.ttf</string>
+		<string>Archivo-Bold.ttf</string>
+		<string>GeistMono-Medium.ttf</string>
 	</array>
 </dict>
 </plist>

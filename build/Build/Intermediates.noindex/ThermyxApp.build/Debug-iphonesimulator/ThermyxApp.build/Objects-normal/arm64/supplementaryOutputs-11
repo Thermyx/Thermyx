@@ -1,0 +1,44 @@
+{
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/DesignSystem/Components/ThermyxTimeSeriesChart.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTimeSeriesChart.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTimeSeriesChart.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTimeSeriesChart.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTimeSeriesChart.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTimeSeriesChart.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/DesignSystem/Components/ThermyxTopScrim.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTopScrim.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTopScrim.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTopScrim.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTopScrim.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTopScrim.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/DesignSystem/ThermyxTypography.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTypography.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTypography.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTypography.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTypography.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxTypography.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/ViewModels/ThermyxViewModel.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxViewModel.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxViewModel.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxViewModel.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxViewModel.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/ThermyxViewModel.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/ViewModels/TrustedMemberViewModel.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedMemberViewModel.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedMemberViewModel.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedMemberViewModel.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedMemberViewModel.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedMemberViewModel.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/Trusted/TrustedInsightsView.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedInsightsView.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedInsightsView.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedInsightsView.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedInsightsView.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/TrustedInsightsView.swiftdeps"
+  }
+}

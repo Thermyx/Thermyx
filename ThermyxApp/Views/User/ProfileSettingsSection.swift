@@ -8,7 +8,7 @@ struct ProfileSettingsSection: View {
     @State private var editing = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Your profile")
             ThermyxCard {
                 VStack(alignment: .leading, spacing: Thermyx.Space.m) {
@@ -28,19 +28,28 @@ struct ProfileSettingsSection: View {
                             .frame(minWidth: Thermyx.minimumTapTarget, minHeight: Thermyx.minimumTapTarget)
                     }
 
-                    SectionLabel("Insights focus")
-                    Picker("Insights focus", selection: Binding(
-                        get: { settings.profile.focus ?? .health },
-                        set: { settings.profile.focus = $0 }
-                    )) {
-                        ForEach(UserProfile.Focus.allCases) { Text($0.label).tag($0) }
+                    HStack {
+                        SectionLabel("Insight preference")
+                        Spacer(minLength: Thermyx.Space.s)
+                        ThermyxSegmentedControl(options: UserProfile.Focus.allCases, label: \.label,
+                                                selection: Binding(get: { settings.profile.focus ?? .health },
+                                                                   set: { settings.profile.focus = $0 }),
+                                                accessibilityPrefix: "Insights lead with ")
+                            .fixedSize()
                     }
-                    .pickerStyle(.segmented)
                     Text((settings.profile.focus ?? .health) == .health
                          ? "Health: safety, comfort and circulation come first."
-                         : "Performance: training, recovery and gait come first.")
+                         : "Performance: training, recovery and gait efficiency come first.")
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textFaint)
+
+                    SectionLabel("Mostly for")
+                        .padding(.top, Thermyx.Space.xs)
+                    UsageChips(settings: settings)
+                    Text("Shapes the Simulator's first scenario and, with AI Insights on, the daily summary's suggestions.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text("Your profile stays on this phone.")
                         .font(ThermyxFont.captionSmall)
@@ -84,7 +93,7 @@ struct ProfileSettingsSection: View {
             parts.append(settings.temperatureUnit == .fahrenheit ? "\(Int((kg / 0.453_592).rounded())) lb" : "\(Int(kg.rounded())) kg")
         }
         if let sex = p.sex { parts.append(sex.label) }
-        if let size = settings.soleSize { parts.append(size.label) }
+        if let size = settings.shoeSizeLabel { parts.append(size) }
         return parts.isEmpty ? "Add your details" : parts.joined(separator: " · ")
     }
 }
@@ -100,7 +109,7 @@ struct AccountSection: View {
     @State private var deleteError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Account")
             ThermyxGroupedCard {
                 ThermyxValueRow(label: "Signed in with Google", value: account.account?.email ?? account.account?.displayName ?? "Google account")

@@ -1,0 +1,44 @@
+{
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Models/BilateralReading.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralReading.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralReading.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralReading.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralReading.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralReading.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/ViewModels/BilateralDigest.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralDigest.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralDigest.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralDigest.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralDigest.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralDigest.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/Onboarding/AuroraBackground.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/AuroraBackground.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/AuroraBackground.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/AuroraBackground.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/AuroraBackground.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/AuroraBackground.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/User/BalanceDetailView.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BalanceDetailView.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BalanceDetailView.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BalanceDetailView.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BalanceDetailView.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BalanceDetailView.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/User/BilateralSoleView.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralSoleView.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralSoleView.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralSoleView.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralSoleView.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/BilateralSoleView.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/User/DeviceProfileSheet.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/DeviceProfileSheet.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/DeviceProfileSheet.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/DeviceProfileSheet.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/DeviceProfileSheet.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/DeviceProfileSheet.swiftdeps"
+  }
+}

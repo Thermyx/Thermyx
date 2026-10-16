@@ -97,6 +97,10 @@ final class ThermyxHealthService: ObservableObject {
             availability = .unavailable
             return
         }
+        #if DEBUG
+        // `-ThermyxNoPrompts`: screenshots without the Health sheet.
+        if ProcessInfo.processInfo.arguments.contains("-ThermyxNoPrompts") { return }
+        #endif
         do {
             try await store.requestAuthorization(toShare: writeTypes, read: readTypes)
             refreshAuthorizationState()

@@ -45,14 +45,13 @@ struct BalanceDetailView: View {
                 )
             }
         }
-        .hidesThermalControlBar()
     }
 
     // MARK: - Summary
 
     private func summary(_ digest: BilateralDigest) -> some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("What the pair shows")
                 Text(headline(digest))
                     .font(ThermyxFont.bodyLarge)
@@ -103,7 +102,7 @@ struct BalanceDetailView: View {
 
     private func temperatureCard(_ digest: BilateralDigest) -> some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Temperature gap") {
                     Text("Left minus right")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
@@ -116,7 +115,8 @@ struct BalanceDetailView: View {
                             points: digest.temperatureAsymmetry.map {
                                 SeriesPoint(date: $0.date, value: unit.convertDelta($0.value))
                             },
-                            color: Thermyx.Ink.amber, isFilled: true
+                            color: Thermyx.Ink.amber, isFilled: true,
+                            scale: .temperatureGap(unit)
                         )
                     ],
                     range: settings.insightsRange,
@@ -136,7 +136,7 @@ struct BalanceDetailView: View {
 
     private func loadCard(_ digest: BilateralDigest) -> some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Load gap") {
                     Text("Left minus right")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
@@ -147,7 +147,8 @@ struct BalanceDetailView: View {
                         ChartSeries(
                             id: "loadGap", name: "Load gap",
                             points: digest.loadAsymmetry,
-                            color: Thermyx.Ink.signal, isFilled: true
+                            color: Thermyx.Ink.signal, isFilled: true,
+                            scale: .loadGap
                         )
                     ],
                     range: settings.insightsRange,

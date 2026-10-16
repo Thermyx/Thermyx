@@ -8,13 +8,11 @@ struct CalibrationPromptCard: View {
     @ObservedObject var settings: ThermyxSettingsStore
     @State private var presenting = false
 
-    /// A real insole is connected but the model came from fake test data.
-    private var retrain: Bool { !viewModel.ble.isDemoMode && baseline.model?.isTestData == true }
+    /// A model saved by an older build from test data: calibrate again.
+    private var retrain: Bool { baseline.model?.isTestData == true }
 
     private var showsCard: Bool {
-        guard viewModel.anyConnected else { return false }
-        // Demo Mode can't calibrate; the fake insole can.
-        if viewModel.ble.isDemoMode && !viewModel.ble.isFakeInsole { return false }
+        guard viewModel.anyConnected, !viewModel.ble.isDemoMode else { return false }
         return retrain || baseline.model?.outdoorDone != true
     }
 
@@ -30,7 +28,7 @@ struct CalibrationPromptCard: View {
                             .font(ThermyxFont.rowTitle)
                             .foregroundStyle(Thermyx.Ink.textPrimary)
                         Text(finishing ? "90 seconds outside to complete your profile."
-                             : retrain ? "Your current norms came from fake insole test data."
+                             : retrain ? "Your saved norms came from test data, not your feet."
                              : "3 minutes. Learns your normal and sets Auto for you.")
                             .font(ThermyxFont.captionSmall)
                             .foregroundStyle(Thermyx.Ink.textSupporting)
@@ -53,19 +51,6 @@ struct CalibrationPromptCard: View {
     }
 }
 
-/// Home: what the activity model thinks the wearer is doing.
-struct ActivityGuessLabel: View {
-    @ObservedObject var baseline: PersonalBaselineStore
-
-    var body: some View {
-        if let best = baseline.activity?.max(by: { $0.value < $1.value }), best.value >= 0.6 {
-            Text(verbatim: "\(best.key.label) · \(Int((best.value * 100).rounded()))%")
-                .narrowLabel(ThermyxFont.statusPill, tracking: 0.6, color: Thermyx.Ink.textSupporting)
-                .accessibilityLabel("Activity model: \(best.key.label), \(Int((best.value * 100).rounded())) percent")
-        }
-    }
-}
-
 /// Settings → Advanced: calibration status, redo, and clear.
 struct CalibrationSettingsSection: View {
     @EnvironmentObject private var viewModel: ThermyxViewModel
@@ -74,7 +59,7 @@ struct CalibrationSettingsSection: View {
     @State private var presenting = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Calibration")
             ThermyxCard {
                 VStack(alignment: .leading, spacing: Thermyx.Space.m) {
@@ -85,9 +70,6 @@ struct CalibrationSettingsSection: View {
                         Text(verbatim: "Trained \(model.trainedAt.formatted(date: .abbreviated, time: .shortened))")
                             .font(ThermyxFont.captionSmall)
                             .foregroundStyle(Thermyx.Ink.textSupporting)
-                        if model.isTestData {
-                            FakeInsoleNote(text: "Learned from fake insole test data. Calibrate again with your real insoles.")
-                        }
                         CalibrationNorms(model: model, unit: settings.temperatureUnit)
                     } else {
                         Text("Not calibrated yet")
@@ -97,7 +79,7 @@ struct CalibrationSettingsSection: View {
                     HStack(spacing: Thermyx.Space.m) {
                         Button(baseline.model == nil ? "Calibrate" : "Calibrate again") { presenting = true }
                             .buttonStyle(ThermyxSecondaryButtonStyle())
-                            .disabled(!viewModel.anyConnected || (viewModel.ble.isDemoMode && !viewModel.ble.isFakeInsole))
+                            .disabled(!viewModel.anyConnected || viewModel.ble.isDemoMode)
                         if baseline.model != nil {
                             Button("Clear") {
                                 baseline.clearModel()
@@ -193,78 +175,3 @@ struct CalibrationNorms: View {
     }
 }
 
-// MARK: - Fake insole (TEMPORARY, admins only)
-//
-// Remove these, the `FakeInsoleButton` uses, and `ThermyxBLEService.
-// startFakeInsoles` once real insoles are reliable. Setting
-// `ThermyxBLEService.fakeInsoleAvailable` to false hides every button.
-
-/// Amber "test data" note shown wherever fake insole data is in play.
-struct FakeInsoleNote: View {
-    let text: String
-
-    var body: some View {
-        HStack(alignment: .top, spacing: Thermyx.Space.s) {
-            Image(systemName: "testtube.2")
-                .foregroundStyle(Thermyx.Ink.amber)
-            Text(text)
-                .font(ThermyxFont.caption)
-                .foregroundStyle(Thermyx.Ink.amber)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(Thermyx.Space.m)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Thermyx.Tint.emberFill, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
-                .strokeBorder(Thermyx.Tint.emberBorder, lineWidth: Thermyx.Stroke.hairline)
-        }
-    }
-}
-
-/// "Connect fake insole": a scripted left and right pair with repeatable
-/// test data. Admin accounts only.
-struct FakeInsoleButton: View {
-    @ObservedObject var ble: ThermyxBLEService
-    @Environment(\.isThermyxAdmin) private var isAdmin
-
-    var body: some View {
-        if isAdmin, ThermyxBLEService.fakeInsoleAvailable, !ble.isDemoMode {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
-                Button("Connect fake insole (test)") { ble.startFakeInsoles() }
-                    .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
-                Text("Test tool: scripted readings, labelled as fake everywhere, never saved to history or Health.")
-                    .font(ThermyxFont.captionSmall)
-                    .foregroundStyle(Thermyx.Ink.textFaint)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
-/// Connect a device, while the fake insole is connected.
-struct FakeInsoleConnectedCard: View {
-    @ObservedObject var ble: ThermyxBLEService
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            FakeInsoleNote(text: "The fake insole is connected. Its readings are scripted test data, and real insoles can't connect until you disconnect it.")
-            Button("Disconnect fake insole") { ble.stopDemoMode() }
-                .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
-                .fixedSize()
-        }
-    }
-}
-
-/// The fake insole button, or what's connected.
-struct FakeInsolePairControls: View {
-    @ObservedObject var ble: ThermyxBLEService
-
-    var body: some View {
-        if ble.isFakeInsole {
-            FakeInsoleConnectedCard(ble: ble)
-        } else {
-            FakeInsoleButton(ble: ble)
-        }
-    }
-}

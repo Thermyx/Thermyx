@@ -90,7 +90,7 @@ struct RiskExplanationSheet: View {
     }
 
     private func signals(_ e: RiskExplanation) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Signals")
             ThermyxCard(padding: Thermyx.Space.l) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -108,7 +108,7 @@ struct RiskExplanationSheet: View {
     }
 
     private func confidence(_ e: RiskExplanation) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("How much to trust this")
             ThermyxCard(padding: Thermyx.Space.l) {
                 VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
@@ -131,7 +131,7 @@ struct RiskExplanationSheet: View {
     }
 
     private func nextStep(_ e: RiskExplanation) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("What to do")
             Text(e.nextStep)
                 .font(ThermyxFont.body)
@@ -154,7 +154,7 @@ struct BaselineStatus: View {
     @ObservedObject var store: PersonalBaselineStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Personal baseline")
             Text(text)
                 .font(ThermyxFont.caption)
@@ -236,7 +236,7 @@ struct DeviceHealthStrip: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Insoles")
             HStack(spacing: Thermyx.Space.xs) {
                 ForEach(Foot.allCases) { foot in

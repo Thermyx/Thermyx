@@ -20,10 +20,11 @@ struct ThermyxContact: Codable, Identifiable, Equatable {
 struct ThermyxAlertEvent: Codable {
     /// What prompted the event. `status` is the once-a-minute heartbeat and
     /// never texts anyone; `alert` is an escalation; `sos` is the Call 911
-    /// button; `ok` is the wearer checking in. Optional so events from older
-    /// builds still decode.
+    /// button (or no answer to a Critical alert); `ok` is the wearer checking
+    /// in; `update` follows an alert ("still High risk", "recovering", "back
+    /// to Normal"). Optional so events from older builds still decode.
     enum Kind: String, Codable {
-        case status, alert, sos, ok
+        case status, alert, sos, ok, update
     }
 
     let deviceID: String
@@ -71,6 +72,8 @@ struct ThermyxAlertEvent: Codable {
         let latitude: Double
         let longitude: Double
         let accuracyM: Double?
+        /// When the relay stops sharing it (watchers only).
+        var expiresAt: String? = nil
 
         var mapsURL: URL? {
             URL(string: String(format: "https://maps.apple.com/?ll=%.5f,%.5f&q=Thermyx%%20wearer", latitude, longitude))

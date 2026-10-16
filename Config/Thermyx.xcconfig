@@ -1,0 +1,9 @@
+// Which entitlements the app is signed with.
+//
+// The default has no push entitlement, so the app builds and runs on a free
+// Apple ID ("Personal Team"), which can't have Push Notifications. On the paid
+// Developer team, copy Local.xcconfig.example to Local.xcconfig (git-ignored)
+// to switch push on, then run `xcodegen generate`. See ThermyxBackend/README.md.
+CODE_SIGN_ENTITLEMENTS = ThermyxApp/ThermyxApp.entitlements
+
+#include? "Local.xcconfig"

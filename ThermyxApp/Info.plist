@@ -47,10 +47,9 @@
 		<string>Archivo-SemiBold.ttf</string>
 		<string>Archivo-Bold.ttf</string>
 		<string>Archivo-ExtraBold.ttf</string>
-		<string>ArchivoNarrow-SemiBold.ttf</string>
-		<string>ArchivoNarrow-Bold.ttf</string>
-		<string>InstrumentSerif-Regular.ttf</string>
-		<string>InstrumentSerif-Italic.ttf</string>
+		<string>GeistMono-Regular.ttf</string>
+		<string>GeistMono-Medium.ttf</string>
+		<string>GeistMono-SemiBold.ttf</string>
 	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>

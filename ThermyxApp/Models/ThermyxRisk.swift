@@ -88,17 +88,26 @@ enum ThermyxRiskLevel: String, CaseIterable {
     }
 }
 
+/// Why the engine raised a level, in the same order as `reasons`. The
+/// trusted circle's messages and status card are built from these, not by
+/// reading the sentences back.
+enum ThermyxRiskCause: String, Codable, Equatable, CaseIterable {
+    case heatLimit, hot, cold, unsteady, hotAir, warmerFoot, unevenLoad
+}
+
 struct ThermyxRiskAssessment: Equatable {
     let level: ThermyxRiskLevel
     let reasons: [String]
     /// Which foot drove this, when one did. Nil for a bilateral signal or
     /// when neither foot is individually responsible.
     var foot: Foot?
+    var causes: [ThermyxRiskCause]
 
-    init(level: ThermyxRiskLevel, reasons: [String], foot: Foot? = nil) {
+    init(level: ThermyxRiskLevel, reasons: [String], foot: Foot? = nil, causes: [ThermyxRiskCause] = []) {
         self.level = level
         self.reasons = reasons
         self.foot = foot
+        self.causes = causes
     }
 
     static let unavailable = ThermyxRiskAssessment(level: .unavailable, reasons: [])
@@ -132,9 +141,10 @@ enum ThermyxRiskEngine {
         guard foot != nil || ambient != nil || gait != nil else { return .unavailable }
 
         var reasons: [String] = []
-        if let gait, gait < 0.8 { reasons.append("Movement stability is below baseline.") }
-        if let ambient, ambient >= 35 { reasons.append("Ambient temperature is elevated.") }
-        if let foot, foot >= 38 { reasons.append("Foot-contact temperature is elevated.") }
+        var causes: [ThermyxRiskCause] = []
+        if let gait, gait < 0.8 { reasons.append("Movement stability is below baseline."); causes.append(.unsteady) }
+        if let ambient, ambient >= 35 { reasons.append("Ambient temperature is elevated."); causes.append(.hotAir) }
+        if let foot, foot >= 38 { reasons.append("Foot-contact temperature is elevated."); causes.append(.hot) }
         var level: ThermyxRiskLevel = reasons.count >= 3 ? .critical : reasons.count == 2 ? .high : reasons.isEmpty ? .normal : .caution
 
         // Burn protection stands on its own: a foot at the limit is High
@@ -144,13 +154,15 @@ enum ThermyxRiskEngine {
             .max()
         if let hottest, hottest >= burnLimitC {
             reasons.insert("Foot contact has reached the burn-protection limit. Heating is off.", at: 0)
+            causes.insert(.heatLimit, at: 0)
             if level.severity < ThermyxRiskLevel.high.severity { level = .high }
         }
         if let foot, foot <= coldFootC {
             reasons.append("Foot-contact temperature is low. Warm up with Auto or Heat.")
+            causes.append(.cold)
             if level == .normal { level = .caution }
         }
-        return ThermyxRiskAssessment(level: level, reasons: reasons, foot: reading.foot)
+        return ThermyxRiskAssessment(level: level, reasons: reasons, foot: reading.foot, causes: causes)
     }
 
     /// Assesses the pair.
@@ -176,18 +188,21 @@ enum ThermyxRiskEngine {
         }
 
         var reasons = worst.reasons
+        var causes = worst.causes
         var level = worst.level
 
         if sustainedTemperatureGap, let hotter = bilateral.hotterFoot, let delta = bilateral.temperatureAsymmetryC {
             reasons.append("\(hotter.label) foot is running \(String(format: "%.1f", abs(delta))) °C warmer than the other.")
+            causes.append(.warmerFoot)
             if level == .normal { level = .caution }
         }
         if sustainedLoadGap, let favoured = bilateral.favouredFoot, let load = bilateral.loadAsymmetry {
             reasons.append("Load is \(Int(abs(load) * 100)) points heavier on the \(favoured.label.lowercased()) foot.")
+            causes.append(.unevenLoad)
             if level == .normal { level = .caution }
         }
 
-        return ThermyxRiskAssessment(level: level, reasons: reasons, foot: worst.foot)
+        return ThermyxRiskAssessment(level: level, reasons: reasons, foot: worst.foot, causes: causes)
     }
 }
 

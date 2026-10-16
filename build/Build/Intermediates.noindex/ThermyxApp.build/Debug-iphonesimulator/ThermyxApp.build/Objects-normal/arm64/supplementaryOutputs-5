@@ -1,0 +1,44 @@
+{
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/DesignSystem/Components/InsightsRangeBar.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/InsightsRangeBar.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/InsightsRangeBar.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/InsightsRangeBar.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/InsightsRangeBar.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/InsightsRangeBar.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Models/LearningArticle.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningArticle.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningArticle.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningArticle.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningArticle.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningArticle.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Models/LegalDocument.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalDocument.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalDocument.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalDocument.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalDocument.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalDocument.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/User/LearningCenterView.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningCenterView.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningCenterView.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningCenterView.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningCenterView.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LearningCenterView.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/User/LegalSheet.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalSheet.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalSheet.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalSheet.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalSheet.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/LegalSheet.swiftdeps"
+  },
+  "/Users/aaronqin/VSProjects/Thermyx/ThermyxApp/Views/User/MovementAdvancedView.swift" : {
+    "const-values" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/MovementAdvancedView.swiftconstvalues",
+    "dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/MovementAdvancedView.d",
+    "diagnostics" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/MovementAdvancedView.dia",
+    "object" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/MovementAdvancedView.o",
+    "swift-dependencies" : "/Users/aaronqin/VSProjects/Thermyx/build/Build/Intermediates.noindex/ThermyxApp.build/Debug-iphonesimulator/ThermyxApp.build/Objects-normal/arm64/MovementAdvancedView.swiftdeps"
+  }
+}

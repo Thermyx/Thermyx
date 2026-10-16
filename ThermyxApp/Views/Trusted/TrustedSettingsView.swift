@@ -5,6 +5,7 @@ struct TrustedSettingsView: View {
     @ObservedObject var settings: ThermyxSettingsStore
     @ObservedObject var member: TrustedMemberViewModel
     @Environment(\.isThermyxAdmin) private var isAdmin
+    @ObservedObject private var push = ThermyxPushRegistrar.shared
 
     @State private var showingRoleConfirmation = false
     @State private var legalDocument: LegalDocument.Kind?
@@ -17,8 +18,8 @@ struct TrustedSettingsView: View {
                 watchedCard
                 profileSection
                 alertToggles
+                pushStatus
                 // The worked example is made-up data: admin accounts only.
-                if isAdmin { sampleSection }
                 connectionSection
                 unitSection
                 legalRow
@@ -26,7 +27,6 @@ struct TrustedSettingsView: View {
                 Button("Change role") { showingRoleConfirmation = true }
                     .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
             }
-            .trustedSampleBanner(member: member, watchedName: roles.watchedUserName)
         }
         .onAppear {
             myName = roles.profileName
@@ -94,7 +94,7 @@ struct TrustedSettingsView: View {
     }
 
     private var profileSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Profile")
             ThermyxGroupedCard {
                 nameRow("Your name", placeholder: "Your name", text: $myName)
@@ -124,32 +124,6 @@ struct TrustedSettingsView: View {
         .frame(minHeight: Thermyx.minimumTapTarget)
     }
 
-    private var sampleSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Learning")
-            ThermyxGroupedCard {
-                Toggle(isOn: $member.isShowingSample) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Show a sample shift")
-                            .font(ThermyxFont.body)
-                            .foregroundStyle(Thermyx.Ink.textPrimary)
-                        Text("Fills the screens with a worked example")
-                            .font(ThermyxFont.captionSmall)
-                            .foregroundStyle(Thermyx.Ink.textSupporting)
-                    }
-                }
-                .tint(Thermyx.Ink.signal)
-                .padding(.horizontal, Thermyx.Space.xl)
-                .padding(.vertical, Thermyx.Space.m)
-                .frame(minHeight: Thermyx.minimumTapTarget)
-            }
-            Text("Every screen is marked while the sample is showing, so it can never be mistaken for \(roles.watchedUserName)'s real readings.")
-                .font(ThermyxFont.captionSmall)
-                .foregroundStyle(Thermyx.Ink.textFaint)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
     private var legalRow: some View {
         Button { legalDocument = .privacy } label: {
             ThermyxNavigationRow(
@@ -164,7 +138,7 @@ struct TrustedSettingsView: View {
     }
 
     private var alertToggles: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Alert me when")
 
             ThermyxGroupedCard {
@@ -175,6 +149,45 @@ struct TrustedSettingsView: View {
                 toggleRow("Critical", isOn: $settings.alertOnCritical)
             }
         }
+    }
+
+    /// Whether alerts reach this phone with Thermyx closed, and if not, why.
+    private var pushStatus: some View {
+        let (symbol, tint, title, detail): (String, Color, String, String) = {
+            if member.pushActive {
+                return ("bell.badge.fill", Thermyx.Ink.ice, "Alerts when Thermyx is closed: on",
+                        "They arrive from Apple, with the app closed. High risk, Critical and SOS can break through Focus.")
+            }
+            switch push.state {
+            case .unavailable(let why):
+                return ("bell.slash", Thermyx.Ink.amber, "Alerts only while Thermyx is open",
+                        "\(why) You'll see their status here and get alerts while the app is open. Check in with them if you can't keep it open.")
+            case .registered:
+                return ("bell", Thermyx.Ink.amber, "Waiting for the relay",
+                        "This phone is ready, but the relay hasn't turned push notifications on yet.")
+            case .idle, .registering:
+                return ("bell", Thermyx.Ink.textMuted, "Setting up alerts when Thermyx is closed",
+                        "Allow notifications when asked. This can take a moment.")
+            }
+        }()
+        return HStack(alignment: .top, spacing: Thermyx.Space.m) {
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(tint)
+                .frame(width: 24, height: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(ThermyxFont.rowTitle)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                Text(detail)
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 
     private func toggleRow(_ label: String, isOn: Binding<Bool>) -> some View {
@@ -202,7 +215,7 @@ struct TrustedSettingsView: View {
     }
 
     private var unitSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Units")
             ThermyxSegmentedControl(
                 options: TemperatureUnit.allCases,

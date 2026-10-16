@@ -219,8 +219,23 @@ final class CalibrationEngine: ObservableObject {
         viewModel?.applyCalibration(trained, indoorSamples: indoor, settings: settings)
     }
 
-    /// TEMPORARY, fake insole only: fills this and every remaining step with
-    /// the fake insole's scripted recording instead of waiting.
+    /// A full calibration trained on the scripted insole's data, marked as
+    /// test data, for the demo. It never seeds the baseline, and leaving the
+    /// demo clears it.
+    static func demoModel() -> PersonalThermalModel? {
+        let segments = CalibrationPlan.steps.map { step in
+            CalibrationTrainer.Segment(activity: step.activity, outdoor: step.outdoor,
+                                       samples: FakeInsoleScript.samples(activity: step.activity, outdoor: step.outdoor,
+                                                                         seconds: CalibrationPlan.secondsPerStep))
+        }
+        guard var model = CalibrationTrainer.train(segments: segments, comfort: 0) else { return nil }
+        model.fromTestData = true
+        return model
+    }
+
+    #if DEBUG
+    /// Debug builds only (the preview harness's scripted insole): fills this
+    /// and every remaining step with the script instead of waiting.
     func useFakeRecording() {
         guard isFakeInsole else { return }
         stop()
@@ -245,6 +260,7 @@ final class CalibrationEngine: ObservableObject {
         train()
         phase = .done
     }
+    #endif
 
     // The indoor half is kept so the outdoor half can be added later and
     // the model retrained on both.
@@ -366,6 +382,8 @@ private struct CalibrationExperience: View {
 
     @Environment(\.isThermyxAdmin) private var isAdmin
     @ObservedObject private var weather = ThermyxWeather.shared
+    /// The checklist starts folded: its summary says whether it's done.
+    @State private var showingChecklist = false
 
     private var unit: TemperatureUnit { settings.temperatureUnit }
     private var receiving: Bool { viewModel.reading.hasAny }
@@ -384,16 +402,19 @@ private struct CalibrationExperience: View {
     }
 
     var body: some View {
-        OnboardingPage(eyebrow: "Calibration · 3 minutes", title: "Teach Thermyx *your normal*",
-                       subtitle: "Sit, stand and walk for 30 seconds each, inside and then outside. Thermyx learns how your feet run, on this phone.") {
-            PhaseRail(engine: engine)
+        OnboardingPage(title: "Learn your feet",
+                       subtitle: "Six 30-second segments, about three minutes. Thermyx learns your usual temperature and stride for each one, on this phone.") {
             stage
+            SegmentTable(engine: engine)
             LiveInsights(engine: engine, reading: viewModel.reading, unit: unit)
             SessionChart(engine: engine, unit: unit)
             if !engine.summaries.isEmpty {
                 LearnedSoFar(summaries: engine.summaries, samples: engine.phaseSamples, unit: unit)
             }
         } actions: {
+            if engine.phase != .done {
+                LiveStrip(engine: engine, reading: viewModel.reading, unit: unit)
+            }
             actions
         }
         .sensoryFeedback(.success, trigger: engine.summaries.count)
@@ -407,14 +428,17 @@ private struct CalibrationExperience: View {
         VStack(alignment: .leading, spacing: Thermyx.Space.m) {
             switch engine.phase {
             case .ready:
-                SiteEyebrow("Before you start")
-                check(viewModel.anyConnected, "Insoles connected",
-                      viewModel.anyConnected ? viewModel.connectedFeet.map(\.label).joined(separator: " and ") : "Connect your insoles first.")
-                check(receiving, "Readings arriving", receiving ? "Live data is coming in." : "Waiting for the first reading…")
-                switch footOn {
-                case .some(true): check(true, "Feet in", "You're standing on them.")
-                case .some(false): check(false, "Step in", "Put the insoles in your shoes and stand on them.")
-                case .none: check(receiving, "Insoles in your shoes", "Check they're in your shoes and you're wearing them.")
+                ThermyxDisclosure(title: "Before you start", isExpanded: $showingChecklist) {
+                    ChecklistSummary(done: checklistDone, total: 3)
+                } content: {
+                    check(viewModel.anyConnected, "Insoles connected",
+                          viewModel.anyConnected ? viewModel.connectedFeet.map(\.label).joined(separator: " and ") : "Connect your insoles first.")
+                    check(receiving, "Readings arriving", receiving ? "Live data is coming in." : "Waiting for the first reading…")
+                    switch footOn {
+                    case .some(true): check(true, "Feet in", "You're standing on them.")
+                    case .some(false): check(false, "Step in", "Put the insoles in your shoes and stand on them.")
+                    case .none: check(receiving, "Insoles in your shoes", "Check they're in your shoes and you're wearing them.")
+                    }
                 }
                 locationPrompt
             case .running:
@@ -434,38 +458,46 @@ private struct CalibrationExperience: View {
                 doneStage
             }
         }
-        .padding(Thermyx.Space.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .siteGlass(radius: Thermyx.Radius.section)
         .animation(SiteMotion.settle, value: engine.phase)
     }
 
     private var runningStage: some View {
         let step = engine.step
         return VStack(alignment: .leading, spacing: Thermyx.Space.m) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    SiteEyebrow(step.outdoor ? "Outside · step \(engine.index + 1) of 6" : "Inside · step \(engine.index + 1) of 6")
-                    Text(step.title)
-                        .font(ThermyxFont.displaySmall)
-                        .tracking(ThermyxTracking.displaySmall)
-                        .foregroundStyle(Thermyx.Site.text)
-                        .contentTransition(.opacity)
+            HStack(alignment: .center, spacing: 22) {
+                HStack(spacing: 8) {
+                    ForEach(Foot.allCases) { foot in
+                        FootMap(foot: foot, content: liveContent(foot))
+                            .frame(width: 84, height: 200)
+                    }
                 }
-                Spacer()
-                Text(verbatim: String(format: "0:%02d", engine.remaining))
-                    .font(ThermyxFont.displayNumeral)
-                    .monospacedDigit()
-                    .foregroundStyle(engine.isPaused ? Thermyx.Site.textFaint : Thermyx.Site.text)
-                    .contentTransition(.numericText(countsDown: true))
-                    .animation(SiteMotion.settle, value: engine.remaining)
-                    .accessibilityLabel("\(engine.remaining) seconds left")
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Now")
+                        .font(.custom(ThermyxFont.Family.medium, size: 13, relativeTo: .footnote))
+                        .foregroundStyle(Thermyx.Ink.ice)
+                    Text("\(step.outdoor ? "Outdoors" : "Indoors"), \(step.activity.label.lowercased())")
+                        .font(.custom(ThermyxFont.Family.semibold, size: 20, relativeTo: .title3))
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                        .contentTransition(.opacity)
+                    Text(verbatim: String(format: "0:%02d", engine.remaining))
+                        .font(ThermyxFont.monoDisplay)
+                        .tracking(ThermyxTracking.monoDisplay)
+                        .foregroundStyle(engine.isPaused ? Thermyx.Ink.textFaint : Thermyx.Ink.textPrimary)
+                        .contentTransition(.numericText(countsDown: true))
+                        .animation(SiteMotion.settle, value: engine.remaining)
+                        .padding(.top, 6)
+                        .accessibilityLabel("\(engine.remaining) seconds left")
+                    ProgressLine(value: engine.stepProgress)
+                        .frame(height: 3)
+                        .padding(.top, 4)
+                }
             }
             Text(step.instruction)
-                .font(ThermyxFont.body)
-                .foregroundStyle(Thermyx.Site.textMuted)
+                .font(ThermyxFont.bodySmall)
+                .foregroundStyle(Thermyx.Ink.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
-            ProgressLine(value: engine.stepProgress)
             if step.outdoor, let air = engine.outdoorAir {
                 Text("Outside air \(TemperatureFormat.degrees(air.airC, in: settings.temperatureUnit))\(air.feelsLikeC.map { " · feels like " + TemperatureFormat.degrees($0, in: settings.temperatureUnit) } ?? "") · local weather")
                     .font(ThermyxFont.captionSmall)
@@ -487,6 +519,15 @@ private struct CalibrationExperience: View {
                     .foregroundStyle(Thermyx.Ink.amber)
             }
         }
+    }
+
+    /// The live maps: only what the insole measures (the arch sensor's
+    /// load, or the foot temperature when there's no load reading).
+    private func liveContent(_ foot: Foot) -> FootMap.Content {
+        guard let r = viewModel.reading[foot] else { return .outline(dimmed: true) }
+        if r.loadIsArchLevel { return .archLoad(r.pressureBalance) }
+        if r.pressureBalance != nil { return .forefootShare(r.pressureBalance) }
+        return .temperature(r.footTemperatureC)
     }
 
     private var comfortQuestion: some View {
@@ -512,9 +553,6 @@ private struct CalibrationExperience: View {
                 .font(ThermyxFont.displaySmall)
                 .tracking(ThermyxTracking.displaySmall)
                 .foregroundStyle(Thermyx.Site.text)
-            if model.isTestData {
-                FakeInsoleNote(text: "Learned from fake insole test data, not your feet.")
-            }
             CalibrationNorms(model: model, unit: unit)
             Text("Learned on this phone from your own readings. It can only add caution, and Auto stays within 26–38 °C.")
                 .font(ThermyxFont.captionSmall)
@@ -526,6 +564,11 @@ private struct CalibrationExperience: View {
                 .foregroundStyle(Thermyx.Ink.amber)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    /// How many of the three checks pass.
+    private var checklistDone: Int {
+        [viewModel.anyConnected, receiving, footOn ?? receiving].filter { $0 }.count
     }
 
     private func check(_ done: Bool, _ title: String, _ detail: String) -> some View {
@@ -561,10 +604,6 @@ private struct CalibrationExperience: View {
                 Button("Skip step") { withAnimation(SiteMotion.settle) { engine.skipStep() } }
                     .buttonStyle(SiteSecondaryButtonStyle())
             }
-            if isAdmin, engine.isFakeInsole {
-                Button("Skip the wait (fake insole)") { withAnimation(SiteMotion.settle) { engine.useFakeRecording() } }
-                    .buttonStyle(SiteTextButtonStyle(tint: Thermyx.Ink.amber))
-            }
         case .outside:
             Button("I'm outside") { withAnimation(SiteMotion.settle) { engine.goOutside() } }
                 .buttonStyle(SitePrimaryButtonStyle())
@@ -582,56 +621,75 @@ private struct CalibrationExperience: View {
 
 // MARK: - Pieces
 
-/// Six segments in two halves. The current one fills as its 30 seconds run.
-private struct PhaseRail: View {
+/// The six segments as the design's table: sitting, standing and walking,
+/// indoors and outdoors, each done, running, skipped or still to come.
+private struct SegmentTable: View {
     @ObservedObject var engine: CalibrationEngine
 
     var body: some View {
-        HStack(alignment: .top, spacing: Thermyx.Space.l) {
-            half("Inside", range: 0..<CalibrationPlan.indoorCount)
-            half("Outside", range: CalibrationPlan.indoorCount..<CalibrationPlan.steps.count)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-    }
-
-    private func half(_ title: String, range: Range<Int>) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
-            SiteEyebrow(title)
-            HStack(spacing: 4) {
-                ForEach(Array(range), id: \.self) { i in
-                    VStack(alignment: .leading, spacing: 6) {
-                        GeometryReader { proxy in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Thermyx.Site.hairlineStrong)
-                                Capsule()
-                                    .fill(engine.skipped.contains(i) ? Thermyx.Ink.amber : (fill(i) >= 1 ? Thermyx.Site.text : Thermyx.Ink.signal))
-                                    .frame(width: proxy.size.width * fill(i))
-                            }
-                        }
-                        .frame(height: 4)
-                        Text(CalibrationPlan.steps[i].title)
-                            .font(ThermyxFont.captionSmall)
-                            .foregroundStyle(i == engine.index && engine.phase == .running ? Thermyx.Site.text : Thermyx.Site.textFaint)
-                    }
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("").frame(maxWidth: .infinity, alignment: .leading)
+                Text("Indoors").frame(maxWidth: .infinity, alignment: .leading)
+                Text("Outdoors").frame(maxWidth: .infinity, alignment: .leading)
             }
-            .animation(.linear(duration: 1), value: engine.elapsed)
+            .font(.custom(ThermyxFont.Family.medium, size: 13, relativeTo: .footnote))
+            .foregroundStyle(Thermyx.Ink.textFaint)
+            .padding(.bottom, 10)
+            ForEach(Array(CalibrationActivity.allCases.enumerated()), id: \.offset) { row, activity in
+                HStack {
+                    Text(activity.label)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                    cell(row)
+                    cell(CalibrationPlan.indoorCount + row)
+                }
+                .font(.custom(ThermyxFont.Family.medium, size: 15, relativeTo: .subheadline))
+                .frame(height: 48)
+                .overlay(alignment: .top) { ThermyxDivider() }
+            }
+            ThermyxDivider()
+            Text(engine.phase == .done ? "Done. Thermyx now knows your normal." : "Afterward, one question: how did your feet feel?")
+                .font(ThermyxFont.caption)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .padding(.top, 14)
         }
+        .animation(SiteMotion.settle, value: engine.index)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Calibration segments")
+        .accessibilityValue(accessibilityText)
     }
 
-    private func fill(_ i: Int) -> CGFloat {
-        if engine.phase == .done || i < engine.index { return 1 }
-        if i == engine.index, engine.phase == .running { return min(1, CGFloat(engine.stepProgress)) }
-        return 0
+    @ViewBuilder
+    private func cell(_ i: Int) -> some View {
+        Group {
+            if engine.skipped.contains(i) {
+                Text("Skipped").foregroundStyle(Thermyx.Ink.amber)
+            } else if engine.phase == .done || i < engine.index || (engine.phase == .outside && i < CalibrationPlan.indoorCount) {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark").font(.system(size: 13, weight: .bold))
+                    Text("Done")
+                }
+                .foregroundStyle(Thermyx.Ink.ice)
+            } else if i == engine.index, engine.phase == .running {
+                Text(verbatim: String(format: "0:%02d", engine.remaining))
+                    .font(ThermyxFont.monoBody)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+            } else {
+                Text("30 s")
+                    .font(ThermyxFont.monoBody)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var accessibilityText: String {
         switch engine.phase {
-        case .ready: return "Six steps, 30 seconds each. Not started."
-        case .running: return "Step \(engine.index + 1) of 6."
-        case .outside: return "Inside half done. Outside half next."
-        case .done: return "All steps done."
+        case .ready: return "Six segments, 30 seconds each. Not started."
+        case .running: return "Segment \(engine.index + 1) of 6, \(engine.remaining) seconds left."
+        case .outside: return "Indoor half done. Outdoor half next."
+        case .done: return "All segments done."
         }
     }
 }
@@ -653,6 +711,91 @@ private struct ProgressLine: View {
     }
 }
 
+/// The live numbers, pinned above the buttons so they stay in view while
+/// the wearer sits, stands and walks: each foot's temperature, how fast it's
+/// moving, and load or cadence. Each is coloured on its own scale, and shows
+/// a dash until the insoles report it.
+private struct LiveStrip: View {
+    @ObservedObject var engine: CalibrationEngine
+    let reading: BilateralReading
+    let unit: TemperatureUnit
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 5) {
+                Circle()
+                    .fill(reading.hasAny ? Thermyx.Ink.ice : Thermyx.Site.textFaint)
+                    .frame(width: 6, height: 6)
+                Text(reading.hasAny ? "Live" : "Waiting for readings")
+                    .font(.custom(ThermyxFont.Family.medium, size: 12, relativeTo: .caption2))
+                    .foregroundStyle(reading.hasAny ? Thermyx.Ink.ice : Thermyx.Site.textFaint)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Thermyx.Space.m)
+            cells
+        }
+        .padding(.vertical, Thermyx.Space.s)
+        .background {
+            RoundedRectangle(cornerRadius: Thermyx.Radius.compact, style: .continuous).fill(.black)
+        }
+        .siteGlass(radius: Thermyx.Radius.compact)
+        .padding(.bottom, Thermyx.Space.xs)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Live readings")
+    }
+
+    private var cells: some View {
+        HStack(spacing: 0) {
+            ForEach(Foot.allCases) { foot in
+                cell(foot.label, value: reading[foot]?.footTemperatureC.map { TemperatureFormat.degrees($0, in: unit) },
+                     tint: reading[foot]?.footTemperatureC.map(FootScale.thermalColor))
+                divider
+            }
+            cell("dT/dt", value: engine.liveRate.map { rate in signed(unit.convertDelta(rate)) },
+                 tint: engine.liveRate.map { ChartValueScale.change(unitSize: 1).color(at: $0) }, math: true)
+            divider
+            if let load = reading.pressureBalance {
+                cell(reading.present.first?.loadIsArchLevel == true ? "Arch" : "Load", value: "\(Int((load * 100).rounded()))%",
+                     tint: FootScale.loadColor(load))
+            } else {
+                cell("Steps", value: reading.cadenceStepsPerMinute.map { "\(Int($0.rounded()))" },
+                     tint: reading.cadenceStepsPerMinute.map { ChartValueScale.cadence.color(at: $0) })
+            }
+        }
+    }
+
+    private var divider: some View {
+        Rectangle().fill(Thermyx.Site.hairline).frame(width: 1, height: 30)
+    }
+
+    private func cell(_ label: String, value: String?, tint: Color?, math: Bool = false) -> some View {
+        VStack(spacing: 2) {
+            Group {
+                if math { Text(label).mathNotation(size: 12) } else {
+                    Text(label)
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Site.textMuted)
+                }
+            }
+            .lineLimit(1)
+            Text(value ?? "—")
+                .font(.custom(ThermyxFont.Family.monoMedium, size: 16, relativeTo: .body))
+                .monospacedDigit()
+                .foregroundStyle(value == nil ? Thermyx.Site.textFaint : (tint ?? Thermyx.Site.text))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .contentTransition(.numericText())
+        }
+        .frame(maxWidth: .infinity)
+        .animation(SiteMotion.settle, value: value)
+    }
+
+    private func signed(_ value: Double) -> String {
+        let text = String(format: "%.2f", abs(value))
+        return (Double(text) == 0 ? "" : (value > 0 ? "+" : "−")) + text
+    }
+}
+
 /// The readouts, on screen before calibration starts. Each shows a dash
 /// until the insoles report it; nothing here is ever estimated.
 private struct LiveInsights: View {
@@ -662,7 +805,7 @@ private struct LiveInsights: View {
     @State private var showingMath = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SiteEyebrow(engine.phase == .running ? "Live" : "Your readings")
             LazyVGrid(columns: [GridItem(.flexible(), spacing: Thermyx.Space.s), GridItem(.flexible(), spacing: Thermyx.Space.s)],
                       spacing: Thermyx.Space.s) {
@@ -792,8 +935,14 @@ private struct SessionChart: View {
     @ObservedObject var engine: CalibrationEngine
     let unit: TemperatureUnit
 
+    /// Coloured by temperature, as every temperature chart is.
+    private var traceStyle: LinearGradient {
+        let values = engine.trace.map { unit.convert($0.footC) }
+        return ChartValueScale.footTemperature(unit).gradient(from: values.min() ?? 0, to: values.max() ?? 0)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SiteEyebrow("Foot temperature · this session")
             Chart {
                 ForEach(1..<CalibrationPlan.steps.count, id: \.self) { i in
@@ -802,9 +951,9 @@ private struct SessionChart: View {
                 }
                 ForEach(engine.trace) { point in
                     LineMark(x: .value("Second", point.second), y: .value("Foot", unit.convert(point.footC)))
-                        .foregroundStyle(Thermyx.Ink.ice)
+                        .foregroundStyle(traceStyle)
                         .interpolationMethod(.monotone)
-                        .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .lineStyle(StrokeStyle(lineWidth: 2.4, lineCap: .round))
                 }
             }
             .chartXScale(domain: 0...CalibrationPlan.totalSeconds)
@@ -854,7 +1003,7 @@ private struct LearnedSoFar: View {
     @State private var showing: CalibrationPhaseSummary?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SiteEyebrow("Learned so far")
             VStack(spacing: 0) {
                 ForEach(Array(summaries.enumerated()), id: \.element.id) { offset, s in

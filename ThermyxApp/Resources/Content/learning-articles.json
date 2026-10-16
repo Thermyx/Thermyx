@@ -1,253 +1,529 @@
 {
-  "articles": [
+ "version": 2,
+ "articles": [
+  {
+   "id": "overheating",
+   "section": "heat",
+   "title": "What to do when your foot is overheating",
+   "dek": "A warm foot is usually your body shedding heat. A foot that keeps climbing is a reason to act. Here's what to do in the next five minutes.",
+   "readMinutes": 4,
+   "image": {
+    "asset": "learn-overheating",
+    "alt": "A Georgia National Guard soldier soaked with water during annual training in record heat.",
+    "caption": "On their first day at Fort Stewart, in 107° heat, Georgia Guard soldiers worked in the shade and doused themselves with water."
+   },
+   "triggers": [
+    "hotFoot",
+    "rising",
+    "caution",
+    "burnLimit"
+   ],
+   "blocks": [
     {
-      "id": "feet-first",
-      "category": "heat",
-      "title": "Why your feet tell you about heat strain first",
-      "deck": "Extremities shed heat before core temperature moves. What that means for when you should stop.",
-      "readMinutes": 5,
-      "featured": true,
-      "status": "published",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "When your body gets hot, it moves heat to the skin by sending more blood there. The palms and soles are especially good at this. Their hairless (glabrous) skin contains arteriovenous anastomoses: direct shunts between small arteries and veins that can open wide and carry a lot of warm blood close to the surface. That is why your feet can warm noticeably as your body works to shed heat."
-        },
-        {
-          "kind": "pullStat",
-          "text": "In hyperthermia, blood flow to the skin can reach 6 to 8 litres a minute (Charkoudian, 2003)."
-        },
-        {
-          "kind": "body",
-          "text": "Thermyx measures foot-contact temperature at the insole, once a second, on each foot. It does not measure core body temperature, and a warm foot on its own does not mean you are overheating: a hot boot, hot ground, or a long walk all warm the foot too. What helps is the pattern. A foot that keeps climbing while the air around you is hot and your steps get less steady is a stronger signal than any one number, which is why Thermyx combines foot temperature, air temperature, and steadiness before it raises the risk level."
-        },
-        {
-          "kind": "action",
-          "text": "When Home shows Caution or higher and your foot temperature is still rising, take a break in the shade, drink water, and switch the insoles to Cool. Check again in ten minutes: the trend should level off or fall."
-        }
-      ],
-      "sources": "Sources: Charkoudian N. Skin blood flow in adult human thermoregulation: how it works, when it does not, and why. Mayo Clinic Proceedings. 2003;78(5):603–612. doi:10.4065/78.5.603.",
-      "icon": "thermometer.medium"
+     "type": "lede",
+     "text": "Your feet are built to dump heat. When you get hot, your body opens the blood vessels in the skin of your hands and feet and sends warm blood there to cool it. During heat stress, blood flow to the skin can reach six to eight litres a minute (Charkoudian, 2003). So a warm foot, on its own, is your body doing its job."
     },
     {
-      "id": "how-peltier-works",
-      "category": "device",
-      "title": "How Thermyx heats and cools",
-      "deck": "One thin tile does both jobs. Here's how a Peltier module moves heat, and why the fan runs with it.",
-      "readMinutes": 3,
-      "featured": false,
-      "status": "published",
-      "icon": "bolt.fill",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "Thermyx heats and cools with a Peltier module: a thin ceramic tile packed with tiny blocks of two kinds of semiconductor. When current flows through it, heat is carried from one face to the other, so one face gets colder and the other hotter. This is the Peltier effect, described by Jean Peltier in 1834. There are no moving parts and no refrigerant."
-        },
-        {
-          "kind": "body",
-          "text": "Reverse the current and the faces swap. That is how one module does both jobs: current one way warms the side against your foot, the other way cools it. The heat has to go somewhere, though. When the insole cools your foot, the far face gets hot, and that heat, plus the module's own waste heat, has to be carried away or the cool side warms back up."
-        },
-        {
-          "kind": "body",
-          "text": "That is the fan's job, so Thermyx runs the fan whenever it is heating or cooling. A Peltier module also uses a lot of power for the heat it moves, which is why Auto idles whenever your foot is already in range."
-        },
-        {
-          "kind": "action",
-          "text": "If cooling feels weak, check that nothing is covering the fan vent and that the battery isn't low. Use Auto for long wear: it saves battery by only running the module when it's needed."
-        }
-      ],
-      "sources": "Sources: the Peltier effect is standard thermoelectric physics. How the fan and Auto behave comes from the Thermyx prototype."
+     "type": "p",
+     "text": "What matters is the pattern. A foot that keeps climbing while you work, or stays hot after you stop, can mean you're gaining heat faster than you can lose it. Hot ground, heavy boots and thick socks make that worse, because they trap the heat your feet are trying to shed."
     },
     {
-      "id": "modes",
-      "category": "device",
-      "title": "What each mode does",
-      "deck": "Cool, Auto, Heat and Off, and the safety limits that apply to each.",
-      "readMinutes": 3,
-      "featured": false,
-      "status": "published",
-      "icon": "slider.horizontal.3",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "Cool runs the module to draw heat away from your foot for as long as it's selected. Heat runs it the other way to warm your foot. Heat has two safety limits: the insole stops heating if the contact temperature reaches 40 °C (104 °F) and only resumes below 38.5 °C (101.3 °F), and the app locks Heat out and switches to Cool if your risk level reaches High or Critical."
-        },
-        {
-          "kind": "body",
-          "text": "Auto holds your target temperature. Calibration sets it from what you said felt comfortable, and you can change it in Profile, Advanced, between 26 and 38 °C. Below the target Auto heats, above it Auto cools, and close to it Auto idles, with a small margin so it doesn't flick on and off at the edge."
-        },
-        {
-          "kind": "body",
-          "text": "Off turns the module and the fan off. The insole keeps sensing, so readings, insights and safety alerts still work."
-        },
-        {
-          "kind": "action",
-          "text": "Most of the time, Auto is the one to use. Pick Cool or Heat for a quick change, and Off to save battery when you don't need either."
-        }
-      ],
-      "sources": "Sources: the limits and ranges are the ones set in the Thermyx app and firmware."
+     "type": "h",
+     "text": "What Thermyx is watching"
     },
     {
-      "id": "comfort-band",
-      "category": "heat",
-      "title": "Reading your comfort band",
-      "deck": "What the shaded range on your temperature chart means, and what falling outside it does and does not tell you.",
-      "readMinutes": 3,
-      "featured": false,
-      "status": "published",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "The shaded range on your temperature charts is the comfort band: 30–34 °C (86–93 °F) of foot-contact temperature. Readings are coloured by where they fall: below 30 °C is Cool, 30–34 °C is Comfort, 34–37 °C is Warm, and 37 °C and above is Hot. The heat-exposure ring on Insights shows how much of your wear time was spent above the band."
-        },
-        {
-          "kind": "body",
-          "text": "The band is a fixed range chosen for the prototype, not a personal baseline and not a medical threshold. Feet vary: yours may sit warm or cool for perfectly ordinary reasons like your socks, your shoes, or the ground. Time above the band tells you your feet spent time warm. It does not tell you that you are ill, and time inside it does not prove you are safe. The risk level on Home, which also looks at air temperature and steadiness, is the better guide in the moment."
-        },
-        {
-          "kind": "action",
-          "text": "The first time you see a long stretch above the band, look at what you were doing then: the air temperature, your shoes, and whether you were resting or working. If the risk level was also raised, plan more shade and water breaks for that kind of day."
-        }
-      ],
-      "sources": "Sources: the band edges are set in the app (ThermyxTemperatureScale). No outside claim is made about what the band means for health.",
-      "icon": "gauge.with.dots.needle.33percent"
+     "type": "p",
+     "text": "Your insole measures the temperature where your foot touches it, not your core temperature. Thermyx raises its level to Caution when that reading reaches 38 °C (100.4 °F), when it rises fast, or when it runs well above what's usual for you. At 40 °C (104 °F) the insole stops heating on its own, whatever the app asks, to protect your skin."
     },
     {
-      "id": "cold-feet",
-      "category": "cold",
-      "title": "Cold feet, poor circulation, and warming safely",
-      "deck": "Warming a cold foot too fast carries its own risks. How to use the heating mode without creating a burn.",
-      "readMinutes": 4,
-      "featured": false,
-      "status": "published",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "Cold feet need warming gently. Numb or very cold skin cannot feel heat properly, so it is easy to burn it with a heat source that would feel fine on warm skin. Frostbite guidance from the Wilderness Medical Society says to avoid heat sources such as fires and space heaters because of the risk of burns, and to rewarm in water held at 37–39 °C (98.6–102.2 °F) with a thermometer when rewarming is needed. If a foot is white, waxy, hard, or has lost feeling, that is a medical problem: get care rather than warming it with the insole."
-        },
-        {
-          "kind": "body",
-          "text": "Some people should talk to a clinician before using any heat on their feet, including anyone with diabetes, peripheral neuropathy, or poor circulation, because they may not feel a burn happening. Thermyx limits heating in two places: the app turns heating off and raises the risk level if foot contact reaches 40 °C, and the insole firmware refuses to heat at that limit on its own."
-        },
-        {
-          "kind": "action",
-          "text": "Use Auto with a modest target (30–32 °C) rather than Heat when your feet are cold, and check your feet after the first 20 minutes. Stop heating if your feet feel numb, tingle strongly, or look red or blistered."
-        }
-      ],
-      "sources": "Sources: McIntosh SE, et al. Wilderness Medical Society Clinical Practice Guidelines for the Prevention and Treatment of Frostbite: 2024 Update. Wilderness & Environmental Medicine. 2024;35(2):183–197. doi:10.1177/10806032231222359.",
-      "icon": "snowflake"
+     "type": "steps",
+     "title": "In the next five minutes",
+     "items": [
+      "Slow down or stop. Moving makes heat; resting stops adding to it.",
+      "Get into shade or air conditioning.",
+      "Switch the insoles to Cool, or leave them on Auto.",
+      "Loosen your boots, or take them off for a few minutes if it's safe to.",
+      "Drink water. About a cup every 15 to 20 minutes is the usual guidance when working in heat (Jacklitsch et al., 2016)."
+     ]
     },
     {
-      "id": "fatigue-gait",
-      "category": "feet",
-      "title": "Fatigue shows up in your gait before you feel it",
-      "deck": "Stability, cadence, and load shift as a shift wears on. What Thermyx can and cannot read from that.",
-      "readMinutes": 4,
-      "featured": false,
-      "status": "published",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "As muscles tire, walking changes, but not always in the same way. A 2019 systematic review of fatigue experiments in healthy older adults found small changes in step length, step width, and walking speed, and more variable trunk movement, with results that differed between studies and test setups. Thermyx watches three related things from the insole: steadiness (how regular your step timing is), cadence (steps per minute), and how much of your weight goes through the front of your foot. With two insoles it can also see when you start favouring one side."
-        },
-        {
-          "kind": "body",
-          "text": "These are clues, not a diagnosis. Steadiness changes with the ground, your shoes, carrying a load, or simply slowing down. Thermyx does not predict falls; that is a research question, not something this app claims to do. A drop in steadiness raises the risk level only as one signal among several."
-        },
-        {
-          "kind": "action",
-          "text": "If Home shows your steadiness below your usual level, slow down and take a break. If you are also hot, treat it as a heat warning: shade, water, and Cool. If one foot keeps taking more load, check your shoes and anything that hurts."
-        }
-      ],
-      "sources": "Sources: Effects of experimentally induced fatigue on healthy older adults' gait: a systematic review. PLOS ONE. 2019;14(12):e0226939. doi:10.1371/journal.pone.0226939.",
-      "icon": "figure.walk"
+     "type": "h",
+     "text": "When it's more than a hot foot"
     },
     {
-      "id": "hydration",
-      "category": "heat",
-      "title": "Hydration, shade, and the 20-minute rule",
-      "deck": "The countermeasures that actually move the needle when a warning fires.",
-      "readMinutes": 5,
-      "featured": false,
-      "status": "published",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "Occupational heat guidance comes down to three things: water, rest, and shade. NIOSH recommends drinking 1 cup (8 oz) of water every 15–20 minutes when working in the heat, and warns against drinking more than 48 oz (1½ quarts) an hour. Regular rest in a cool or shaded area matters too, and so does building up gradually: OSHA reports that almost half of heat-related deaths at work happen on a worker's first day, and over 70 percent in the first week. OSHA's heat campaign uses the same three words: Water. Rest. Shade."
-        },
-        {
-          "kind": "pullStat",
-          "text": "1 cup of water every 15–20 minutes when working in the heat, and no more than 48 oz an hour (NIOSH)."
-        },
-        {
-          "kind": "body",
-          "text": "Thermyx's cooling can make your feet more comfortable, but it does not cool your whole body and does not replace these steps."
-        },
-        {
-          "kind": "action",
-          "text": "When a warning fires: stop, get into shade, drink a cup of water, and switch the insoles to Cool. Rest until the risk level drops, then keep drinking a cup every 15–20 minutes."
-        }
-      ],
-      "sources": "Sources: NIOSH. Heat Stress: Hydration (DHHS/NIOSH Publication 2017-126). OSHA. Heat — Protecting New Workers (osha.gov/heat-exposure/protecting-new-workers).",
-      "icon": "drop.fill"
+     "type": "p",
+     "text": "Watch the whole person, not just the foot. Heavy sweating, dizziness, headache, nausea, cramps, weakness or fainting are signs of heat illness. Confusion, slurred speech, a seizure or collapse can mean heat stroke, which is an emergency."
     },
     {
-      "id": "what-thermyx-is-not",
-      "category": "feet",
-      "title": "What Thermyx is not",
-      "deck": "An investigational warning aid, not a diagnosis. The limits, stated plainly.",
-      "readMinutes": 3,
-      "featured": false,
-      "status": "published",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "Thermyx is an investigational heat-risk warning aid. It does not measure core body temperature, it does not diagnose heat illness or any other condition, and it is not a medical device or a substitute for medical care. It can be wrong, it can lose connection, and it can miss things."
-        },
-        {
-          "kind": "body",
-          "text": "Call 911 for anyone who shows signs of heat stroke, whatever the app shows: confusion or slurred speech, loss of consciousness, seizures, hot red skin that is dry or damp, or a very high body temperature (103 °F / 39.4 °C or higher). Heat stroke is a medical emergency. While you wait, move them somewhere cooler and cool them with cold water, ice, or cool cloths. Heat exhaustion (heavy sweating, cold and clammy skin, nausea or vomiting, dizziness, headache, cramps, fatigue) means stop, move somewhere cool, loosen clothing, and sip water; get medical help if they are vomiting, if it gets worse, or if it lasts longer than an hour (CDC; OSHA)."
-        },
-        {
-          "kind": "action",
-          "text": "Trust how you and the people around you feel over what the app says. If someone is confused, faints, or has a seizure in the heat, call 911 first and look at the app later."
-        }
-      ],
-      "sources": "Sources: CDC. Warning Signs and Symptoms of Heat-Related Illness (cdc.gov/disasters/extremeheat). OSHA. Heat-Related Illnesses and First Aid (osha.gov/heat-exposure/illness-first-aid).",
-      "icon": "info.circle.fill"
+     "type": "quote",
+     "text": "When in doubt, cool the worker and call 911.",
+     "source": "Occupational Safety and Health Administration"
     },
     {
-      "id": "reading-insights",
-      "category": "device",
-      "title": "How to read your insights",
-      "deck": "What the daily summary, the shaded temperature chart, and the activity split are telling you.",
-      "readMinutes": 4,
-      "featured": false,
-      "status": "published",
-      "icon": "chart.xyaxis.line",
-      "sections": [
-        {
-          "kind": "body",
-          "text": "The cards at the top of Insights are today's summary: how long you wore Thermyx, how long it heated and cooled, and your average foot temperature. Tap one to open that day's page, or open Daily summaries for earlier days. A week of summaries tells you more than any single reading."
-        },
-        {
-          "kind": "body",
-          "text": "On the temperature chart, the line is your foot-contact temperature. Red shading behind it marks when the insole was heating, and blue when it was cooling. The band shows the comfort range. If the line keeps climbing while the shading is blue, the insole is working hard to keep up, which is worth noticing on a hot day."
-        },
-        {
-          "kind": "body",
-          "text": "Activity splits your wear time into sitting, standing and walking, and estimates your steps from cadence. These are estimates from pressure and movement, not a medical measurement."
-        },
-        {
-          "kind": "body",
-          "text": "If your relay has AI summaries turned on, a short summary of your day with two or three suggestions arrives as a notification after you finish wearing the insoles. It is written from your daily totals only and is not medical advice."
-        },
-        {
-          "kind": "action",
-          "text": "Check your summary at the end of the day for a week. Look for patterns: which days ran hot, when you relied on cooling, and whether your walking time changed."
-        }
-      ],
-      "sources": "Sources: how Thermyx records and summarises data."
+     "type": "p",
+     "text": "OSHA's first-aid guidance is to cool someone quickly, ideally by putting them in cold water or an ice bath, and to call for help (Occupational Safety and Health Administration, n.d.). Sports medicine guidance puts it as cool first, transport second, because the time spent hot is what does the damage (Casa et al., 2015)."
+    },
+    {
+     "type": "note",
+     "title": "What Thermyx can't do",
+     "text": "Thermyx can't tell you whether you have heat illness. It shows how your feet are trending so you can act sooner. If someone is confused or collapses, call 911."
     }
-  ]
+   ],
+   "references": [
+    "Casa, D. J., DeMartini, J. K., Bergeron, M. F., Csillan, D., Eichner, E. R., Lopez, R. M., Ferrara, M. S., Miller, K. C., O'Connor, F., Sawka, M. N., & Yeargin, S. W. (2015). National Athletic Trainers' Association position statement: Exertional heat illnesses. *Journal of Athletic Training*, *50*(9), 986–1000. https://doi.org/10.4085/1062-6050-50.9.07",
+    "Charkoudian, N. (2003). Skin blood flow in adult human thermoregulation: How it works, when it does not, and why. *Mayo Clinic Proceedings*, *78*(5), 603–612. https://doi.org/10.4065/78.5.603",
+    "Jacklitsch, B., Williams, W. J., Musolin, K., Coca, A., Kim, J.-H., & Turner, N. (2016). *NIOSH criteria for a recommended standard: Occupational exposure to heat and hot environments* (DHHS [NIOSH] Publication No. 2016-106). National Institute for Occupational Safety and Health. https://doi.org/10.26616/NIOSHPUB2016106",
+    "Occupational Safety and Health Administration. (n.d.). *Heat-related illnesses and first aid*. U.S. Department of Labor. Retrieved October 14, 2026, from https://www.osha.gov/heat-exposure/illness-first-aid"
+   ]
+  },
+  {
+   "id": "fit-pressure",
+   "section": "feet",
+   "title": "How footwear fit can change pressure patterns",
+   "dek": "Most people's shoes don't fit their feet. Where your weight lands depends on it, and so do blisters, calluses and sore arches.",
+   "readMinutes": 5,
+   "image": {
+    "asset": "learn-fit",
+    "alt": "The worn soles of three hiking shoes, side by side.",
+    "caption": "Hiking shoes retired after 3,300 kilometres. Wear on a sole shows where your weight lands."
+   },
+   "triggers": [
+    "loadGap",
+    "favouring"
+   ],
+   "blocks": [
+    {
+     "type": "lede",
+     "text": "Stand barefoot and your heels take most of your weight. In a classic study of 107 symptom-free feet, the heel carried about 60 percent of the load, the forefoot about 28 percent and the midfoot about 8 percent, and peak pressure under the heel was about two and a half times that under the forefoot (Cavanagh et al., 1987)."
+    },
+    {
+     "type": "p",
+     "text": "Shoes change that picture. A shoe that's too short or too narrow concentrates pressure on the toes and the sides of the foot. One that's too loose lets the foot slide, which adds friction. And most of us are in the wrong size: across the studies in one review, 63 to 72 percent of people wore shoes that didn't match the width or length of their feet, and poor fit went with foot pain, corns, calluses and toe deformities (Buldt & Menz, 2018)."
+    },
+    {
+     "type": "fact",
+     "figure": "60%",
+     "text": "of your standing weight lands on your heels.",
+     "source": "Cavanagh et al., 1987"
+    },
+    {
+     "type": "h",
+     "text": "Friction, moisture and blisters"
+    },
+    {
+     "type": "p",
+     "text": "Blisters form when skin is rubbed back and forth under load, and moist skin makes the friction worse (Knapik et al., 1995). That's why hot, sweaty feet in loose boots blister so easily. Weight adds to it: carrying a pack raises the forces your feet take with every step and is linked with blisters and other foot problems (Knapik et al., 2004)."
+    },
+    {
+     "type": "h",
+     "text": "What your insole can tell you"
+    },
+    {
+     "type": "p",
+     "text": "Each Thermyx insole has one pressure sensor, under the arch. It can't map your whole sole, but it can show change: an arch loading more than usual, or one foot carrying clearly more than the other for minutes at a time. Thermyx flags a sustained left–right difference, because favouring one foot often goes with a fit problem, a sore spot or tiredness."
+    },
+    {
+     "type": "p",
+     "text": "Sensors like this one drift under a steady load and read differently while loading and unloading (Abdul Razak et al., 2012). That's why Thermyx shows arch load as a level, not as a weight in kilograms."
+    },
+    {
+     "type": "steps",
+     "title": "Check your fit",
+     "items": [
+      "Try shoes on at the end of the day, when your feet are largest.",
+      "Leave about a thumb's width between your longest toe and the end of the shoe.",
+      "The widest part of your foot should sit at the widest part of the shoe, without bulging over the sole.",
+      "Wear the socks you'll work in, and choose ones that wick moisture.",
+      "Lace so the heel stays put without squeezing the top of your foot."
+     ]
+    },
+    {
+     "type": "note",
+     "title": "If you have diabetes",
+     "text": "Pressure matters more when feet have less feeling. High pressure under a numb foot can lead to ulcers, and relieving it is a core part of treatment (Bus et al., 2020). See a clinician about your footwear; don't rely on an app."
+    }
+   ],
+   "references": [
+    "Abdul Razak, A. H., Zayegh, A., Begg, R. K., & Wahab, Y. (2012). Foot plantar pressure measurement system: A review. *Sensors*, *12*(7), 9884–9912. https://doi.org/10.3390/s120709884",
+    "Buldt, A. K., & Menz, H. B. (2018). Incorrectly fitted footwear, foot pain and foot disorders: A systematic search and narrative review of the literature. *Journal of Foot and Ankle Research*, *11*, Article 43. https://doi.org/10.1186/s13047-018-0284-z",
+    "Bus, S. A., Armstrong, D. G., Gooday, C., Jarl, G., Caravaggi, C., Viswanathan, V., & Lazzarini, P. A. (2020). Guidelines on offloading foot ulcers in persons with diabetes (IWGDF 2019 update). *Diabetes/Metabolism Research and Reviews*, *36*(S1), Article e3274. https://doi.org/10.1002/dmrr.3274",
+    "Cavanagh, P. R., Rodgers, M. M., & Iiboshi, A. (1987). Pressure distribution under symptom-free feet during barefoot standing. *Foot & Ankle*, *7*(5), 262–278. https://doi.org/10.1177/107110078700700502",
+    "Knapik, J. J., Reynolds, K. L., & Harman, E. (2004). Soldier load carriage: Historical, physiological, biomechanical, and medical aspects. *Military Medicine*, *169*(1), 45–56. https://doi.org/10.7205/MILMED.169.1.45",
+    "Knapik, J. J., Reynolds, K. L., Duplantis, K. L., & Jones, B. H. (1995). Friction blisters: Pathophysiology, prevention and treatment. *Sports Medicine*, *20*(3), 136–147. https://doi.org/10.2165/00007256-199520030-00002"
+   ]
+  },
+  {
+   "id": "recovery",
+   "section": "recovery",
+   "title": "Why recovery matters after heat exposure",
+   "dek": "The shift ends; the strain doesn't, at least not right away. What to do in the hours after a hot day so tomorrow starts even.",
+   "readMinutes": 4,
+   "image": {
+    "asset": "learn-recovery",
+    "alt": "Marines sit together on desert ground after a day of training.",
+    "caption": "Marines talk through the day's training at Twentynine Palms, California, during Exercise Desert Scimitar 2015."
+   },
+   "triggers": [
+    "afterElevated",
+    "recovering"
+   ],
+   "blocks": [
+    {
+     "type": "lede",
+     "text": "Working hard in the heat costs more than sweat. Active people can lose 4 to 10 litres of water and 3,500 to 7,000 milligrams of sodium a day in hot weather, and both have to be put back before the body is fully hydrated again (Shirreffs & Sawka, 2011)."
+    },
+    {
+     "type": "p",
+     "text": "If you have a day off, ordinary meals and drinks usually take care of it. If you're back at work within 24 hours, or you lost a lot of fluid, the same review recommends drinking deliberately and taking in electrolytes rather than waiting for thirst (Shirreffs & Sawka, 2011)."
+    },
+    {
+     "type": "h",
+     "text": "Why it matters for tomorrow"
+    },
+    {
+     "type": "p",
+     "text": "Starting a shift short on water puts more strain on your heart and raises your body temperature for the same work, and it makes hard work harder (Shirreffs & Sawka, 2011). The deficit you go to bed with is the one you wake up with."
+    },
+    {
+     "type": "steps",
+     "title": "After a hot shift",
+     "items": [
+      "Drink with your next meals, and keep drinking through the evening.",
+      "Eat salty food or use an electrolyte drink if you sweated heavily.",
+      "Cool down: shade, a cool shower, or cool water on your skin.",
+      "Weigh yourself before and after work. The difference is mostly fluid, and it tells you how much to put back (American College of Sports Medicine et al., 2007).",
+      "Get your feet out of your boots, and let socks and liners dry."
+     ]
+    },
+    {
+     "type": "h",
+     "text": "What Thermyx shows"
+    },
+    {
+     "type": "p",
+     "text": "After an elevated reading, Home shows your foot-temperature trend. A foot cooling back toward your usual is a good sign. But it's only your feet: it can't show whether you've replaced what you lost."
+    },
+    {
+     "type": "note",
+     "title": "When to get help",
+     "text": "If you still feel unwell after rest and fluids, or your urine is dark like tea or cola, get medical help. Dark urine after hard work in heat can be a sign of muscle breakdown (Occupational Safety and Health Administration, n.d.)."
+    }
+   ],
+   "references": [
+    "American College of Sports Medicine, Sawka, M. N., Burke, L. M., Eichner, E. R., Maughan, R. J., Montain, S. J., & Stachenfeld, N. S. (2007). American College of Sports Medicine position stand: Exercise and fluid replacement. *Medicine & Science in Sports & Exercise*, *39*(2), 377–390. https://doi.org/10.1249/mss.0b013e31802ca597",
+    "Occupational Safety and Health Administration. (n.d.). *Heat-related illnesses and first aid*. U.S. Department of Labor. Retrieved October 14, 2026, from https://www.osha.gov/heat-exposure/illness-first-aid",
+    "Shirreffs, S. M., & Sawka, M. N. (2011). Fluid and electrolyte needs for training, competition, and recovery. *Journal of Sports Sciences*, *29*(Suppl. 1), S39–S46. https://doi.org/10.1080/02640414.2011.614269"
+   ]
+  },
+  {
+   "id": "sensor-reliability",
+   "section": "data",
+   "title": "How to recognize when sensor data may be unreliable",
+   "dek": "A reading is only as good as its contact, its battery and its connection. How to spot a bad one, and what Thermyx does about it.",
+   "readMinutes": 4,
+   "image": {
+    "asset": "learn-sensors",
+    "alt": "A researcher holds a thermistor probe against the tire of a car.",
+    "caption": "A thermistor, the same kind of sensor that's in your insole, measures a running tire. National Institute of Standards and Technology."
+   },
+   "triggers": [
+    "sensorMissing",
+    "lowBattery",
+    "oneFoot"
+   ],
+   "blocks": [
+    {
+     "type": "lede",
+     "text": "Every temperature Thermyx shows comes from a small thermistor inside the insole, and every load from a force sensor. Small skin-temperature sensors like these can be accurate enough for research (Smith et al., 2010). But a reading is only as good as the sensor's contact with your foot, and a shift is messier than a lab."
+    },
+    {
+     "type": "h",
+     "text": "Five signs a reading may be off"
+    },
+    {
+     "type": "list",
+     "items": [
+      "A flat line. Feet warm and cool as you move. A temperature that hasn't changed by a tenth of a degree for many minutes while you're active suggests a stuck sensor or a lost connection.",
+      "A jump your body couldn't make. A foot can't go from 30 to 38 °C in a few seconds. A sudden step usually means the insole shifted, or the sensor lost and regained contact.",
+      "Readings when you're not wearing it. An insole in your hand, on a car seat or by a heater reports that, not your foot.",
+      "A low battery or weak signal. Each insole's battery and connection strength are under Safety, then Device.",
+      "Only one foot. With one insole, Thermyx loses the left–right comparison, so a one-sided problem can go unseen."
+     ]
+    },
+    {
+     "type": "h",
+     "text": "Temperature isn't one number"
+    },
+    {
+     "type": "p",
+     "text": "Skin temperature differs from place to place and moves with the air around you, and none of it is the same as your core temperature (Taylor et al., 2014). Thermyx reports the temperature where your foot meets the insole. That's useful for spotting change and for comparing your feet, but it isn't your body temperature."
+    },
+    {
+     "type": "p",
+     "text": "Pressure sensors have quirks too. Force-sensitive resistors drift under a steady load and read differently while loading and unloading (Abdul Razak et al., 2012), which is why arch load is shown as a level rather than a weight."
+    },
+    {
+     "type": "h",
+     "text": "What Thermyx does"
+    },
+    {
+     "type": "p",
+     "text": "When a value is missing, Thermyx shows a dash, never an estimate. An insole that stops reporting drops off the screen instead of lingering as if it were live, and the widgets say when they last heard from your insoles. If something looks wrong, reseat the insole flat in your shoe, check the battery, and re-pair it from Safety, then Device."
+    },
+    {
+     "type": "note",
+     "title": "Trust how you feel",
+     "text": "If your readings look wrong and you feel unwell, believe your body over the app. Stop, cool down and get help."
+    }
+   ],
+   "references": [
+    "Abdul Razak, A. H., Zayegh, A., Begg, R. K., & Wahab, Y. (2012). Foot plantar pressure measurement system: A review. *Sensors*, *12*(7), 9884–9912. https://doi.org/10.3390/s120709884",
+    "Smith, A. D. H., Crabtree, D. R., Bilzon, J. L. J., & Walsh, N. P. (2010). The validity of wireless iButtons® and thermistors for human skin temperature measurement. *Physiological Measurement*, *31*(1), 95–114. https://doi.org/10.1088/0967-3334/31/1/007",
+    "Taylor, N. A. S., Tipton, M. J., & Kenny, G. P. (2014). Considerations for the measurement of core, skin and mean body temperatures. *Journal of Thermal Biology*, *46*, 72–101. https://doi.org/10.1016/j.jtherbio.2014.10.006"
+   ]
+  },
+  {
+   "id": "heat-illness",
+   "section": "heat",
+   "title": "Heat illness: the signs, from cramps to heat stroke",
+   "dek": "Heat illness is a spectrum, and the dangerous end can arrive fast. Learn the signs, and the one response that matters most.",
+   "readMinutes": 5,
+   "image": {
+    "asset": "learn-heat-illness",
+    "alt": "Two emergency medical technicians drink water and wipe away sweat in the heat.",
+    "caption": "Emergency medical technicians take water in the New Orleans heat, August 31, 2005."
+   },
+   "triggers": [
+    "high",
+    "critical"
+   ],
+   "blocks": [
+    {
+     "type": "lede",
+     "text": "Heat illness runs from a rash and muscle cramps to fainting, heat exhaustion and heat stroke. OSHA lists them together for a reason: their symptoms overlap and can appear at the same time. Its guidance is to give first aid as soon as any of them appear, rather than trying to work out which one it is (Occupational Safety and Health Administration, n.d.)."
+    },
+    {
+     "type": "h",
+     "text": "Know the signs"
+    },
+    {
+     "type": "list",
+     "items": [
+      "Heat cramps: muscle pain or spasms, usually in the legs, arms or trunk.",
+      "Heat syncope: fainting or dizziness.",
+      "Heat exhaustion: heavy sweating, tiredness, thirst, irritability, nausea or vomiting, dizziness, a fast heart rate.",
+      "Heat stroke: confusion, slurred speech, seizures or unconsciousness. The skin may be hot and dry, or still sweating heavily."
+     ]
+    },
+    {
+     "type": "h",
+     "text": "Heat stroke is an emergency"
+    },
+    {
+     "type": "p",
+     "text": "In heat stroke the body's temperature climbs above about 40 °C (104 °F) and the brain starts to fail. It can damage organs and kill (Epstein & Yanovich, 2019). The treatment is to cool the person as fast as possible. Cold-water immersion cools faster than other field methods (McDermott et al., 2009), and where people are cooled in cold water straight away, nearly all of them survive (Casa et al., 2007)."
+    },
+    {
+     "type": "quote",
+     "text": "Cool first, transport second.",
+     "source": "National Athletic Trainers' Association"
+    },
+    {
+     "type": "p",
+     "text": "Sports medicine guidance is to cool someone with suspected exertional heat stroke on the spot, aiming to bring their temperature below about 39 °C (102.5 °F) within 30 minutes of collapse, before moving them (Casa et al., 2015). Call 911 straight away and keep cooling while you wait."
+    },
+    {
+     "type": "h",
+     "text": "Where Thermyx fits"
+    },
+    {
+     "type": "p",
+     "text": "Thermyx watches how your feet trend and how steadily you walk. At High risk it tells your trusted circle and locks out heating. At Critical it opens a full-screen alert with an SOS button. It can't measure your core temperature, and it can't tell heat exhaustion from heat stroke. If you see the signs above, act on them, whatever the app says."
+    }
+   ],
+   "references": [
+    "Casa, D. J., DeMartini, J. K., Bergeron, M. F., Csillan, D., Eichner, E. R., Lopez, R. M., Ferrara, M. S., Miller, K. C., O'Connor, F., Sawka, M. N., & Yeargin, S. W. (2015). National Athletic Trainers' Association position statement: Exertional heat illnesses. *Journal of Athletic Training*, *50*(9), 986–1000. https://doi.org/10.4085/1062-6050-50.9.07",
+    "Casa, D. J., McDermott, B. P., Lee, E. C., Yeargin, S. W., Armstrong, L. E., & Maresh, C. M. (2007). Cold water immersion: The gold standard for exertional heatstroke treatment. *Exercise and Sport Sciences Reviews*, *35*(3), 141–149. https://doi.org/10.1097/jes.0b013e3180a02bec",
+    "Epstein, Y., & Yanovich, R. (2019). Heatstroke. *New England Journal of Medicine*, *380*(25), 2449–2459. https://doi.org/10.1056/NEJMra1810762",
+    "McDermott, B. P., Casa, D. J., Ganio, M. S., Lopez, R. M., Yeargin, S. W., Armstrong, L. E., & Maresh, C. M. (2009). Acute whole-body cooling for exercise-induced hyperthermia: A systematic review. *Journal of Athletic Training*, *44*(1), 84–93. https://doi.org/10.4085/1062-6050-44.1.84",
+    "Occupational Safety and Health Administration. (n.d.). *Heat-related illnesses and first aid*. U.S. Department of Labor. Retrieved October 14, 2026, from https://www.osha.gov/heat-exposure/illness-first-aid"
+   ]
+  },
+  {
+   "id": "cold-feet",
+   "section": "cold",
+   "title": "Cold feet, frostbite and how to warm up safely",
+   "dek": "In the cold your body protects your core by giving up your toes. How to keep feet warm, and what to do if they freeze.",
+   "readMinutes": 4,
+   "image": {
+    "asset": "learn-cold",
+    "alt": "A pair of hiking boots on snowy ground.",
+    "caption": "Hiking boots at Revelstoke Mountain Resort, British Columbia."
+   },
+   "triggers": [
+    "coldFoot"
+   ],
+   "blocks": [
+    {
+     "type": "lede",
+     "text": "When you get cold, your body narrows the blood vessels in your skin, especially in your hands and feet, to keep heat in your core (Castellani & Young, 2016). It's a good trade for your organs and a bad one for your toes: with less warm blood reaching them, they cool toward the temperature of your boots."
+    },
+    {
+     "type": "p",
+     "text": "Wet makes it worse. Sweat or snow in a boot soaks the insulation and draws heat out of the foot. So does standing still: walking warms your feet, and standing watch in the snow doesn't."
+    },
+    {
+     "type": "h",
+     "text": "Frostbite"
+    },
+    {
+     "type": "p",
+     "text": "Frostbite is tissue freezing. Early on, skin goes numb and pale; deeper injury leaves it hard and waxy. The Wilderness Medical Society's guidance for rewarming frostbite is a warm, not hot, water bath at 37 to 39 °C (98.6 to 102.2 °F) until the skin is soft and pliable, then letting it air-dry (McIntosh et al., 2019)."
+    },
+    {
+     "type": "steps",
+     "title": "If your feet may be frostbitten",
+     "items": [
+      "Get to shelter, and get medical help.",
+      "Don't rub the skin, and don't warm it at a fire or heater: numb skin burns easily.",
+      "Don't thaw a foot that might freeze again before you reach care. Refreezing does more harm than staying frozen (McIntosh et al., 2019).",
+      "If help is far away and the foot won't refreeze, rewarm it in warm water as above."
+     ]
+    },
+    {
+     "type": "h",
+     "text": "How Thermyx helps"
+    },
+    {
+     "type": "p",
+     "text": "Thermyx raises its level to Caution when your foot reads 25 °C (77 °F) or lower, and Auto or Heat warms it gradually toward your target. Cold never locks out heating the way heat does, because warming is what a cold foot needs. The insole won't heat above 40 °C (104 °F), but warmth on numb skin can still burn, so if you've lost feeling in your feet, warm them slowly and check your skin."
+    },
+    {
+     "type": "note",
+     "title": "Frostbite needs care",
+     "text": "Thermyx can show a cold foot. It can't tell you whether tissue is freezing. Numb, white or hard skin needs medical attention."
+    }
+   ],
+   "references": [
+    "Castellani, J. W., & Young, A. J. (2016). Human physiological responses to cold exposure: Acute responses and acclimatization to prolonged exposure. *Autonomic Neuroscience*, *196*, 63–74. https://doi.org/10.1016/j.autneu.2016.02.009",
+    "McIntosh, S. E., Freer, L., Grissom, C. K., Auerbach, P. S., Rodway, G. W., Cochran, A., Giesbrecht, G. G., McDevitt, M., Imray, C. H., Johnson, E. L., Pandey, P., Dow, J., & Hackett, P. H. (2019). Wilderness Medical Society clinical practice guidelines for the prevention and treatment of frostbite: 2019 update. *Wilderness & Environmental Medicine*, *30*(4S), S19–S32. https://doi.org/10.1016/j.wem.2019.05.002"
+   ]
+  },
+  {
+   "id": "hydration",
+   "section": "heat",
+   "title": "Water, rest, shade: hydration on the job",
+   "dek": "Thirst comes late. A simple schedule keeps you ahead of it, and a bathroom scale can tell you whether it's working.",
+   "readMinutes": 3,
+   "image": {
+    "asset": "learn-hydration",
+    "alt": "A volunteer holds out cups of water to passing runners.",
+    "caption": "A volunteer hands water to runners during an Air Force half-marathon."
+   },
+   "triggers": [
+    "hotWeather",
+    "longSession"
+   ],
+   "blocks": [
+    {
+     "type": "lede",
+     "text": "Sweat is how you cool. When people do physical work, sweat output often runs ahead of what they drink, and the deficit can hurt productivity and safety on the job (Kenefick & Sawka, 2007)."
+    },
+    {
+     "type": "p",
+     "text": "NIOSH recommends that workers in the heat drink about a cup (8 ounces) of water every 15 to 20 minutes, rather than waiting until they're thirsty (Jacklitsch et al., 2016)."
+    },
+    {
+     "type": "steps",
+     "title": "A schedule that works",
+     "items": [
+      "Start hydrated: drink with breakfast.",
+      "About a cup every 15 to 20 minutes while you work in the heat.",
+      "Take breaks in the shade, and drink during them.",
+      "On long, sweaty shifts, add an electrolyte drink or salty snacks.",
+      "Don't overdo it. Drinking far more than you sweat can dilute the sodium in your blood, which is dangerous too (American College of Sports Medicine et al., 2007)."
+     ]
+    },
+    {
+     "type": "h",
+     "text": "Know your own sweat"
+    },
+    {
+     "type": "p",
+     "text": "Sweat rates vary a lot from person to person. The American College of Sports Medicine suggests weighing yourself before and after activity: each kilogram you lose is about a litre of fluid you didn't replace (American College of Sports Medicine et al., 2007)."
+    },
+    {
+     "type": "h",
+     "text": "Where Thermyx fits"
+    },
+    {
+     "type": "p",
+     "text": "Thermyx can't measure hydration. It can show your feet warming faster than usual and your steps getting less steady, both of which can come with heat strain. Treat a rising level as a prompt to drink and rest, not as a reading of how much water you need."
+    }
+   ],
+   "references": [
+    "American College of Sports Medicine, Sawka, M. N., Burke, L. M., Eichner, E. R., Maughan, R. J., Montain, S. J., & Stachenfeld, N. S. (2007). American College of Sports Medicine position stand: Exercise and fluid replacement. *Medicine & Science in Sports & Exercise*, *39*(2), 377–390. https://doi.org/10.1249/mss.0b013e31802ca597",
+    "Jacklitsch, B., Williams, W. J., Musolin, K., Coca, A., Kim, J.-H., & Turner, N. (2016). *NIOSH criteria for a recommended standard: Occupational exposure to heat and hot environments* (DHHS [NIOSH] Publication No. 2016-106). National Institute for Occupational Safety and Health. https://doi.org/10.26616/NIOSHPUB2016106",
+    "Kenefick, R. W., & Sawka, M. N. (2007). Hydration at the work site. *Journal of the American College of Nutrition*, *26*(Suppl. 5), 597S–603S. https://doi.org/10.1080/07315724.2007.10719665"
+   ]
+  },
+  {
+   "id": "acclimatization",
+   "section": "heat",
+   "title": "Your first days in the heat are the riskiest",
+   "dek": "Bodies adapt to heat, but not overnight. Why new workers are most at risk, and how to build up safely.",
+   "readMinutes": 4,
+   "image": {
+    "asset": "learn-acclimatization",
+    "alt": "A soldier with a heavy pack walks alone down a road on a ruck march.",
+    "caption": "A soldier on a ruck march in Vilseck, Germany, June 2020."
+   },
+   "triggers": [
+    "newWearer",
+    "hotWeather"
+   ],
+   "blocks": [
+    {
+     "type": "lede",
+     "text": "When federal investigators reviewed heat-related enforcement cases from 2012 and 2013, 13 involved a worker's death. Nine of those deaths happened in the worker's first three days on the job, and the employers' heat plans made no provision for helping new workers adjust (Arbury et al., 2014)."
+    },
+    {
+     "type": "fact",
+     "figure": "9 of 13",
+     "text": "worker heat deaths in one federal review came in the first three days on the job.",
+     "source": "Arbury et al., 2014"
+    },
+    {
+     "type": "p",
+     "text": "That adjustment is called acclimatization. Over repeated days of work in the heat, you start sweating sooner and more, your heart rate and body temperature run lower for the same effort, and you hold on to more salt. Most of the change comes in the first week, and it's largely complete in about two (Périard et al., 2015; Racinais et al., 2015)."
+    },
+    {
+     "type": "h",
+     "text": "Build up gradually"
+    },
+    {
+     "type": "p",
+     "text": "NIOSH recommends that a new worker spend no more than 20 percent of the usual time in the heat on the first day, adding no more than 20 percent a day after that. Workers with recent experience can start at 50 percent, then 60, 80 and 100 percent over four days (Jacklitsch et al., 2016)."
+    },
+    {
+     "type": "p",
+     "text": "The benefit fades with time away from the heat, so ease back in after a break, an illness or a stretch of cool weather."
+    },
+    {
+     "type": "h",
+     "text": "Where Thermyx fits"
+    },
+    {
+     "type": "p",
+     "text": "Thermyx learns your usual foot temperature during calibration and raises Caution when you run well above it. In your first days, take that seriously: you have less margin now than you will in two weeks."
+    }
+   ],
+   "references": [
+    "Arbury, S., Jacklitsch, B., Farquah, O., Hodgson, M., Lamson, G., Martin, H., & Profitt, A. (2014). Heat illness and death among workers—United States, 2012–2013. *MMWR. Morbidity and Mortality Weekly Report*, *63*(31), 661–665. https://www.cdc.gov/mmwr/preview/mmwrhtml/mm6331a1.htm",
+    "Jacklitsch, B., Williams, W. J., Musolin, K., Coca, A., Kim, J.-H., & Turner, N. (2016). *NIOSH criteria for a recommended standard: Occupational exposure to heat and hot environments* (DHHS [NIOSH] Publication No. 2016-106). National Institute for Occupational Safety and Health. https://doi.org/10.26616/NIOSHPUB2016106",
+    "Périard, J. D., Racinais, S., & Sawka, M. N. (2015). Adaptations and mechanisms of human heat acclimation: Applications for competitive athletes and sports. *Scandinavian Journal of Medicine & Science in Sports*, *25*(S1), 20–38. https://doi.org/10.1111/sms.12408",
+    "Racinais, S., Alonso, J. M., Coutts, A. J., Flouris, A. D., Girard, O., González-Alonso, J., Hausswirth, C., Jay, O., Lee, J. K. W., Mitchell, N., Nassis, G. P., Nybo, L., Pluim, B. M., Roelands, B., Sawka, M. N., Wingo, J. E., & Périard, J. D. (2015). Consensus recommendations on training and competing in the heat. *British Journal of Sports Medicine*, *49*(18), 1164–1173. https://doi.org/10.1136/bjsports-2015-094915"
+   ]
+  }
+ ]
 }

@@ -4,9 +4,9 @@ import UIKit
 import WidgetKit
 
 /// Feeds the widgets, the Live Activity and the Dynamic Island from live
-/// readings: the warmer foot's temperature, its rate of change (dT/dt), the
-/// change over the last 10 minutes (∫ dT/dt dt), both as curves, plus the
-/// risk level, the top concern and the thermal setting.
+/// readings: the warmer foot's temperature and a 30-minute curve of it, each
+/// foot's temperature, arch load and steadiness (for the soles), both
+/// batteries, the risk level, the top concern and the thermal setting.
 ///
 /// Home Screen and Lock Screen widgets read the snapshot from the App Group
 /// and only redraw when iOS reloads them (often while the app is open,
@@ -18,27 +18,43 @@ final class ThermyxWidgetBridge {
         didSet { if fahrenheit != oldValue { lastSaved = .distantPast } }
     }
 
-    /// The last 10 minutes of the warmer foot, one point per reading.
-    private var samples: [CalibrationSample] = []
+    /// The last half hour of the warmer foot, about one point a second.
+    private var samples: [(time: Date, c: Double)] = []
     private var lastSaved = Date.distantPast
     private var lastReload = Date.distantPast
     private var lastSnapshot: ThermyxWidgetSnapshot?
     private var activity: Activity<ThermyxActivityAttributes>?
     private var endTask: Task<Void, Never>?
 
-    private static let window: TimeInterval = 10 * 60
-    private static let points = 30
+    private static let window = TimeInterval(ThermyxWidgetSnapshot.windowMinutes * 60)
+    private static let points = 40
 
     init() {
-        // Pick up an activity left running by an earlier launch.
-        activity = Activity<ThermyxActivityAttributes>.activities.first
+        adoptActivities()
+    }
+
+    /// Picks up the activity left running by an earlier launch, and ends any
+    /// others straight away: one Lock Screen card, never two.
+    private func adoptActivities() {
+        let all = Activity<ThermyxActivityAttributes>.activities
+        activity = all.first { $0.activityState == .active }
+        endActivities(except: activity?.id)
+    }
+
+    /// Ends every Live Activity but one, with no lingering card. An ended
+    /// activity otherwise stays on the Lock Screen for minutes, which is how
+    /// a stale "Not connected" card ended up above the live one.
+    private func endActivities(except keep: String?) {
+        for other in Activity<ThermyxActivityAttributes>.activities where other.id != keep {
+            Task { await other.end(nil, dismissalPolicy: .immediate) }
+        }
     }
 
     func update(reading: BilateralReading, isDemo: Bool, setting: ThermalSetting, assessment: ThermyxRiskAssessment) {
         let now = Date.now
         let live = !reading.present.isEmpty
-        if let c = reading.peakFootTemperatureC {
-            samples.append(CalibrationSample(time: now, footC: c, ambientC: nil, load: nil, gait: nil, cadence: nil, standing: nil))
+        if let c = reading.peakFootTemperatureC, samples.last.map({ now.timeIntervalSince($0.time) >= 1 }) ?? true {
+            samples.append((now, c))
         }
         samples.removeAll { now.timeIntervalSince($0.time) > Self.window }
 
@@ -46,30 +62,31 @@ final class ThermyxWidgetBridge {
         let level = live ? Self.level(assessment.level) : .waiting
         // A change people would notice goes out at once; otherwise every
         // few seconds is plenty.
-        let significant = lastSnapshot.map { $0.live != live || $0.mode != mode || $0.level != level } ?? true
+        let lowNow = [reading[.left]?.batteryPercent, reading[.right]?.batteryPercent].compactMap { $0 }.min()
+            .map { $0 <= ThermyxWidgetSnapshot.batteryCritical ? 2 : $0 <= ThermyxWidgetSnapshot.batteryLow ? 1 : 0 } ?? 0
+        let lowBefore = lastSnapshot.map { $0.batteryIsCritical ? 2 : $0.lowBattery != nil ? 1 : 0 } ?? 0
+        let significant = lastSnapshot.map { $0.live != live || $0.mode != mode || $0.level != level } ?? true || lowNow != lowBefore
         guard significant || now.timeIntervalSince(lastSaved) >= 5 else { return }
         lastSaved = now
 
-        let rates = ThermalCalculus.rateSeries(samples)
         var snapshot = ThermyxWidgetSnapshot(
             updated: now, live: live, isDemo: isDemo, fahrenheit: fahrenheit, mode: mode,
             footC: reading.peakFootTemperatureC ?? lastSnapshot?.footC,
-            ratePerMinute: live ? ThermalCalculus.rate(samples) : nil,
-            changeC: ThermalCalculus.accumulatedChange(samples),
+            leftC: reading[.left]?.footTemperatureC, rightC: reading[.right]?.footTemperatureC,
+            leftLoad: reading[.left]?.pressureBalance, rightLoad: reading[.right]?.pressureBalance,
+            leftSteady: reading[.left]?.gaitStability, rightSteady: reading[.right]?.gaitStability,
             level: level,
             concern: level.isConcern ? assessment.reasons.first : nil,
-            temps: [], rates: [],
-            battery: reading.batteryPercent
+            temps: [],
+            batteryLeft: reading[.left]?.batteryPercent,
+            batteryRight: reading[.right]?.batteryPercent
         )
         if let start = samples.first?.time {
-            snapshot.temps = Self.bucket(samples.compactMap { s in s.footC.map { (s.time.timeIntervalSince(start), $0) } })
-            snapshot.rates = Self.bucket(rates.map { ($0.t, $0.perMinute) })
+            snapshot.temps = Self.bucket(samples.map { ($0.time.timeIntervalSince(start), $0.c) })
         }
-        // A disconnect keeps the last curves on show, marked not live.
+        // A disconnect keeps the last curve on show, marked not live.
         if !live, let last = lastSnapshot {
             snapshot.temps = last.temps
-            snapshot.rates = last.rates
-            snapshot.changeC = last.changeC
         }
         lastSnapshot = snapshot
         snapshot.save()
@@ -92,7 +109,11 @@ final class ThermyxWidgetBridge {
     // MARK: Live Activity
 
     private func updateActivity(_ snapshot: ThermyxWidgetSnapshot, significant: Bool) {
-        let content = ActivityContent(state: snapshot, staleDate: snapshot.updated.addingTimeInterval(120),
+        // iOS greys a Live Activity out at its stale date. Insoles report every
+        // second, so five minutes of silence is real; the demo can't update
+        // while iOS has the app suspended, so it gets longer.
+        let staleAfter: TimeInterval = snapshot.isDemo ? 30 * 60 : 5 * 60
+        let content = ActivityContent(state: snapshot, staleDate: snapshot.updated.addingTimeInterval(staleAfter),
                                       relevanceScore: snapshot.level.isConcern ? 100 : 50)
         if snapshot.live {
             endTask?.cancel()
@@ -101,7 +122,9 @@ final class ThermyxWidgetBridge {
                 Task { await activity.update(content) }
             } else if ActivityAuthorizationInfo().areActivitiesEnabled,
                       UIApplication.shared.applicationState != .background {
-                // Live Activities can only start while the app is open.
+                // Live Activities can only start while the app is open. Clear
+                // out any old one first so the new card isn't stacked on it.
+                endActivities(except: nil)
                 do {
                     activity = try Activity.request(attributes: ThermyxActivityAttributes(startedAt: .now),
                                                     content: content, pushType: nil)

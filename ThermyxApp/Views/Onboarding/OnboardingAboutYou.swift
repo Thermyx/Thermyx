@@ -11,7 +11,7 @@ struct AboutYouStep: View {
     var body: some View {
         let missing = AboutYouForm.missing(name: name, settings: settings)
         OnboardingPage(eyebrow: "About you", title: "A little *about you*",
-                       subtitle: "Thermyx reads your numbers against your own body. Every answer is needed, and all of it stays on this phone.") {
+                       subtitle: "Thermyx reads your numbers against your own body. Health conditions are optional; the rest is needed. All of it stays on this phone.") {
             AboutYouForm(name: $name, settings: settings, health: health)
         } actions: {
             if !missing.isEmpty {
@@ -57,8 +57,7 @@ struct AboutYouForm: View {
         if p.heightCm == nil { result.append("height") }
         if p.weightKg == nil { result.append("weight") }
         if settings.soleSize == nil { result.append("shoe size") }
-        if p.focus == nil { result.append("Insights focus") }
-        if p.conditions == nil { result.append("health conditions") }
+        if p.focus == nil { result.append("Insight preference") }
         return result
     }
 
@@ -92,17 +91,21 @@ struct AboutYouForm: View {
                 shoeSize
             }
 
-            group("What should Insights focus on?") {
+            group("Insight preference") {
                 ForEach(UserProfile.Focus.allCases) { focus in
-                    choiceRow(focus.label, detail: focus.detail, selected: settings.profile.focus == focus) {
+                    choiceRow(focus.label + "-based insights", detail: focus.detail, selected: settings.profile.focus == focus) {
                         settings.profile.focus = focus
                     }
                 }
+                Text("Decides what Insights leads with. With AI Insights on, Claude writes your daily summary the same way. Change it any time in Settings.")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Site.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            group("Health conditions") {
+            group("Health conditions (optional)") {
                 ConditionsPicker(settings: settings)
-                Text("Helps Thermyx explain what it sees. It never changes the safety limits.")
+                Text("Helps Thermyx explain what it sees, and brings cold-foot reminders sooner for poor circulation, Raynaud's, diabetes or neuropathy. It never changes the safety limits.")
                     .font(ThermyxFont.captionSmall)
                     .foregroundStyle(Thermyx.Site.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -119,11 +122,7 @@ struct AboutYouForm: View {
 
     private var healthCard: some View {
         HStack(alignment: .center, spacing: Thermyx.Space.l) {
-            Image(systemName: "heart.fill")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 40, height: 40)
-                .background(Color(hex: 0xFF2D55), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            AppleHealthIcon(size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Apple Health")
                     .font(ThermyxFont.rowTitle)
@@ -136,11 +135,14 @@ struct AboutYouForm: View {
             Spacer(minLength: Thermyx.Space.xs)
             if importing {
                 ProgressView().tint(Thermyx.Site.text)
+            } else if health.availability == .denied {
+                // Health's permissions live in the Health app, not Settings.
+                Button("Open Health") { ThermyxPermissions.openHealth() }
+                    .buttonStyle(PermissionButtonStyle(prominent: false))
+                    .accessibilityHint("Opens the Health app, where Thermyx's access is managed under Sharing.")
             } else if health.isAvailable {
                 Button("Connect") { Task { await importFromHealth() } }
-                    .font(ThermyxFont.controlLabel)
-                    .foregroundStyle(Thermyx.Ink.ice)
-                    .frame(minHeight: Thermyx.minimumTapTarget)
+                    .buttonStyle(PermissionButtonStyle())
                     .accessibilityLabel("Connect Apple Health")
             }
         }
@@ -210,35 +212,8 @@ struct AboutYouForm: View {
         .siteGlass(radius: Thermyx.Radius.control)
     }
 
-    @ViewBuilder
     private var shoeSize: some View {
-        Menu {
-            Picker("Shoe size", selection: Binding(get: { settings.soleSize }, set: { settings.soleSize = $0 })) {
-                ForEach(SoleSize.all) { size in
-                    Text(size.label).tag(Optional(size))
-                }
-            }
-        } label: {
-            HStack(spacing: Thermyx.Space.m) {
-                Text("Shoe size")
-                    .font(ThermyxFont.body)
-                    .foregroundStyle(Thermyx.Site.textMuted)
-                Spacer(minLength: Thermyx.Space.s)
-                Text(settings.soleSize.map { "\($0.label) men's" } ?? "Choose")
-                    .font(ThermyxFont.bodyLarge)
-                    .foregroundStyle(settings.soleSize == nil ? Thermyx.Site.textFaint : Thermyx.Site.text)
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Thermyx.Site.textFaint)
-            }
-            .padding(.horizontal, Thermyx.Space.xl)
-            .frame(minHeight: 54)
-            .siteGlass(radius: Thermyx.Radius.control)
-            .contentShape(Rectangle())
-        }
-        if let size = settings.soleSize, !size.isSupported {
-            hint("Today's insoles are cut for US men's 11–12. Your size is saved for when yours is ready.")
-        }
+        ShoeSizeField(settings: settings)
     }
 
     private func choiceRow(_ title: String, detail: String, selected: Bool, action: @escaping () -> Void) -> some View {
@@ -268,7 +243,7 @@ struct AboutYouForm: View {
     }
 
     private func group<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SiteEyebrow(title)
             content()
         }

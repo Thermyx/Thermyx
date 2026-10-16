@@ -8,6 +8,39 @@ struct SeriesPoint: Identifiable, Equatable {
     var id: Date { date }
 }
 
+extension SeriesPoint {
+    /// Means over fixed windows of time, each at its window's start. Keeps a
+    /// day's chart to a few hundred points, so minute-to-minute flicker (the
+    /// two insoles regulating a few seconds apart) doesn't read as noise, and
+    /// the newest point moves smoothly as it fills instead of jumping as
+    /// each minute starts. Windows with no data stay out: no point is made
+    /// up for time that wasn't worn.
+    static func averaged(_ points: [SeriesPoint], window: TimeInterval) -> [SeriesPoint] {
+        guard window > 0, points.count > 2 else { return points }
+        var sums: [Double: (total: Double, count: Int)] = [:]
+        for point in points {
+            let key = (point.date.timeIntervalSince1970 / window).rounded(.down) * window
+            let current = sums[key] ?? (0, 0)
+            sums[key] = (current.total + point.value, current.count + 1)
+        }
+        return sums.keys.sorted().map { key in
+            let entry = sums[key]!
+            return SeriesPoint(date: Date(timeIntervalSince1970: key), value: entry.total / Double(entry.count))
+        }
+    }
+}
+
+extension InsightsRange {
+    /// How much time one chart point covers.
+    var chartWindow: TimeInterval {
+        switch self {
+        case .day: return 5 * 60
+        case .week: return 30 * 60
+        case .month: return 6 * 3600
+        }
+    }
+}
+
 /// A shaded stretch of time behind a chart, e.g. when the insole heated.
 struct ChartShade: Identifiable, Equatable {
     let start: Date
@@ -26,6 +59,9 @@ struct ChartSeries: Identifiable, Equatable {
     var isDashed: Bool = false
     /// Only the primary series gets a gradient fill beneath it.
     var isFilled: Bool = false
+    /// Colours the line by value, so it reads hot where the values are hot.
+    /// Without one, the series is drawn in `color`.
+    var scale: ChartValueScale?
 
     var values: [Double] { points.map(\.value) }
 }
@@ -57,9 +93,8 @@ struct ThermyxTimeSeriesChart: View {
     var showsExtremes: Bool = true
     var showsAverage: Bool = true
     var averageLabel: String = "Average"
-    /// Ember-high / ice-cold reads as hot and cold, which is right for
-    /// temperature and wrong for everything else — a high gait score is good,
-    /// not hot. Non-temperature series pass their own colour instead.
+    /// The extremes' marks when the primary series has no value scale.
+    /// With one, each mark takes the scale's colour at its value.
     var highTint: Color = Thermyx.Ink.ember
     var lowTint: Color = Thermyx.Ink.ice
 
@@ -117,7 +152,7 @@ struct ThermyxTimeSeriesChart: View {
                 Text(format(scrubbed.value))
                     .font(ThermyxFont.metricNumeral)
                     .monospacedDigit()
-                    .foregroundStyle(primary?.color ?? Thermyx.Ink.textPrimary)
+                    .foregroundStyle(tint(scrubbed.value, fallback: primary?.color ?? Thermyx.Ink.textPrimary))
                 Text(range.scrubFormatter.string(from: scrubbed.date))
                     .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
             } else if let average {
@@ -169,13 +204,7 @@ struct ThermyxTimeSeriesChart: View {
                             yEnd: .value(item.name, point.value),
                             series: .value("Series", item.id)
                         )
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [item.color.opacity(0.34), item.color.opacity(0)],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
+                        .foregroundStyle(areaStyle(item))
                         .interpolationMethod(.monotone)
                     }
 
@@ -184,7 +213,7 @@ struct ThermyxTimeSeriesChart: View {
                         y: .value(item.name, point.value),
                         series: .value("Series", item.id)
                     )
-                    .foregroundStyle(item.color)
+                    .foregroundStyle(lineStyle(item))
                     .lineStyle(
                         StrokeStyle(
                             lineWidth: item.isDashed ? 2.2 : ThermyxChartStyle.lineWidth,
@@ -198,10 +227,10 @@ struct ThermyxTimeSeriesChart: View {
             }
 
             if let maxPoint {
-                extremeMark(maxPoint, tint: highTint, isHigh: true)
+                extremeMark(maxPoint, tint: tint(maxPoint.value, fallback: highTint), isHigh: true)
             }
             if let minPoint, minPoint.date != maxPoint?.date {
-                extremeMark(minPoint, tint: lowTint, isHigh: false)
+                extremeMark(minPoint, tint: tint(minPoint.value, fallback: lowTint), isHigh: false)
             }
 
             if let scrubbed {
@@ -212,7 +241,7 @@ struct ThermyxTimeSeriesChart: View {
                     x: .value("Scrub", scrubbed.date),
                     y: .value("Value", scrubbed.value)
                 )
-                .foregroundStyle(primary?.color ?? Thermyx.Ink.textPrimary)
+                .foregroundStyle(tint(scrubbed.value, fallback: primary?.color ?? Thermyx.Ink.textPrimary))
                 .symbolSize(110)
             }
         }
@@ -245,6 +274,32 @@ struct ThermyxTimeSeriesChart: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(primary?.name ?? "Chart")
         .accessibilityValue(accessibilitySummary)
+    }
+
+    // MARK: - Colour
+
+    /// The primary series' colour at `value`.
+    private func tint(_ value: Double, fallback: Color) -> Color {
+        primary?.scale?.color(at: value) ?? fallback
+    }
+
+    /// The line: the value scale stretched over the series' own range, so
+    /// every point sits on its colour.
+    private func lineStyle(_ item: ChartSeries) -> AnyShapeStyle {
+        guard let scale = item.scale, let low = item.values.min(), let high = item.values.max() else {
+            return AnyShapeStyle(item.color)
+        }
+        return AnyShapeStyle(scale.gradient(from: low, to: high))
+    }
+
+    /// The fill runs from the floor of the plot to the series' high, fading
+    /// out toward the floor.
+    private func areaStyle(_ item: ChartSeries) -> AnyShapeStyle {
+        guard let scale = item.scale, let high = item.values.max() else {
+            return AnyShapeStyle(LinearGradient(colors: [item.color.opacity(0.34), item.color.opacity(0)],
+                                                startPoint: .top, endPoint: .bottom))
+        }
+        return AnyShapeStyle(scale.gradient(from: domain.lowerBound, to: high) { t in 0.02 + 0.34 * t * t })
     }
 
     @ChartContentBuilder

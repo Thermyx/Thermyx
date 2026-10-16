@@ -66,33 +66,17 @@ struct ConnectDeviceView: View {
 
     var body: some View {
         ThermyxDetailScreen(title: "Connect a device") {
-            if ble.isFakeInsole {
-                FakeInsoleConnectedCard(ble: ble)
-            } else if ble.isDemoMode {
-                // Demo Mode swaps the radio for simulated devices, so a real
-                // board can never connect from here. Say so plainly.
-                ThermyxCard(border: Thermyx.Ink.amber.opacity(0.6)) {
-                    VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                        Text("Demo Mode is on")
-                            .font(ThermyxFont.rowTitle)
-                            .foregroundStyle(Thermyx.Ink.amber)
-                        Text("Only simulated devices show here, and real Thermyx boards can't connect. Turn off Demo Mode in Safety → Advanced, or run the ThermyxApp scheme in Xcode instead of Thermyx Demo.")
-                            .font(ThermyxFont.caption)
-                            .foregroundStyle(Thermyx.Ink.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Turn off Demo Mode") { ble.stopDemoMode() }
-                            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
-                            .fixedSize()
-                    }
-                }
+            if ble.isDemoMode {
+                // Debug builds' preview harness swaps the radio for
+                // simulated devices; a real board can't connect from here.
+                Text("The preview harness is running simulated devices. Real boards can't connect in this build.")
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.amber)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             statusCard
             insoleStatus
-
-            if !ble.isDemoMode {
-                FakeInsoleButton(ble: ble)
-            }
 
             HStack(spacing: Thermyx.Space.m) {
                 Button(scanning ? "Stop" : "Scan") {
@@ -153,7 +137,7 @@ struct ConnectDeviceView: View {
         let feet = Foot.allCases.filter { ble.isConnected($0) }
         if !feet.isEmpty || ble.insoleStep != nil {
             ThermyxCard {
-                VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                     SectionLabel("Insoles")
                     ForEach(feet, id: \.self) { foot in
                         HStack(spacing: 6) {
@@ -199,7 +183,7 @@ struct ConnectDeviceView: View {
 
     @ViewBuilder
     private var deviceList: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Thermyx devices")
             if thermyxDevices.isEmpty {
                 Text(scanning ? "Looking for Thermyx devices…" : "Tap Scan to look for nearby devices.")
@@ -315,25 +299,6 @@ private struct DeviceRow: View {
 }
 
 // MARK: - Home
-
-/// Home while no insole is live: the board's main sensor when one is
-/// reporting, otherwise the regular empty state.
-struct SensorHomeSwitch<Empty: View>: View {
-    @ObservedObject var board: SensorBoardStore
-    @ObservedObject var ble: ThermyxBLEService
-    let unit: TemperatureUnit
-    /// Tapping a sole scans for that foot's insole, as on the empty state.
-    var onScan: (Foot) -> Void
-    @ViewBuilder var empty: Empty
-
-    var body: some View {
-        if ble.boardState.isConnected || !board.table.connected.isEmpty {
-            SensorMainView(board: board, ble: ble, unit: unit, onScan: onScan)
-        } else {
-            empty
-        }
-    }
-}
 
 /// The main page rule: temperature only if any temperature sensor is
 /// connected (TMP102 before NTC, then the lowest channel); otherwise FSR,
@@ -467,7 +432,7 @@ struct SensorCard: View {
                 if channel.trace.count >= 2 {
                     Chart(channel.trace) { point in
                         LineMark(x: .value("Time", point.time), y: .value(display.chartUnit, point.value))
-                            .foregroundStyle(Thermyx.Ink.ice)
+                            .foregroundStyle(intensity(channel.trace.map(\.value)))
                             .interpolationMethod(.monotone)
                     }
                     .chartYScale(domain: domain(channel.trace.map(\.value)))
@@ -483,9 +448,9 @@ struct SensorCard: View {
                 if minutes.count >= 2 {
                     Chart(minutes) { minute in
                         LineMark(x: .value("Minute", minute.start), y: .value(display.chartUnit, minute.mean))
-                            .foregroundStyle(Thermyx.Ink.signal)
+                            .foregroundStyle(intensity(minutes.map(\.mean)))
                         PointMark(x: .value("Minute", minute.start), y: .value(display.chartUnit, minute.mean))
-                            .foregroundStyle(Thermyx.Ink.signal)
+                            .foregroundStyle(ChartValueScale.intensity(over: span(minutes.map(\.mean))).color(at: minute.mean))
                             .symbolSize(12)
                     }
                     .chartYScale(domain: domain(minutes.map(\.mean)))
@@ -521,6 +486,16 @@ struct SensorCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func span(_ values: [Double]) -> ClosedRange<Double> {
+        (values.min() ?? 0)...max(values.max() ?? 1, (values.min() ?? 0) + .ulpOfOne)
+    }
+
+    /// A raw trace has no hot or cold of its own: colour it low to high.
+    private func intensity(_ values: [Double]) -> LinearGradient {
+        let range = span(values)
+        return ChartValueScale.intensity(over: range).gradient(from: range.lowerBound, to: range.upperBound)
     }
 
     private func domain(_ values: [Double]) -> ClosedRange<Double> {
@@ -590,7 +565,7 @@ struct BoardSettingsSection: View {
     @State private var connecting = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Test board sensors") {
                 BoardStatusPill(ble: ble)
             }

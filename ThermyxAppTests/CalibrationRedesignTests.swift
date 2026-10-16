@@ -118,17 +118,18 @@ final class CalibrationRedesignTests: XCTestCase {
 
     // MARK: About you
 
-    func testProfileNeedsEveryAnswer() {
+    func testProfileNeedsEveryAnswerButHealthConditions() {
         var profile = UserProfile()
         XCTAssertFalse(profile.isComplete)
         profile.age = 34
         profile.sex = .female
         profile.heightCm = 170
         profile.weightKg = 62
+        XCTAssertFalse(profile.isComplete, "Insight preference unanswered")
         profile.focus = .health
-        XCTAssertFalse(profile.isComplete, "Health conditions unanswered")
+        XCTAssertTrue(profile.isComplete, "Health conditions are optional")
         profile.conditionSet = []
-        XCTAssertTrue(profile.isComplete, "\"None\" is an answer")
+        XCTAssertTrue(profile.isComplete, "\"None\" is still fine")
         XCTAssertFalse(UserProfile.ageRange.contains(12), "Accounts are for 13 and over")
     }
 

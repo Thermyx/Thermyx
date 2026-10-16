@@ -224,4 +224,81 @@ struct SoleSize: Identifiable, Equatable, Hashable, Codable {
     }
 
     static let `default` = SoleSize(usMens: 11.5, lengthMM: 295.5)
+
+    /// An insole is about this much longer than the foot it fits, measured
+    /// from the templates (US men's 11: 279 mm foot, 291 mm insole).
+    static let allowanceMM = 11.5
+
+    /// The size for a US men's number: a measured template where there is
+    /// one, otherwise the foot length plus the usual allowance.
+    static func make(usMens: Double) -> SoleSize {
+        supported.first { $0.usMens == usMens }
+            ?? SoleSize(usMens: usMens, lengthMM: ShoeSizeSystem.usMen.footLengthMM(usMens) + allowanceMM)
+    }
+
+    /// The size someone gives in any system, by way of foot length.
+    static func make(_ size: Double, in system: ShoeSizeSystem) -> SoleSize {
+        make(usMens: ShoeSizeSystem.usMen.size(forFootLengthMM: system.footLengthMM(size)))
+    }
+
+    /// This size in another system, to the nearest half (whole for EU).
+    func size(in system: ShoeSizeSystem) -> Double {
+        system.size(forFootLengthMM: ShoeSizeSystem.usMen.footLengthMM(usMens))
+    }
+}
+
+/// The sizing systems a wearer can give their shoe size in. Each converts
+/// through foot length (the Brannock scales for US and UK, Paris points for
+/// EU), so any of them lands on the same insole.
+enum ShoeSizeSystem: String, CaseIterable, Identifiable, Codable {
+    case usMen, usWomen, uk, eu
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .usMen: return "US men's"
+        case .usWomen: return "US women's"
+        case .uk: return "UK"
+        case .eu: return "EU"
+        }
+    }
+
+    /// The sizes offered, smallest first.
+    var sizes: [Double] {
+        switch self {
+        case .usMen: return Array(stride(from: 4.0, through: 16, by: 0.5))
+        case .usWomen: return Array(stride(from: 5.0, through: 14, by: 0.5))
+        case .uk: return Array(stride(from: 3.0, through: 15, by: 0.5))
+        case .eu: return Array(stride(from: 35.0, through: 50, by: 1))
+        }
+    }
+
+    /// Foot length in millimetres for a size in this system.
+    func footLengthMM(_ size: Double) -> Double {
+        switch self {
+        case .usMen: return (size + 22) / 3 * 25.4
+        case .usWomen: return (size + 20.5) / 3 * 25.4
+        case .uk: return (size + 23) / 3 * 25.4
+        case .eu: return (size / 1.5 - 1.5) * 10
+        }
+    }
+
+    /// The size in this system for a foot length, rounded the way sizes run.
+    func size(forFootLengthMM mm: Double) -> Double {
+        let inches = mm / 25.4
+        let raw: Double = switch self {
+        case .usMen: inches * 3 - 22
+        case .usWomen: inches * 3 - 20.5
+        case .uk: inches * 3 - 23
+        case .eu: (mm / 10 + 1.5) * 1.5
+        }
+        return self == .eu ? raw.rounded() : (raw * 2).rounded() / 2
+    }
+
+    /// "US men's 11.5", "EU 42".
+    func format(_ size: Double) -> String {
+        let number = size == size.rounded() ? String(Int(size)) : String(format: "%.1f", size)
+        return "\(label) \(number)"
+    }
 }

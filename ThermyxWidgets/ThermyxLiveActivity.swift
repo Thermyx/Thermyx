@@ -3,111 +3,33 @@ import SwiftUI
 import WidgetKit
 
 /// While the insoles are connected: a live banner on the Lock Screen, and in
-/// the Dynamic Island a dot in the mode's colour that opens out to the
-/// readings and curves.
+/// the Dynamic Island the soles and a mode dot that open out to the readings,
+/// the trend and the mode buttons.
 struct ThermyxLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: ThermyxActivityAttributes.self) { context in
-            LockScreenBanner(snapshot: context.state, isStale: context.isStale)
+            WidgetMediumLayout(context: ctx(context))
+                .padding(16)
                 .activityBackgroundTint(ThermyxWidgetInk.bg)
                 .activitySystemActionForegroundColor(ThermyxWidgetInk.text)
         } dynamicIsland: { context in
-            let s = context.state
+            let c = ctx(context)
             return DynamicIsland {
-                DynamicIslandExpandedRegion(.leading) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 5) {
-                            ThermyxModeDot(mode: s.mode, size: 9)
-                            Text(s.mode.label.uppercased())
-                                .font(WidgetFont.label(10)).tracking(1.1)
-                                .foregroundStyle(ThermyxWidgetInk.muted)
-                        }
-                        Text(s.footText)
-                            .font(WidgetFont.serif(34))
-                            .foregroundStyle(ThermyxWidgetInk.text)
-                            .contentTransition(.numericText())
-                    }
-                    .padding(.leading, 4)
-                }
-                DynamicIslandExpandedRegion(.trailing) {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        RateLine(snapshot: s)
-                        HStack(spacing: 3) {
-                            Text("∫").font(.system(size: 11, design: .serif).italic())
-                            Text("\(s.changeText) /10 min").font(WidgetFont.body(11)).monospacedDigit()
-                        }
-                        .foregroundStyle(ThermyxWidgetInk.muted)
-                    }
-                    .padding(.trailing, 4)
-                    .padding(.top, 14)
-                }
-                DynamicIslandExpandedRegion(.bottom) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 10) {
-                            LabelledCurve(label: "T(t)", values: s.temps, color: ThermyxWidgetInk.ember)
-                            LabelledCurve(label: "dT/dt", values: s.rates, color: ThermyxWidgetInk.ice, zeroLine: true)
-                        }
-                        .frame(height: 50)
-                        LevelLine(snapshot: s)
-                    }
-                    .padding(.horizontal, 4)
-                }
+                DynamicIslandExpandedRegion(.leading) { IslandLeading(context: c) }
+                DynamicIslandExpandedRegion(.trailing) { IslandTrailing(context: c) }
+                DynamicIslandExpandedRegion(.bottom) { IslandBottom(context: c) }
             } compactLeading: {
-                ThermyxModeDot(mode: s.mode, size: 12)
-                    .padding(.leading, 2)
+                IslandCompactLeading(context: c)
             } compactTrailing: {
-                EmptyView()
+                IslandModeDot(context: c)
             } minimal: {
-                ThermyxModeDot(mode: s.mode, size: 12)
+                IslandModeDot(context: c, showsBattery: false)
             }
-            .keylineTint(ThermyxWidgetInk.color(s.level))
+            .keylineTint(ThermyxWidgetInk.color(context.state.level))
         }
     }
-}
 
-/// The Lock Screen banner: the reading, its rate and change, both curves,
-/// and any concern.
-private struct LockScreenBanner: View {
-    let snapshot: ThermyxWidgetSnapshot
-    let isStale: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 2) {
-                    WidgetEyebrow(snapshot: snapshot)
-                    Text(snapshot.footText)
-                        .font(WidgetFont.serif(40))
-                        .foregroundStyle(snapshot.live ? ThermyxWidgetInk.text : ThermyxWidgetInk.faint)
-                        .contentTransition(.numericText())
-                }
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 4) {
-                    RateLine(snapshot: snapshot)
-                    HStack(spacing: 3) {
-                        Text("∫").font(.system(size: 11, design: .serif).italic())
-                        Text("\(snapshot.changeText) in 10 min").font(WidgetFont.body(11)).monospacedDigit()
-                    }
-                    .foregroundStyle(ThermyxWidgetInk.muted)
-                    if let battery = snapshot.battery {
-                        Label("\(battery)%", systemImage: "battery.75percent")
-                            .font(WidgetFont.body(11))
-                            .foregroundStyle(ThermyxWidgetInk.faint)
-                    }
-                }
-                .padding(.top, 2)
-            }
-            HStack(spacing: 12) {
-                LabelledCurve(label: "T(t)", values: snapshot.temps, color: ThermyxWidgetInk.ember)
-                LabelledCurve(label: "dT/dt", values: snapshot.rates, color: ThermyxWidgetInk.ice, zeroLine: true)
-            }
-            .frame(height: 54)
-            if isStale || !snapshot.live {
-                NotLiveLine(snapshot: snapshot)
-            } else {
-                LevelLine(snapshot: snapshot)
-            }
-        }
-        .padding(16)
+    private func ctx(_ context: ActivityViewContext<ThermyxActivityAttributes>) -> WidgetContext {
+        WidgetContext(snapshot: context.state, now: .now, soleView: ThermyxSoleView.current, stale: context.isStale)
     }
 }

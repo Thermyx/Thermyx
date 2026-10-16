@@ -21,7 +21,7 @@ struct RelayConnectionCard: View {
     private let client = ThermyxAlertAPIClient()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Relay")
             if settings.isPairedWithRelay {
                 connected
@@ -132,6 +132,9 @@ struct WatchersSection: View {
     @ObservedObject var settings: ThermyxSettingsStore
     @ObservedObject var alerts: ThermyxAlertCoordinator
     let level: ThermyxRiskLevel
+    /// Shows "What your circle gets" first if the wearer hasn't read it,
+    /// then runs the action.
+    var explainFirst: (@escaping () -> Void) -> Void = { $0() }
 
     @State private var watchers: [ThermyxAlertAPIClient.Watcher] = []
     @State private var invite: ThermyxAlertAPIClient.WatcherInvite?
@@ -142,7 +145,7 @@ struct WatchersSection: View {
     private let client = ThermyxAlertAPIClient()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Who can see your status")
 
             if !settings.isPairedWithRelay {
@@ -160,13 +163,11 @@ struct WatchersSection: View {
                 ForEach(watchers) { watcher in row(watcher) }
 
                 Button {
-                    Task { await createInvite() }
+                    explainFirst { Task { await createInvite() } }
                 } label: {
                     Label("Invite a watcher", systemImage: "person.badge.plus")
                 }
                 .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
-
-                locationConsent
             }
 
             if let error {
@@ -231,43 +232,6 @@ struct WatchersSection: View {
         default:
             if let date = watcher.expiryDate { return "Can see your status until \(date.formatted(date: .abbreviated, time: .omitted))" }
             return "Can see your status"
-        }
-    }
-
-    /// Location is never shared unless this is on, and even then only during
-    /// a High, Critical, or SOS event, for at most an hour.
-    private var locationConsent: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
-            ThermyxGroupedCard {
-                Toggle(isOn: Binding(
-                    get: { settings.shareLocationDuringEvents },
-                    set: { newValue in
-                        if newValue { settings.shareLocationDuringEvents = true }
-                        else { alerts.stopSharingLocation(level: level, settings: settings) }
-                    }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Share my location during a safety event")
-                            .font(ThermyxFont.body)
-                            .foregroundStyle(Thermyx.Ink.textPrimary)
-                        Text("Only with approved watchers, only at High risk, Critical, or SOS, and for at most an hour.")
-                            .font(ThermyxFont.captionSmall)
-                            .foregroundStyle(Thermyx.Ink.textSupporting)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                .tint(Thermyx.Ink.signal)
-                .padding(.horizontal, Thermyx.Space.xl)
-                .padding(.vertical, Thermyx.Space.m)
-            }
-            if settings.shareLocationDuringEvents && level.severity >= ThermyxRiskLevel.high.severity {
-                Button {
-                    alerts.stopSharingLocation(level: level, settings: settings)
-                } label: {
-                    Label("Stop sharing location", systemImage: "location.slash.fill")
-                }
-                .buttonStyle(ThermyxPrimaryButtonStyle(fill: Thermyx.Ink.amber, foreground: Thermyx.Ink.onEmber))
-            }
         }
     }
 
@@ -355,29 +319,18 @@ private struct InviteSheet: View {
 /// clearly labelled as a preview that was not sent.
 struct TextingPreviewCard: View {
     @ObservedObject var settings: ThermyxSettingsStore
-    let level: ThermyxRiskLevel
-    let reasons: [String]
+    @ObservedObject var alerts: ThermyxAlertCoordinator
+    let reading: BilateralReading
 
     var body: some View {
         ThermyxCard(padding: Thermyx.Space.xl, fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Preview · not sent", color: Thermyx.Ink.amber)
-                Text("Texting isn't turned on yet. If it were, your enabled contacts would get:")
+                Text("Texting isn't turned on yet. If it were, at High risk your enabled contacts would get a text like this:")
                     .font(ThermyxFont.caption)
                     .foregroundStyle(Thermyx.Ink.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(ThermyxAlertCoordinator.previewMessage(
-                    level: level.severity >= ThermyxRiskLevel.high.severity ? level : .high,
-                    reasons: reasons,
-                    deviceID: settings.deviceID,
-                    includesLocation: settings.shareLocationDuringEvents
-                ))
-                .font(ThermyxFont.body)
-                .foregroundStyle(Thermyx.Ink.textPrimary)
-                .padding(Thermyx.Space.m)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous))
-                .fixedSize(horizontal: false, vertical: true)
+                CircleMessageBubble(text: alerts.previewMessage(reading: reading, settings: settings), caption: nil)
             }
         }
         .accessibilityElement(children: .combine)

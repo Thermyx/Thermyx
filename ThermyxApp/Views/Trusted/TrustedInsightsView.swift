@@ -60,7 +60,6 @@ struct TrustedInsightsView: View {
                             message: "Charts appear here once \(name)'s insole is connected and sending status to the shared backend.",
                             systemImage: "chart.xyaxis.line"
                         )
-                        samplePrompt
                     }
                 }
                 .padding(.horizontal, Thermyx.Space.screen)
@@ -69,7 +68,6 @@ struct TrustedInsightsView: View {
             .scrollIndicators(.hidden)
             .background(Thermyx.Ink.midnight)
             .thermyxTopScrim()
-            .trustedSampleBanner(member: member, watchedName: name)
         }
     }
 
@@ -80,35 +78,18 @@ struct TrustedInsightsView: View {
                 .tracking(ThermyxTracking.screenTitle)
                 .foregroundStyle(Thermyx.Ink.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            Text(member.isShowingSample ? "A worked example of a shift" : "Live signals from \(name)'s insole")
+            Text("Live signals from \(name)'s insole")
                 .font(ThermyxFont.bodySmall)
                 .foregroundStyle(Thermyx.Ink.textSupporting)
         }
-        .padding(.top, Thermyx.Space.m)
-    }
-
-    private var samplePrompt: some View {
-        ThermyxCard(fill: Thermyx.Tint.signalFill, border: Thermyx.Tint.signalBorder) {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                SectionLabel("Learn the charts", color: Thermyx.Ink.ice)
-                Text("Walk through a worked example so you know what a rising trend and a caution event look like before you need to read one quickly.")
-                    .font(ThermyxFont.caption)
-                    .foregroundStyle(Thermyx.Ink.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Show me a sample shift") {
-                    withAnimation { member.isShowingSample = true }
-                }
-                .buttonStyle(ThermyxPrimaryButtonStyle())
-                .padding(.top, 2)
-            }
-        }
+        .padding(.top, Thermyx.Space.titleTop)
     }
 
     // MARK: - Summary
 
     private var summaryCard: some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("The shift so far")
                 Text(summaryText)
                     .font(ThermyxFont.bodyLarge)
@@ -152,7 +133,7 @@ struct TrustedInsightsView: View {
 
     private var riskChart: some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Risk over the shift") {
                     Text(escalationSummary)
                         .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.axisLabel,
@@ -223,7 +204,7 @@ struct TrustedInsightsView: View {
 
     private var temperatureCard: some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Foot vs ambient") {
                     Text("Hold to scrub")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
@@ -234,12 +215,14 @@ struct TrustedInsightsView: View {
                         ChartSeries(
                             id: "foot", name: "Foot",
                             points: digest.points { $0.footMeanC.map(unit.convert) },
-                            color: Thermyx.Ink.ember, isFilled: true
+                            color: Thermyx.Ink.ember, isFilled: true,
+                            scale: .footTemperature(unit)
                         ),
                         ChartSeries(
                             id: "ambient", name: "Ambient",
                             points: digest.points { $0.ambientMeanC.map(unit.convert) },
-                            color: Thermyx.Ink.signal, isDashed: true
+                            color: Thermyx.Ink.signal, isDashed: true,
+                            scale: .air(unit)
                         )
                     ],
                     range: .day,
@@ -250,10 +233,12 @@ struct TrustedInsightsView: View {
                 )
 
                 FlowRow(spacing: Thermyx.Space.m) {
-                    ChartLegendChip(color: Thermyx.Ink.ember, label: "Foot")
-                    ChartLegendChip(color: Thermyx.Ink.signal, label: "Ambient")
-                    ChartLegendChip(color: Color(hex: 0x2C9CF0, opacity: 0.5), label: "Comfort")
-                    if bilateral.hasBoth { FootLegend(feet: bilateral.feet, tint: Thermyx.Ink.ember) }
+                    ChartLegendChip(scale: .footTemperature(unit),
+                                    over: unit.convert(FootScale.thermalRangeC.lowerBound)...unit.convert(FootScale.thermalRangeC.upperBound),
+                                    label: "Foot")
+                    ChartLegendChip(scale: .air(unit), over: unit.convert(5)...unit.convert(38), label: "Air", glyph: .dashed)
+                    ChartLegendChip(color: Thermyx.Tint.comfortKey, label: "Comfort")
+                    if bilateral.hasBoth { FootLegend(feet: bilateral.feet, tint: Thermyx.Ink.textMuted) }
                 }
             }
         }
@@ -267,7 +252,7 @@ struct TrustedInsightsView: View {
 
     private var movementCard: some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Movement stability")
 
                 ThermyxTimeSeriesChart(
@@ -278,7 +263,8 @@ struct TrustedInsightsView: View {
                                 points: footDigest.points { $0.gaitMean.map { $0 * 100 } },
                                 color: Thermyx.Ink.ice,
                                 isDashed: foot.isDashedInCharts,
-                                isFilled: !bilateral.hasBoth
+                                isFilled: !bilateral.hasBoth,
+                                scale: .steadiness
                             )
                         }
                     },
@@ -290,7 +276,7 @@ struct TrustedInsightsView: View {
                     lowTint: Thermyx.Ink.amber
                 )
 
-                if bilateral.hasBoth { FootLegend(feet: bilateral.feet, tint: Thermyx.Ink.ice) }
+                if bilateral.hasBoth { FootLegend(feet: bilateral.feet, tint: Thermyx.Ink.textMuted) }
 
                 Text("A sustained drop against their own baseline is the signal worth acting on, not a single dip.")
                     .font(ThermyxFont.captionSmall)
@@ -304,7 +290,7 @@ struct TrustedInsightsView: View {
     /// feet is, stated plainly, because they will be the one to mention it.
     private var balanceCard: some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Left vs right") {
                     if let gap = bilateral.meanTemperatureGapC {
                         Text("\(TemperatureFormat.delta(gap, in: unit)) average gap")
@@ -320,7 +306,8 @@ struct TrustedInsightsView: View {
                             points: bilateral.temperatureAsymmetry.map {
                                 SeriesPoint(date: $0.date, value: unit.convertDelta($0.value))
                             },
-                            color: Thermyx.Ink.amber, isFilled: true
+                            color: Thermyx.Ink.amber, isFilled: true,
+                            scale: .temperatureGap(unit)
                         )
                     ],
                     range: .day,
@@ -400,7 +387,7 @@ struct TrustedInsightsView: View {
 
     @ViewBuilder
     private var eventsCard: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Escalations")
             if member.displayedEvents.isEmpty {
                 ThermyxEmptyState(

@@ -135,9 +135,15 @@ struct InsoleStack: UIViewRepresentable {
             view.addGestureRecognizer(UIPanGestureRecognizer(target: self, action: #selector(pan(_:))))
             view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(tap(_:))))
             guard let url = Bundle.main.url(forResource: "insole", withExtension: "glb") else { return }
-            DispatchQueue.global(qos: .userInitiated).async {
+            // GLTFKit2 builds SceneKit nodes as it loads. Doing that on a
+            // background thread leaves half-finished SceneKit transactions
+            // that collide with the main thread's re-parenting and corrupt
+            // the node tree (SceneKit's "child is already inserted" assert,
+            // then a crash when the scene is released), so it loads on the
+            // main queue.
+            DispatchQueue.main.async { [weak self] in
                 let scene = (try? GLTFAsset(url: url, options: [:])).flatMap { GLTFSCNSceneSource(asset: $0).defaultScene }
-                DispatchQueue.main.async { [weak self] in if let scene { self?.present(scene) } }
+                if let scene { self?.present(scene) }
             }
             let link = CADisplayLink(target: self, selector: #selector(frame(_:)))
             link.add(to: .main, forMode: .common)

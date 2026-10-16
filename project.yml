@@ -29,13 +29,14 @@ targets:
           - "Resources/**"
           - "Assets.xcassets/**"
           - "Info.plist"
-          - "ThermyxApp.entitlements"
+          - "*.entitlements"
           - "BLE_PROTOCOL.md"
       # Widget snapshot and Live Activity types, shared with ThermyxWidgets.
       - path: Shared
       - path: ThermyxApp/Assets.xcassets
         buildPhase: resources
-      # Archivo / Archivo Narrow static instances and Instrument Serif,
+      # Archivo and Geist Mono static instances (OFL; see OFL.txt and
+      # OFL-Geist.txt),
       # registered via UIAppFonts. Flattened into the bundle root so
       # UIAppFonts can name them directly.
       - path: ThermyxApp/Resources/Fonts
@@ -45,11 +46,10 @@ targets:
       # Bundled Learning Center content and legal documents.
       - path: ThermyxApp/Resources/Content
         buildPhase: resources
-      # The insole's hardware model, from the website, for the last
-      # onboarding slide.
+      # The insole's hardware model, from the website, for the welcome screen.
       - path: ThermyxApp/Resources/Models
         buildPhase: resources
-      # Onboarding slide videos (see the README beside them).
+      # The optional onboarding walkthrough video (see the README beside it).
       - path: ThermyxApp/Resources/Media
         buildPhase: resources
         excludes: ["README.md"]
@@ -61,15 +61,19 @@ targets:
       # Shipped for SIL OFL compliance.
       - path: ThermyxApp/Resources/Fonts/OFL.txt
         buildPhase: resources
-      - path: ThermyxApp/Resources/Fonts/OFL-InstrumentSerif.txt
+      - path: ThermyxApp/Resources/Fonts/OFL-Geist.txt
         buildPhase: resources
+    # CODE_SIGN_ENTITLEMENTS comes from here, so a paid team can add push
+    # without touching this file (see Config/Thermyx.xcconfig).
+    configFiles:
+      Debug: Config/Thermyx.xcconfig
+      Release: Config/Thermyx.xcconfig
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.thermyx.app.a
         INFOPLIST_FILE: ThermyxApp/Info.plist
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
-        CODE_SIGN_ENTITLEMENTS: ThermyxApp/ThermyxApp.entitlements
         CODE_SIGN_STYLE: Automatic
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # REVERSED_CLIENT_ID from GoogleService-Info.plist, for the sign-in
@@ -97,11 +101,13 @@ targets:
           - "Info.plist"
           - "ThermyxWidgets.entitlements"
       - path: Shared
-      - path: ThermyxApp/Resources/Fonts/InstrumentSerif-Regular.ttf
-        buildPhase: resources
       - path: ThermyxApp/Resources/Fonts/Archivo-Medium.ttf
         buildPhase: resources
       - path: ThermyxApp/Resources/Fonts/Archivo-SemiBold.ttf
+        buildPhase: resources
+      - path: ThermyxApp/Resources/Fonts/Archivo-Bold.ttf
+        buildPhase: resources
+      - path: ThermyxApp/Resources/Fonts/GeistMono-Medium.ttf
         buildPhase: resources
     settings:
       base:

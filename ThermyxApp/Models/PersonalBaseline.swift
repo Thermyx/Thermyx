@@ -119,12 +119,14 @@ enum PersonalLayer {
 
         var signals: [RiskExplanation.Signal] = []
         var reasons = assessment.reasons
+        var causes = assessment.causes
         var level = assessment.level
         let footC = reading.present.compactMap(\.footTemperatureC).max()
         let gait = reading.present.compactMap(\.gaitStability).min()
 
-        func raise(_ reason: String) {
+        func raise(_ reason: String, _ cause: ThermyxRiskCause) {
             reasons.append(reason)
+            if !causes.contains(cause) { causes.append(cause) }
             // Only ever upward, and personal signals alone stop at Caution.
             if level == .normal { level = .caution }
         }
@@ -140,7 +142,7 @@ enum PersonalLayer {
                     rule: "Caution at \(TemperatureFormat.delta(baseline.footMargin, in: unit)) or more above your usual \(TemperatureFormat.degrees(mean, in: unit))",
                     contributes: counts
                 ))
-                if counts { raise("Foot temperature is well above your usual.") }
+                if counts { raise("Foot temperature is well above your usual.", .hot) }
             }
             if let gait, let mean = baseline.gaitMean {
                 let under = mean - gait
@@ -153,7 +155,7 @@ enum PersonalLayer {
                         rule: "Caution at \(Int((baseline.gaitMargin * 100).rounded())) points below your usual \(Int((mean * 100).rounded()))%",
                         contributes: true
                     ))
-                    raise("Steadiness is well below your usual.")
+                    raise("Steadiness is well below your usual.", .unsteady)
                 }
             }
         }
@@ -171,7 +173,7 @@ enum PersonalLayer {
                 rule: "Caution at \(TemperatureFormat.delta(margin, in: unit)) or more above your usual \(TemperatureFormat.degrees(expected.mean, in: unit))",
                 contributes: counts
             ))
-            if counts { raise("Foot temperature is well above your usual for this activity.") }
+            if counts { raise("Foot temperature is well above your usual for this activity.", .hot) }
         }
 
         if let d = trend.delta5 ?? trend.delta10 {
@@ -184,11 +186,11 @@ enum PersonalLayer {
                 rule: "Caution on a rise of \(TemperatureFormat.delta(1.0, in: unit)) in 5 min or \(TemperatureFormat.delta(1.5, in: unit)) in 10. Cooling never lowers a level.",
                 contributes: fast
             ))
-            if fast { raise("Foot temperature is rising quickly.") }
+            if fast { raise("Foot temperature is rising quickly.", .hot) }
         }
 
         return Result(
-            assessment: ThermyxRiskAssessment(level: level, reasons: reasons, foot: assessment.foot),
+            assessment: ThermyxRiskAssessment(level: level, reasons: reasons, foot: assessment.foot, causes: causes),
             signals: signals
         )
     }

@@ -17,55 +17,97 @@ struct SafetyView: View {
         #endif
     }()
     @State private var showingAddContact = false
+    @State private var showingCircleSharing = false
+    /// What to do once "What your circle gets" is acknowledged the first time.
+    @State private var afterCircleSharing: (() -> Void)?
     @State private var verifying: ThermyxContact?
     @State private var showingSOSConfirmation = false
     @State private var showingCannotCall = false
     @State private var okSentAt: Date?
-    @State private var legalDocument: LegalDocument.Kind? = {
-        #if DEBUG
-        return ThermyxPreviewHarness.opensLegalSheet ? .privacy : nil
-        #else
-        return nil
-        #endif
-    }()
+    @ObservedObject private var permissions = ThermyxPermissions.shared
+    @ObservedObject private var location: ThermyxLocationProvider
+    @Environment(\.scenePhase) private var scenePhase
+
+    init(roles: ThermyxRoleStore, settings: ThermyxSettingsStore, alerts: ThermyxAlertCoordinator, health: ThermyxHealthService) {
+        self.roles = roles
+        self.settings = settings
+        self.alerts = alerts
+        self.health = health
+        self.location = alerts.location
+    }
 
     private var level: ThermyxRiskLevel { viewModel.assessment.level }
 
     var body: some View {
         NavigationStack(path: $path) {
-            ThermyxScreen(title: "Profile") {
-                sosCard
-                imOKRow
-                escalationLadder
-                trustedCircle
-                WatchersSection(settings: settings, alerts: alerts, level: level)
-                ProfileSettingsSection(roles: roles, settings: settings, health: health)
-                AccountSection(roles: roles, settings: settings)
-                advancedRow
-                notificationNote
-                brandPlate
+            ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    titleRow
+                    status
+                        .padding(.top, Thermyx.Space.item)
+                    HoldToCallButton(subtitle: sosSubtitle, onCall: placeEmergencyCall) {
+                        showingSOSConfirmation = true
+                    }
+                    .spotlightTarget(.holdToCall)
+                    .padding(.top, Thermyx.Space.titleGap)
+                    imOKRow
+                    readiness
+                    ladder
+                        .padding(.top, Thermyx.Space.section)
+                    trustedCircle
+                        .padding(.top, Thermyx.Space.section)
+                        .id("circle")
+                    WatchersSection(settings: settings, alerts: alerts, level: level, explainFirst: explainFirst)
+                        .padding(.top, Thermyx.Space.section)
+                    footnote
+                        .padding(.top, Thermyx.Space.section)
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .padding(.horizontal, Thermyx.Space.screen)
+                .padding(.bottom, Thermyx.Space.xxl)
             }
+            .debugScroll(proxy)
+            }
+            .scrollIndicators(.hidden)
+            .thermyxTopScrim()
+            .thermyxNavigationRoot()
+            .task { await permissions.refresh() }
+            #if DEBUG
+            .onAppear { if ThermyxPreviewHarness.state == .circleSharing { showingCircleSharing = true } }
+            #endif
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { Task { await permissions.refresh() } }
+            }
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: SafetyDestination.self) { destination in
                 switch destination {
+                case .device:
+                    DeviceView(roles: roles, settings: settings, health: health)
                 case .advanced:
                     AdvancedView(roles: roles, settings: settings, health: health)
                 }
             }
         }
-        .sheet(item: $legalDocument) { kind in
-            LegalSheet(selection: kind)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
         .sheet(isPresented: $showingAddContact) {
             AddContactSheet(settings: settings)
                 .presentationDetents([.medium])
-                .presentationBackground(Thermyx.Ink.midnight)
+                .thermyxSheetBackground()
+        }
+        .sheet(isPresented: $showingCircleSharing, onDismiss: { afterCircleSharing = nil }) {
+            CircleSharingSheet(settings: settings, alerts: alerts, reading: viewModel.reading) {
+                let next = afterCircleSharing
+                afterCircleSharing = nil
+                // Let this sheet finish closing before the next one opens.
+                if let next { DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: next) }
+            }
+            .presentationDetents([.large])
+            .thermyxSheetBackground()
         }
         .sheet(item: $verifying) { contact in
             VerifyContactSheet(settings: settings, contact: contact)
                 .presentationDetents([.medium])
-                .presentationBackground(Thermyx.Ink.midnight)
+                .thermyxSheetBackground()
         }
         .confirmationDialog(
             "Call emergency services?",
@@ -88,6 +130,40 @@ struct SafetyView: View {
         }
     }
 
+    // MARK: Header
+
+    private var titleRow: some View {
+        HStack {
+            Text("Safety")
+                .font(ThermyxFont.screenTitle)
+                .tracking(ThermyxTracking.screenTitle)
+                .foregroundStyle(Thermyx.Ink.textPrimary)
+                .accessibilityAddTraits(.isHeader)
+            Spacer()
+            NavigationLink(value: SafetyDestination.device) {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 21, weight: .regular))
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Device and settings")
+        }
+        .padding(.top, Thermyx.Space.titleTop)
+    }
+
+    /// "Normal. Your circle hears from Thermyx at High risk."
+    private var status: some View {
+        let lead = level == .unavailable ? "No readings." : "\(level.rawValue)."
+        let rest = enabledContacts.isEmpty
+            ? " Add someone below and Thermyx alerts them at High risk."
+            : " Your circle hears from Thermyx at High risk."
+        return (Text(lead).font(.custom(ThermyxFont.Family.semibold, size: 15, relativeTo: .subheadline)).foregroundColor(level.tint)
+                + Text(rest).font(ThermyxFont.bodySmall).foregroundColor(Thermyx.Ink.textMuted))
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     /// Texting needs an enabled contact, a paired relay, and texting turned
     /// on at the relay (off until tested with real phones).
     private var canTextCircle: Bool {
@@ -95,80 +171,76 @@ struct SafetyView: View {
     }
 
     private var sosSubtitle: String {
-        if enabledContacts.isEmpty { return "Opens your phone's dialer. Add a trusted contact to also text them" }
-        if !settings.isPairedWithRelay { return "Opens your phone's dialer. Connect to a relay under Advanced to also text your trusted circle" }
-        if !settings.relayTextingEnabled { return "Opens your phone's dialer. Texting your trusted circle isn't turned on yet" }
-        return settings.shareLocationDuringEvents && alerts.location.isAuthorized
-            ? "Opens your phone's dialer and texts your trusted circle your location"
-            : "Opens your phone's dialer and texts your trusted circle"
-    }
-
-    // MARK: - I'm OK
-
-    private var imOKRow: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
-            Button {
-                alerts.sendImOK(level: level, reading: viewModel.reading, settings: settings)
-                okSentAt = .now
-            } label: {
-                Label(canTextCircle ? "Tell my watchers and trusted circle I'm OK" : "Tell my watchers I'm OK", systemImage: "hand.thumbsup.fill")
-            }
-            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
-            .disabled(!settings.isPairedWithRelay)
-            .opacity(settings.isPairedWithRelay ? 1 : 0.5)
-
-            if let okSentAt {
-                Text("Sent at \(okSentAt.formatted(date: .omitted, time: .shortened)).")
-                    .font(ThermyxFont.captionSmall)
-                    .foregroundStyle(Thermyx.Ink.textFaint)
-            }
+        if enabledContacts.isEmpty { return "Opens your dialer. Add a trusted contact to also text them." }
+        if !settings.isPairedWithRelay || !settings.relayTextingEnabled {
+            return "Opens your dialer. Texting your circle isn't set up yet."
         }
+        let names = enabledContacts.prefix(2).map { $0.name.components(separatedBy: " ").first ?? $0.name }
+        let who = enabledContacts.count > 2 ? "your circle" : names.joined(separator: " and ")
+        return settings.shareLocationDuringEvents && alerts.location.isAuthorized
+            ? "Also alerts \(who) with your location"
+            : "Also alerts \(who)"
     }
 
     private var enabledContacts: [ThermyxContact] {
         settings.contacts.filter(\.enabled)
     }
 
-    // MARK: - SOS
-    //
-    // Top of the screen, where a gloved thumb lands, behind one confirmation
-    // so a pocket press does not dial emergency services.
+    // MARK: Readiness
 
-    private var sosCard: some View {
-        Button {
-            showingSOSConfirmation = true
-        } label: {
-            HStack(spacing: Thermyx.Space.l) {
-                Circle()
-                    .fill(Color.white.opacity(0.16))
-                    .frame(width: 52, height: 52)
-                    .overlay {
-                        Text("SOS")
-                            .narrowLabel(ThermyxFont.statusPillLarge, tracking: 1, color: .white)
-                    }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Call 911")
-                        .font(ThermyxFont.cardTitle)
-                        .tracking(-0.3)
-                        .foregroundStyle(.white)
-                    Text(sosSubtitle)
-                        .font(ThermyxFont.caption)
-                        .foregroundStyle(.white.opacity(0.92))
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
+    /// The iOS switches the safety features need, each with the button that
+    /// turns it on. Gone once they're all on.
+    @ViewBuilder
+    private var readiness: some View {
+        let needsLocation = settings.shareLocationDuringEvents && !location.isAuthorized
+        if !permissions.notificationsAllowed || needsLocation {
+            VStack(spacing: Thermyx.Space.item) {
+                PermissionPrompt(symbol: "bell.badge.fill", title: "Notifications",
+                                 detail: "So Thermyx can warn you when the app isn't open.",
+                                 status: .init(permissions.notifications)) {
+                    Task { await permissions.requestNotifications() }
                 }
-
-                Spacer(minLength: 0)
+                if needsLocation {
+                    PermissionPrompt(symbol: "location.fill", title: "Location",
+                                     detail: "You chose to share where you are during an emergency. Thermyx needs location for that.",
+                                     status: .init(location.authorization)) {
+                        location.requestPermission()
+                    }
+                }
             }
-            .padding(Thermyx.Space.xxl)
-            .frame(maxWidth: .infinity, minHeight: Thermyx.minimumTapTarget, alignment: .leading)
-            .background(Thermyx.Ink.alarmGradient, in: RoundedRectangle(cornerRadius: Thermyx.Radius.section, style: .continuous))
-            .contentShape(.rect)
+            .padding(.top, Thermyx.Space.m)
+            .animation(SiteMotion.settle, value: permissions.notifications)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Call 911")
-        .accessibilityHint("Dials emergency services and notifies your trusted circle")
+    }
+
+    // MARK: I'm OK
+
+    @ViewBuilder
+    private var imOKRow: some View {
+        if settings.isPairedWithRelay {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    alerts.sendImOK(level: level, reading: viewModel.reading, settings: settings)
+                    okSentAt = .now
+                } label: {
+                    Label(canTextCircle ? "Tell my watchers and circle I'm OK" : "Tell my watchers I'm OK", systemImage: "hand.thumbsup")
+                }
+                .buttonStyle(ThermyxSecondaryButtonStyle())
+                if let okSentAt {
+                    Text("Sent at \(okSentAt.formatted(date: .omitted, time: .shortened)).")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                }
+            }
+            .padding(.top, Thermyx.Space.m)
+        }
+    }
+
+    /// The first contact or watcher waits for "What your circle gets".
+    private func explainFirst(_ action: @escaping () -> Void) {
+        if settings.circlePrivacyAcknowledged { action(); return }
+        afterCircleSharing = action
+        showingCircleSharing = true
     }
 
     private func placeEmergencyCall() {
@@ -176,20 +248,19 @@ struct SafetyView: View {
             level: .critical,
             reading: viewModel.reading,
             settings: settings,
-            reason: "Manual SOS from the Safety screen."
+            trigger: .pressed
         )
         if !EmergencyCall.dial() { showingCannotCall = true }
     }
 
-    // MARK: - Escalation ladder
+    // MARK: Levels
 
-    private var escalationLadder: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Escalation ladder")
-
-            // Each rung owns its own dot and connector, so the rail tracks the
-            // row heights instead of distributing dots evenly down a separate
-            // column and drifting out of alignment.
+    private var ladder: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
+            Text("What happens at each level")
+                .font(ThermyxFont.sectionTitle)
+                .foregroundStyle(Thermyx.Ink.textPrimary)
+                .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) {
                 ForEach(Array(ThermyxRiskLevel.ladder.enumerated()), id: \.offset) { index, rung in
                     rungRow(rung, isLast: index == ThermyxRiskLevel.ladder.count - 1)
@@ -198,86 +269,88 @@ struct SafetyView: View {
         }
     }
 
-    @ViewBuilder
     private func rungRow(_ rung: ThermyxRiskLevel, isLast: Bool) -> some View {
         let isCurrent = rung == level
-        let isPassed = level.severity > rung.severity
-        let dotSize: CGFloat = isCurrent ? 16 : 12
-
-        HStack(alignment: .top, spacing: Thermyx.Space.m) {
+        return HStack(alignment: .top, spacing: 16) {
             VStack(spacing: 0) {
-                Circle()
-                    .fill(isCurrent ? rung.tint : (isPassed ? Thermyx.Ink.ice : Thermyx.Ink.textSupporting.opacity(0.3)))
-                    .frame(width: dotSize, height: dotSize)
-                    .overlay {
-                        if isCurrent {
-                            Circle()
-                                .strokeBorder(rung.tint.opacity(0.2), lineWidth: 4)
-                                .frame(width: dotSize + 8, height: dotSize + 8)
-                        }
+                Group {
+                    if isCurrent {
+                        Circle().fill(rung.tint)
+                            .frame(width: 14, height: 14)
+                            .background(Circle().fill(rung.tint.opacity(0.18)).frame(width: 22, height: 22))
+                    } else if rung == .critical {
+                        Circle().fill(rung.tint).frame(width: 12, height: 12)
+                    } else {
+                        Circle().strokeBorder(rung.tint, lineWidth: 2).frame(width: 12, height: 12)
                     }
-                    .frame(height: 24)
-
+                }
+                .frame(width: 22, height: 20)
                 if !isLast {
-                    Rectangle()
-                        .fill(Thermyx.Ink.textSupporting.opacity(0.25))
-                        .frame(width: 2)
-                        .frame(maxHeight: .infinity)
+                    Rectangle().fill(Thermyx.Tint.track).frame(width: 2).frame(maxHeight: .infinity)
+                        .padding(.vertical, 4)
                 }
             }
-            .frame(width: 24)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(isCurrent ? "\(rung.rawValue) · you are here" : rung.rawValue)
-                    .narrowLabel(
-                        ThermyxFont.statusPillLarge,
-                        tracking: 1.8,
-                        color: isCurrent ? rung.tint : Thermyx.Ink.textSupporting
-                    )
-                Text(rung.ladderDetail)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack {
+                    Text(rung.rawValue)
+                        .font(ThermyxFont.rowTitle)
+                        .foregroundStyle(isCurrent ? rung.tint : Thermyx.Ink.textPrimary)
+                    Spacer()
+                    if isCurrent {
+                        Text("You're here")
+                            .font(.custom(ThermyxFont.Family.medium, size: 13, relativeTo: .caption))
+                            .foregroundStyle(rung.tint)
+                    }
+                }
+                Text(ladderText(rung))
                     .font(ThermyxFont.caption)
-                    .foregroundStyle(isCurrent ? Thermyx.Ink.textSecondary : Thermyx.Ink.textSupporting)
+                    .foregroundStyle(Thermyx.Ink.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .modifier(CurrentRungHighlight(isCurrent: isCurrent, tint: rung.tint))
-            .padding(.bottom, isLast ? 0 : Thermyx.Space.l)
+            .padding(.bottom, isLast ? 0 : 18)
         }
         .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
     }
 
-    // MARK: - Trusted circle
+    private func ladderText(_ rung: ThermyxRiskLevel) -> String {
+        switch rung {
+        case .high: return "Stop, hydrate, cool down. Trusted circle notified. Heating locks out."
+        default: return rung.ladderDetail
+        }
+    }
+
+    // MARK: Trusted circle
 
     private var trustedCircle: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
-            SectionLabel("Trusted circle · \(settings.contacts.count) of \(ThermyxSettingsStore.maxContacts)") {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Trusted circle")
+                    .font(ThermyxFont.sectionTitle)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                    .accessibilityAddTraits(.isHeader)
+                Text("\(settings.contacts.count) of \(ThermyxSettingsStore.maxContacts)")
+                    .font(ThermyxFont.monoCaption)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+                Spacer()
                 if settings.canAddContact {
-                    Button {
-                        showingAddContact = true
-                    } label: {
-                        Text("+ Add")
-                            .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.ice)
-                            .frame(minWidth: Thermyx.minimumTapTarget, minHeight: Thermyx.minimumTapTarget)
-                            .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Add a trusted contact")
+                    Button("Add") { explainFirst { showingAddContact = true } }
+                        .font(.custom(ThermyxFont.Family.medium, size: 15, relativeTo: .subheadline))
+                        .foregroundStyle(Thermyx.Ink.ice)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
+                        .accessibilityLabel("Add a trusted contact")
                 }
             }
-
             if settings.contacts.isEmpty {
-                ThermyxEmptyState(
-                    title: "No trusted contacts",
-                    message: "Add someone who should hear about a high-risk escalation. Nothing is shared until you add them and turn them on.",
-                    systemImage: "person.2",
-                    actionTitle: "Add a contact",
-                    action: { showingAddContact = true }
-                )
+                Text("Add someone who should hear about a High-risk escalation. Nothing is shared until you add them.")
+                    .font(ThermyxFont.bodySmall)
+                    .foregroundStyle(Thermyx.Ink.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
             } else {
-                ForEach(settings.contacts) { contact in
-                    ContactRow(contact: contact) {
+                ForEach(Array(settings.contacts.enumerated()), id: \.element.id) { index, contact in
+                    ContactRow(contact: contact, isLast: index == settings.contacts.count - 1) {
                         settings.toggleContact(contact)
                     }
                     .contextMenu {
@@ -285,109 +358,214 @@ struct SafetyView: View {
                     }
                     if settings.relayContactVerification, settings.relayRole == "wearer", contact.verifiedAt == nil {
                         Button("Confirm \(contact.name)'s number") { verifying = contact }
-                            .font(ThermyxFont.captionSmall.weight(.semibold))
+                            .font(ThermyxFont.controlLabel)
                             .foregroundStyle(Thermyx.Ink.ice)
                             .frame(minHeight: Thermyx.minimumTapTarget)
                     }
                 }
-                Text(settings.canAddContact
-                     ? "Up to \(ThermyxSettingsStore.maxContacts) people. Touch and hold a contact to remove it."
-                     : "Your circle is full (\(ThermyxSettingsStore.maxContacts) people). Touch and hold a contact to remove it.")
-                    .font(ThermyxFont.captionSmall)
-                    .foregroundStyle(Thermyx.Ink.textFaint)
                 if !settings.relayTextingEnabled, !enabledContacts.isEmpty {
-                    TextingPreviewCard(settings: settings, level: level, reasons: viewModel.assessment.reasons)
+                    TextingPreviewCard(settings: settings, alerts: alerts, reading: viewModel.reading)
+                        .padding(.top, 10)
                 }
+            }
+            if !settings.contacts.isEmpty || settings.isPairedWithRelay {
+                CircleSettingsRows(settings: settings, alerts: alerts, level: level) {
+                    showingCircleSharing = true
+                }
+                .padding(.top, Thermyx.Space.xs)
             }
         }
     }
 
-    private var advancedRow: some View {
-        NavigationLink(value: SafetyDestination.advanced) {
-            ThermyxNavigationRow(
-                title: "Advanced",
-                detail: "Device, relay, firmware",
-                systemImage: "gearshape.fill",
-                iconTint: Thermyx.Ink.textSupporting,
-                iconFill: Thermyx.Tint.neutralFill
-            )
-        }
-        .buttonStyle(.plain)
-    }
+    // MARK: Footnote
 
-    // MARK: - Brand and legal
-    //
-    // The horizontal lockup is navy ink, so it needs a light ground — on
-    // Midnight it sits at roughly 1.4:1. It gets one here, and doubles as the
-    // entry point to the policies, which is where people look for them.
-
-    private var brandPlate: some View {
-        VStack(spacing: Thermyx.Space.m) {
-            Button {
-                legalDocument = .privacy
-            } label: {
-                VStack(spacing: Thermyx.Space.s) {
-                    Image("ThermyxWordmark")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(maxWidth: 200)
-                    Text("Privacy Policy · Terms of Service")
-                        .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Color(hex: 0x1B3552))
-                }
-                .padding(.vertical, Thermyx.Space.xl)
-                .padding(.horizontal, Thermyx.Space.xxl)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: Thermyx.minimumTapTarget)
-                .background(Color(hex: 0xF4F6FA), in: RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous))
-                .contentShape(.rect)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Thermyx. Privacy Policy and Terms of Service")
-            .accessibilityHint("Opens the legal documents")
-
+    private var footnote: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.item) {
             Text("Thermyx is an investigational heat-risk warning aid. It does not measure core body temperature and does not diagnose heat illness.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
-                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.top, Thermyx.Space.s)
-    }
-
-    private var notificationNote: some View {
-        Text(alerts.notificationsAuthorized
-             ? "Alerts escalate only from real readings received by the connected insole."
-             : "Notifications are turned off, so Thermyx can only warn you while the app is open. Turn them on in Settings.")
-            .font(ThermyxFont.captionSmall)
-            .foregroundStyle(alerts.notificationsAuthorized ? Thermyx.Ink.textFaint : Thermyx.Ink.amber)
-            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
-/// The current rung sits in a tinted card; the others are plain rows.
-private struct CurrentRungHighlight: ViewModifier {
-    let isCurrent: Bool
-    let tint: Color
+/// Hold for two seconds to call 911. Built to read as a physical emergency
+/// button: deep red with a lit top edge and a glaze, sitting on its own
+/// glow. It presses in the moment it's touched, a ring fills around the
+/// handset as it's held, and letting go early cancels. VoiceOver gets the
+/// same call through an action, behind a confirmation.
+struct HoldToCallButton: View {
+    let subtitle: String
+    let onCall: () -> Void
+    let onAccessibleCall: () -> Void
 
-    func body(content: Content) -> some View {
-        if isCurrent {
-            content
-                .padding(.horizontal, Thermyx.Space.m)
-                .padding(.vertical, Thermyx.Space.s)
-                .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: Thermyx.Radius.button, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Thermyx.Radius.button, style: .continuous)
-                        .strokeBorder(tint.opacity(0.35), lineWidth: Thermyx.Stroke.hairline)
+    @State private var progress: Double = 0
+    @State private var holding = false
+    @State private var fired = false
+    @State private var ticker: Task<Void, Never>?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let holdSeconds = 2.0
+    private static let radius: CGFloat = 24
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Self.radius, style: .continuous) }
+
+    var body: some View {
+        HStack(spacing: Thermyx.Space.l) {
+            handset
+            VStack(alignment: .leading, spacing: 3) {
+                Text(fired ? "Calling 911" : "Hold to call 911")
+                    .font(.custom(ThermyxFont.Family.bold, size: 20, relativeTo: .title3))
+                    .tracking(-0.2)
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.25), radius: 0, y: 1)
+                Text(fired ? "Your circle is being alerted" : subtitle)
+                    .font(.custom(ThermyxFont.Family.medium, size: 13, relativeTo: .caption))
+                    .foregroundStyle(.white.opacity(0.86))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Text(holding && !fired ? String(format: "%.1f", max(0, Self.holdSeconds * (1 - progress))) : "2 s")
+                .font(.custom(ThermyxFont.Family.monoMedium, size: 13, relativeTo: .caption))
+                .monospacedDigit()
+                .foregroundStyle(.white.opacity(0.78))
+                .contentTransition(.numericText(countsDown: true))
+                .opacity(fired ? 0 : 1)
+        }
+        .padding(.leading, Thermyx.Space.l)
+        .padding(.trailing, Thermyx.Space.xl)
+        .frame(maxWidth: .infinity, minHeight: 96)
+        .background { face }
+        .overlay { bevel }
+        .compositingGroup()
+        .shadow(color: Thermyx.Ink.emergency.opacity(holding ? 0.25 : 0.42), radius: holding ? 10 : 20, y: holding ? 4 : 10)
+        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+        .scaleEffect(holding ? 0.985 : 1)
+        .animation(SiteMotion.press, value: holding)
+        .contentShape(shape)
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in if !holding { begin() } }
+                .onEnded { _ in end() }
+        )
+        .sensoryFeedback(.impact(weight: .light), trigger: holding) { _, now in now }
+        .sensoryFeedback(.impact(weight: .heavy), trigger: fired) { _, now in now }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Call 911")
+        .accessibilityValue(subtitle)
+        .accessibilityHint("Touch and hold for two seconds. Or use the action to call after confirming.")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onAccessibleCall() }
+    }
+
+    /// The white handset disc, ringed by the hold's progress.
+    private var handset: some View {
+        ZStack {
+            Circle()
+                .fill(LinearGradient(colors: [.white, Color(hex: 0xF1E4E4)], startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.28), radius: 3, y: 2)
+            Image(systemName: fired ? "phone.arrow.up.right.fill" : "phone.fill")
+                .font(.system(size: 21, weight: .semibold))
+                .foregroundStyle(Thermyx.Ink.emergencyDeep)
+                .contentTransition(.symbolEffect(.replace))
+            Circle()
+                .trim(from: 0, to: progress)
+                .stroke(.white, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .padding(-6)
+                .opacity(progress > 0 ? 1 : 0)
+            Circle()
+                .stroke(.white.opacity(0.22), lineWidth: 3)
+                .padding(-6)
+                .opacity(holding || fired ? 1 : 0)
+        }
+        .frame(width: 52, height: 52)
+        .padding(6)
+    }
+
+    /// Red, lit from above, with the hold sweeping a darker red across it.
+    private var face: some View {
+        ZStack(alignment: .leading) {
+            shape.fill(LinearGradient(colors: [Color(hex: 0xF4433F), Thermyx.Ink.emergency, Color(hex: 0xB3121A)],
+                                      startPoint: .top, endPoint: .bottom))
+            GeometryReader { proxy in
+                Rectangle()
+                    .fill(Thermyx.Ink.emergencyDeep.opacity(0.55))
+                    .frame(width: proxy.size.width * progress)
+            }
+            .clipShape(shape)
+            // The glaze: a soft sheet of light across the top half, inset
+            // from the edges as a highlight on a curved face would be.
+            shape
+                .inset(by: 2)
+                .fill(LinearGradient(stops: [.init(color: .white.opacity(0.30), location: 0),
+                                             .init(color: .white.opacity(0.08), location: 0.42),
+                                             .init(color: .white.opacity(0), location: 0.55)],
+                                     startPoint: .top, endPoint: .bottom))
+                .blendMode(.screen)
+            // A faint specular streak along the upper left.
+            Ellipse()
+                .fill(RadialGradient(colors: [.white.opacity(0.22), .white.opacity(0)], center: .center, startRadius: 0, endRadius: 90))
+                .frame(width: 180, height: 46)
+                .offset(x: 30, y: -30)
+                .blendMode(.screen)
+                .allowsHitTesting(false)
+        }
+        .clipShape(shape)
+    }
+
+    /// Light catching the top edge, and a darker rim where the face meets
+    /// the screen.
+    private var bevel: some View {
+        ZStack {
+            shape.strokeBorder(Color(hex: 0x6E070C).opacity(0.85), lineWidth: 1)
+            shape
+                .inset(by: 1)
+                .strokeBorder(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.06), .clear],
+                                             startPoint: .top, endPoint: .bottom), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func begin() {
+        holding = true
+        fired = false
+        ticker?.cancel()
+        ticker = Task { @MainActor in
+            let start = Date.now
+            while !Task.isCancelled {
+                let elapsed = Date.now.timeIntervalSince(start)
+                progress = min(1, elapsed / Self.holdSeconds)
+                if progress >= 1 {
+                    fired = true
+                    onCall()
+                    return
                 }
-                .padding(.vertical, -6)
+                try? await Task.sleep(for: .milliseconds(16))
+            }
+        }
+    }
+
+    private func end() {
+        holding = false
+        ticker?.cancel()
+        if !fired {
+            withAnimation(reduceMotion ? SiteMotion.fade : SiteMotion.settle) { progress = 0 }
         } else {
-            content
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation(SiteMotion.settle) { progress = 0; fired = false }
+            }
         }
     }
 }
 
+/// One trusted contact: initials, name, when they're alerted, and a switch.
 struct ContactRow: View {
     let contact: ThermyxContact
+    var isLast = false
     let toggle: () -> Void
 
     private var initials: String {
@@ -400,55 +578,35 @@ struct ContactRow: View {
     }
 
     var body: some View {
-        Button(action: toggle) {
-            HStack(spacing: Thermyx.Space.m) {
-                Circle()
-                    .fill(Thermyx.Ink.elevated)
-                    .frame(width: 38, height: 38)
-                    .overlay {
-                        Text(initials.isEmpty ? "?" : initials)
-                            .font(ThermyxFont.rowTitle)
-                            .foregroundStyle(contact.enabled ? Thermyx.Ink.ice : Thermyx.Ink.textSupporting)
-                    }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(contact.name)
-                        .font(ThermyxFont.rowTitleRegular)
-                        .foregroundStyle(Thermyx.Ink.textPrimary)
-                    Text(contact.verifiedAt == nil ? contact.phoneNumber : "\(contact.phoneNumber) · confirmed")
-                        .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Ink.textSupporting)
+        HStack(spacing: Thermyx.Space.m) {
+            Circle()
+                .fill(Thermyx.Ink.elevated)
+                .frame(width: 38, height: 38)
+                .overlay {
+                    Text(initials.isEmpty ? "?" : initials)
+                        .font(.custom(ThermyxFont.Family.semibold, size: 14, relativeTo: .subheadline))
+                        .foregroundStyle(contact.enabled ? Thermyx.Ink.ice : Thermyx.Ink.textFaint)
                 }
-
-                Spacer(minLength: Thermyx.Space.xs)
-
-                Text(contact.enabled ? "On" : "Paused")
-                    .narrowLabel(
-                        ThermyxFont.axisLabel,
-                        tracking: 1.4,
-                        color: contact.enabled ? Thermyx.Ink.ice : Thermyx.Ink.textSupporting
-                    )
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(
-                        contact.enabled ? Thermyx.Tint.liveFill : Thermyx.Tint.neutralFill,
-                        in: Capsule()
-                    )
+            VStack(alignment: .leading, spacing: 1) {
+                Text(contact.name)
+                    .font(ThermyxFont.rowTitle)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                Text(contact.enabled
+                     ? (contact.verifiedAt == nil ? "Alerted at High" : "Confirmed · alerted at High")
+                     : "Paused")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textMuted)
             }
-            .padding(.horizontal, Thermyx.Space.l)
-            .padding(.vertical, 13)
-            .frame(minHeight: Thermyx.minimumTapTarget)
-            .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.compact, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: Thermyx.Radius.compact, style: .continuous)
-                    .strokeBorder(Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
-            }
-            .contentShape(.rect)
+            Spacer(minLength: Thermyx.Space.xs)
+            Toggle("", isOn: Binding(get: { contact.enabled }, set: { _ in toggle() }))
+                .labelsHidden()
+                .tint(Thermyx.Ink.signal)
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 10)
+        .overlay(alignment: .bottom) { if !isLast { ThermyxDivider() } }
+        .accessibilityElement(children: .combine)
         .accessibilityLabel("\(contact.name), \(contact.phoneNumber)")
         .accessibilityValue(contact.enabled ? "Alerts on" : "Alerts paused")
-        .accessibilityHint("Double tap to toggle alerts for this contact")
     }
 }
 
@@ -520,6 +678,7 @@ struct AddContactSheet: View {
 }
 
 enum SafetyDestination: Hashable {
+    case device
     case advanced
 }
 
@@ -590,7 +749,7 @@ struct CriticalAlertView: View {
 
             VStack(spacing: Thermyx.Space.s) {
                 Button {
-                    notifyCircle(reason: "The wearer pressed Call 911 from the Critical alert.")
+                    notifyCircle(.pressed)
                     if !EmergencyCall.dial() { showingCannotCall = true }
                 } label: {
                     Label("Call 911", systemImage: "phone.fill")
@@ -617,7 +776,7 @@ struct CriticalAlertView: View {
                 remaining -= 1
             }
             if !Task.isCancelled && !circleNotified {
-                notifyCircle(reason: "No response to a Critical alert for \(Self.countdownSeconds) seconds.")
+                notifyCircle(.noResponse)
             }
         }
         .sheet(isPresented: $showingWhy) {
@@ -644,12 +803,12 @@ struct CriticalAlertView: View {
         return "Tap I'm OK if you're safe. Texting isn't turned on yet, so nobody will be texted automatically. Approved watchers see that you're at Critical."
     }
 
-    private func notifyCircle(reason: String) {
+    private func notifyCircle(_ trigger: ThermyxAlertCoordinator.SOSTrigger) {
         guard !circleNotified else { return }
         circleNotified = true
         // Always tell the relay, so approved watchers see it; contacts are
         // texted only when texting is on (the coordinator decides).
-        alerts.notifyTrustedCircle(level: .critical, reading: viewModel.reading, settings: settings, reason: reason)
+        alerts.notifyTrustedCircle(level: .critical, reading: viewModel.reading, settings: settings, trigger: trigger)
     }
 }
 

@@ -2,7 +2,7 @@
 
 **Effective date:** 2026
 
-**Last updated:** September 21, 2026
+**Last updated:** October 15, 2026
 
 These Terms are a binding agreement between you and Thermyx Technologies
 ("Thermyx", "we", "us") covering the Thermyx iPhone application, the Thermyx
@@ -224,7 +224,34 @@ Terms; we may assign them to a successor.
 We may update these Terms. Material changes will be surfaced in the app before
 they take effect, and continued use afterwards means you accept them.
 
-## 16. Contact
+## 16. AI Insights
+
+AI Insights is an **optional** feature, **off by default**, that writes a short
+summary of a day of wear with two or three suggestions, once a day. When you
+turn it on:
+
+- the summary is written by **Claude, a large language model made by
+  Anthropic, PBC**, reached through the Claude API using an API key held by
+  the Thermyx relay, not by you;
+- only that day's totals and averages are sent (see section 2.8 of the Privacy
+  Policy); live readings, your name, your contacts and your location are not;
+- you can turn it off at any time in the app, under the profile step during
+  setup or Safety → Device → AI Insights. Nothing is sent while it is off.
+
+**AI output can be wrong.** A summary can misread your numbers, leave out what
+matters, or suggest something that does not suit you. It is general
+information about your own readings, **not medical advice, a diagnosis, or a
+safety warning.** Thermyx's risk levels and alerts come from fixed rules on
+your phone and never from AI Insights; if the two seem to disagree, follow the
+risk level and section 1 of these Terms. Do not rely on a summary to decide
+whether you are safe.
+
+AI Insights depends on the relay and on Anthropic's service, and may be
+unavailable, rate-limited or withdrawn at any time. Your use of it is also
+subject to Anthropic's usage policies, which forbid, among other things,
+attempting to misuse the model.
+
+## 17. Contact
 
 Thermyx Technologies
 

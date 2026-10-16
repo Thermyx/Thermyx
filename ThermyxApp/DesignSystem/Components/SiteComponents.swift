@@ -1,8 +1,7 @@
 import SwiftUI
 
 // The website's visual language, native: topographic contours on black,
-// Instrument Serif headlines that resolve out of a blur, glass surfaces and
-// pill buttons that answer the finger on touch-down.
+// glass surfaces, and buttons that answer the finger on touch-down.
 
 // MARK: - Motion
 
@@ -41,7 +40,11 @@ struct TopographyBackground: View {
             // is rebuilt.
             let t = reduceMotion ? Self.stillTime : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 86_400)
             GeometryReader { proxy in
+                // Filled black first: until the shader has compiled (the
+                // first launch after install), the effect is skipped and the
+                // rectangle draws as it is. Unfilled, that's a white sheet.
                 Rectangle()
+                    .fill(Thermyx.Site.bg)
                     .colorEffect(shader(size: proxy.size, time: t))
             }
         }
@@ -64,162 +67,31 @@ struct TopographyBackground: View {
     }
 }
 
-// MARK: - Headline
-
-/// A display headline whose words resolve out of a blur one after another,
-/// like React Bits "Blur Text". Words wrapped in `*asterisks*` are set in
-/// Instrument Serif Italic. Under Reduce Motion the whole line fades in.
-struct RevealHeadline: View {
-    let text: String
-    var font: Font = ThermyxFont.display
-    var italicFont: Font = ThermyxFont.displayItalic
-    var tracking: CGFloat = ThermyxTracking.display
-    var color: Color = Thermyx.Site.text
-    var alignment: HorizontalAlignment = .leading
-    var delay: Double = 0
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown = false
-
-    private struct Word: Identifiable {
-        let id: Int
-        let text: String
-        let italic: Bool
-        let lineBreak: Bool
-    }
-
-    private var words: [Word] {
-        var result: [Word] = []
-        var italic = false
-        for (lineIndex, line) in text.components(separatedBy: "\n").enumerated() {
-            for (index, raw) in line.split(separator: " ").enumerated() {
-                var word = String(raw)
-                let opens = word.hasPrefix("*")
-                if opens { italic = true; word.removeFirst() }
-                let closes = word.hasSuffix("*")
-                if closes { word.removeLast() }
-                result.append(Word(id: result.count, text: word, italic: italic, lineBreak: lineIndex > 0 && index == 0))
-                if closes { italic = false }
-            }
-        }
-        return result
-    }
-
-    var body: some View {
-        WordFlow(alignment: alignment, spacing: 0.26) {
-            ForEach(words) { word in
-                Text(word.text)
-                    .font(word.italic ? italicFont : font)
-                    .tracking(tracking)
-                    .foregroundStyle(color)
-                    .layoutValue(key: LineBreakBefore.self, value: word.lineBreak)
-                    .blur(radius: shown || reduceMotion ? 0 : 10)
-                    .opacity(shown ? 1 : 0)
-                    .offset(y: shown || reduceMotion ? 0 : 10)
-                    .animation(
-                        reduceMotion ? SiteMotion.fade.delay(delay) : .spring(response: 0.7, dampingFraction: 1).delay(delay + Double(word.id) * 0.07),
-                        value: shown
-                    )
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(text.replacingOccurrences(of: "*", with: "").replacingOccurrences(of: "\n", with: " "))
-        .accessibilityAddTraits(.isHeader)
-        .onAppear { shown = true }
-    }
-}
-
-private struct LineBreakBefore: LayoutValueKey {
-    static let defaultValue = false
-}
-
-/// Lays words out left to right and wraps them, honouring explicit breaks.
-/// `spacing` is a fraction of the line height, so it scales with the font.
-private struct WordFlow: Layout {
-    var alignment: HorizontalAlignment
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let lines = arrange(width: proposal.width ?? .infinity, subviews: subviews)
-        let width = lines.map(\.width).max() ?? 0
-        let height = lines.reduce(0) { $0 + $1.height }
-        return CGSize(width: proposal.width ?? width, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for line in arrange(width: bounds.width, subviews: subviews) {
-            var x: CGFloat
-            switch alignment {
-            case .center: x = bounds.minX + (bounds.width - line.width) / 2
-            case .trailing: x = bounds.maxX - line.width
-            default: x = bounds.minX
-            }
-            for item in line.items {
-                subviews[item.index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(item.size))
-                x += item.size.width + item.gap
-            }
-            y += line.height
-        }
-    }
-
-    private struct Line {
-        var items: [(index: Int, size: CGSize, gap: CGFloat)] = []
-        var width: CGFloat = 0
-        var height: CGFloat = 0
-    }
-
-    private func arrange(width: CGFloat, subviews: Subviews) -> [Line] {
-        var lines: [Line] = [Line()]
-        for (index, subview) in subviews.enumerated() {
-            let size = subview.sizeThatFits(.unspecified)
-            let gap = size.height * spacing
-            let forced = subview[LineBreakBefore.self]
-            let needed = lines[lines.count - 1].items.isEmpty ? size.width : lines[lines.count - 1].width + gap + size.width
-            if (forced || needed > width), !lines[lines.count - 1].items.isEmpty {
-                lines.append(Line())
-            }
-            var line = lines[lines.count - 1]
-            if let last = line.items.indices.last {
-                line.items[last].gap = gap
-                line.width += gap
-            }
-            line.items.append((index, size, 0))
-            line.width += size.width
-            // Display serifs have tall ascenders; tighten the line a touch.
-            line.height = max(line.height, size.height * 0.94)
-            lines[lines.count - 1] = line
-        }
-        return lines.filter { !$0.items.isEmpty }
-    }
-}
-
 // MARK: - Buttons
 
-/// The website's primary action: a signal-blue pill with ink text. Presses
-/// in on touch-down and dims while disabled.
+/// The primary action: a white slab with near-black type, as in the v2
+/// design. Presses in on touch-down and dims while disabled.
 struct SitePrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(ThermyxFont.buttonLabel)
-            .foregroundStyle(isEnabled ? Thermyx.Ink.onSignal : Thermyx.Site.textFaint)
+            .foregroundStyle(isEnabled ? Thermyx.Ink.onPrimary : Thermyx.Site.textFaint)
             .frame(maxWidth: .infinity)
             .frame(minHeight: 56)
             .padding(.horizontal, Thermyx.Space.xl)
-            .background(isEnabled ? Thermyx.Ink.signal : Thermyx.Site.raised, in: Capsule())
-            .overlay { Capsule().strokeBorder(isEnabled ? .clear : Thermyx.Site.hairline, lineWidth: 1) }
-            .shadow(color: Thermyx.Ink.signal.opacity(isEnabled ? 0.35 : 0), radius: 18, y: 6)
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .opacity(configuration.isPressed ? 0.9 : 1)
+            .background(isEnabled ? Thermyx.Ink.textPrimary : Thermyx.Site.raised,
+                        in: RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous))
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .opacity(configuration.isPressed ? 0.88 : 1)
             .animation(SiteMotion.press, value: configuration.isPressed)
             .animation(SiteMotion.settle, value: isEnabled)
-            .contentShape(Capsule())
+            .contentShape(RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous))
     }
 }
 
-/// The quiet action: a glass pill with a hairline.
+/// The quiet action: a hairline-bordered slab.
 struct SiteSecondaryButtonStyle: ButtonStyle {
     var tint: Color = Thermyx.Site.text
 
@@ -230,12 +102,14 @@ struct SiteSecondaryButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity)
             .frame(minHeight: 52)
             .padding(.horizontal, Thermyx.Space.xl)
-            .background(Thermyx.Site.glass, in: Capsule())
-            .overlay { Capsule().strokeBorder(Thermyx.Site.hairlineStrong, lineWidth: 1) }
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .overlay {
+                RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous)
+                    .strokeBorder(Thermyx.Site.hairlineStrong, lineWidth: 1)
+            }
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
             .opacity(configuration.isPressed ? 0.8 : 1)
             .animation(SiteMotion.press, value: configuration.isPressed)
-            .contentShape(Capsule())
+            .contentShape(RoundedRectangle(cornerRadius: Thermyx.Radius.action, style: .continuous))
     }
 }
 
