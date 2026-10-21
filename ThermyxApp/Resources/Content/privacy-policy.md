@@ -360,7 +360,7 @@ protection of vital interests (6(1)(d)) for emergency escalation. Health data is
 special-category data processed on the basis of explicit consent (Article
 9(2)(a)). You may lodge a complaint with your supervisory authority.
 
-To make a request, contact us at [CONTACT EMAIL]. We will respond within the
+To make a request, contact us at thermyx.contact@gmail.com. We will respond within the
 period required by applicable law.
 
 ## 8. Trusted contacts and other people's data
@@ -368,13 +368,13 @@ period required by applicable law.
 When you add a trusted contact you are giving us another person's name and phone
 number. **You must have their permission.** You are responsible for telling them
 what they will receive and why. If a trusted contact wants their details removed
-they can ask you, or contact us at [CONTACT EMAIL].
+they can ask you, or contact us at thermyx.contact@gmail.com.
 
 ## 9. Children
 
 The Service is not directed to children under 13, and we do not knowingly
 collect personal information from them. If you believe a child has provided us
-information, contact [CONTACT EMAIL] and we will delete it. Where the Service is
+information, contact thermyx.contact@gmail.com and we will delete it. Where the Service is
 used by a minor in a supervised setting, a parent or guardian is responsible for
 consenting on their behalf.
 

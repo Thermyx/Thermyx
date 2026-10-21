@@ -128,8 +128,7 @@ actuate the other person's insole, by design.
 
 ## 7. Intellectual property
 
-The Service, excluding third-party components, is owned by [THERMYX LEGAL
-ENTITY] and protected by intellectual property law. Subject to these Terms we
+The Service, excluding third-party components, is owned by Thermyx Technologies and protected by intellectual property law. Subject to these Terms we
 grant you a limited, personal, non-exclusive, non-transferable, revocable
 licence to use the app on Apple devices you own or control.
 
@@ -166,7 +165,7 @@ caused by negligence, or for fraud.
 ## 10. Limitation of liability
 
 TO THE MAXIMUM EXTENT PERMITTED BY LAW, AND SUBJECT TO THE FINAL PARAGRAPH OF
-SECTION 9, NEITHER [THERMYX LEGAL ENTITY] NOR ITS MEMBERS, CONTRIBUTORS, OR
+SECTION 9, NEITHER THERMYX TECHNOLOGIES NOR ITS MEMBERS, CONTRIBUTORS, OR
 SUPPLIERS WILL BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL,
 EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR LOST PROFITS, DATA, GOODWILL, OR BUSINESS
 INTERRUPTION, ARISING OUT OF OR RELATING TO THE SERVICE, WHETHER IN CONTRACT,
@@ -180,7 +179,7 @@ These limits apply even if a limited remedy fails of its essential purpose.
 
 ## 11. Indemnity
 
-You agree to indemnify and hold harmless [THERMYX LEGAL ENTITY] and its members
+You agree to indemnify and hold harmless Thermyx Technologies and its members
 and contributors from any claim, loss, or expense (including reasonable legal
 fees) arising from your misuse of the Service, your breach of these Terms, your
 violation of law, or your infringement of another person's rights — including
@@ -194,15 +193,15 @@ unlawful or unsafe. Sections 1, 2, 3, 7, 9, 10, 11, and 13 survive termination.
 
 ## 13. Governing law and disputes
 
-These Terms are governed by the laws of the State of [STATE], United States,
-without regard to conflict-of-law rules. Courts located in [COUNTY/STATE] have
+These Terms are governed by the laws of the State of Texas, United States,
+without regard to conflict-of-law rules. Courts located in Harris County, Houston have
 exclusive jurisdiction, and you and we consent to their jurisdiction and venue.
 
 If you are a consumer resident elsewhere, this does not deprive you of the
 protection of mandatory provisions of the law of your country of residence, or
 of your right to bring proceedings there.
 
-Before filing a claim, contact us at [CONTACT EMAIL] and give us thirty days to
+Before filing a claim, contact us at thermyx.contact@gmail.com and give us thirty days to
 resolve it informally.
 
 ## 14. Apple

@@ -96,18 +96,18 @@ struct LegalSheet: View {
     /// The documents ship with bracketed fields that only the operator can
     /// fill. Saying so in the app is better than letting a reader trip over
     /// `[CONTACT EMAIL]` and wonder whether the whole thing is fake.
-    private var placeholderNotice: some View {
-        ThermyxCard(padding: Thermyx.Space.l, radius: Thermyx.Radius.compact, fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
-            VStack(alignment: .leading, spacing: 6) {
-                SectionLabel("Before release", color: Thermyx.Ink.amber)
-                Text("Fields shown in brackets — legal entity, contact email, mailing address, governing state, and the effective dates — still need to be filled in. The substance of these documents is final.")
-                    .font(ThermyxFont.captionSmall)
-                    .foregroundStyle(Thermyx.Ink.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .padding(.top, Thermyx.Space.m)
-    }
+    /// private var placeholderNotice: some View {
+    ///     ThermyxCard(padding: Thermyx.Space.l, radius: Thermyx.Radius.compact, fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
+    ///         VStack(alignment: .leading, spacing: 6) {
+    ///             SectionLabel("Before release", color: Thermyx.Ink.amber)
+    ///             Text("Fields shown in brackets — legal entity, contact email, mailing address, governing state, and the effective dates — still need to be filled in. The substance of these documents is final.")
+    ///                 .font(ThermyxFont.captionSmall)
+    ///                 .foregroundStyle(Thermyx.Ink.textSecondary)
+    ///                 .fixedSize(horizontal: false, vertical: true)
+    ///         }
+    ///     }
+    ///     .padding(.top, Thermyx.Space.m)
+    /// }
 
     // MARK: - Blocks
 
