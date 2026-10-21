@@ -15,8 +15,8 @@ struct MovementAdvancedView: View {
     private var bilateral: BilateralDigest {
         BilateralDigest(
             range: settings.insightsRange,
-            style: settings.periodStyle,
-            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.periodStyle)
+            style: settings.insightsStyle,
+            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.insightsStyle, now: settings.insightsNow)
         )
     }
     private var pairs: [(Foot, InsightsDigest)] { bilateral.digests(for: footFilter) }
@@ -24,9 +24,9 @@ struct MovementAdvancedView: View {
     var body: some View {
         ThermyxDetailScreen(
             title: "Advanced",
-            caption: settings.insightsRange.caption(style: settings.periodStyle)
+            caption: settings.insightsCaption
         ) {
-            Text("Every movement channel the insoles reported over this window. Hold any chart to read a value.")
+            Text("Everything the insoles picked up about how you moved. Touch and hold a chart to read it; pinch to zoom.")
                 .font(ThermyxFont.caption)
                 .foregroundStyle(Thermyx.Ink.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -37,32 +37,36 @@ struct MovementAdvancedView: View {
                         .padding(.top, Thermyx.Space.xs)
                 }
                 channel(
-                    "Gait stability", unit: "%",
+                    "Steadiness", unit: "%",
                     points: digest.points { $0.gaitMean.map { $0 * 100 } },
                     color: Thermyx.Ink.ice,
+                    scale: .steadiness,
                     format: { "\(Int($0.rounded()))%" },
-                    note: "Higher is steadier. Your own rolling baseline, not a population norm."
+                    note: "Higher means steadier steps. It's compared with your own usual, not anyone else's."
                 )
                 channel(
-                    "Pressure balance", unit: "%",
+                    "Arch pressure", unit: "%",
                     points: digest.points { $0.balanceMean.map { $0 * 100 } },
                     color: Thermyx.Ink.amber,
+                    scale: .load,
                     format: { "\(Int($0.rounded()))%" },
-                    note: "Share of load carried on the forefoot. 50% is an even split front to back."
+                    note: "How firmly you pressed on the sensor under your arch, from none to full."
                 )
                 channel(
-                    "Cadence", unit: "spm",
+                    "Steps a minute", unit: "steps",
                     points: digest.points(\.cadenceMean),
                     color: Thermyx.Ink.signal,
-                    format: { "\(Int($0.rounded())) spm" },
-                    note: "Steps per minute from the controller's IMU. Needs firmware protocol v3."
+                    scale: .cadence,
+                    format: { "\(Int($0.rounded()))" },
+                    note: "How quickly you were walking. Older insoles don't count this."
                 )
                 channel(
                     "Standing", unit: "%",
                     points: digest.points { $0.standingMean.map { $0 * 100 } },
                     color: Thermyx.Ink.textSecondary,
+                    scale: .share,
                     format: { "\(Int($0.rounded()))%" },
-                    note: "Share of each interval spent loaded but not stepping. Needs firmware protocol v3."
+                    note: "How much of the time you were on your feet but standing still. Older insoles don't count this."
                 )
                 zoneChannels(digest, foot: foot)
             }
@@ -75,7 +79,6 @@ struct MovementAdvancedView: View {
                 )
             }
         }
-        .hidesThermalControlBar()
     }
 
     @ViewBuilder
@@ -84,16 +87,18 @@ struct MovementAdvancedView: View {
         unit: String,
         points: [SeriesPoint],
         color: Color,
+        scale: ChartValueScale,
         format: @escaping (Double) -> String,
         note: String
     ) -> some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel(title)
 
                 if points.count >= 3 {
                     ThermyxTimeSeriesChart(
-                        series: [ChartSeries(id: "\(title)-\(points.count)", name: title, points: points, color: color, isFilled: true)],
+                        series: [ChartSeries(id: "\(title)-\(points.count)", name: title, points: points, color: color,
+                                             isFilled: true, scale: scale)],
                         range: settings.insightsRange,
                         height: 130,
                         format: format,
@@ -120,7 +125,7 @@ struct MovementAdvancedView: View {
     private func zoneChannels(_ digest: InsightsDigest, foot: Foot) -> some View {
         if digest.hasZones {
             ThermyxCard {
-                VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                     SectionLabel(pairs.count > 1 ? "\(foot.label) zone temperatures" : "Zone temperatures")
 
                     ThermyxTimeSeriesChart(

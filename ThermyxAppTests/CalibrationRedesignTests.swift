@@ -1,7 +1,7 @@
 import XCTest
 @testable import ThermyxApp
 
-/// The three-minute calibration's calculus and model, the required About
+/// The three-minute calibration's model, the required About
 /// you answers, and who counts as an admin.
 final class CalibrationRedesignTests: XCTestCase {
 
@@ -16,47 +16,9 @@ final class CalibrationRedesignTests: XCTestCase {
         }
     }
 
-    // MARK: Calculus
-
-    func testSlopeOfALineIsItsGradient() throws {
-        let slope = try XCTUnwrap(ThermalCalculus.slope(times: [0, 1, 2, 3], values: [1, 3, 5, 7]))
-        XCTAssertEqual(slope, 2, accuracy: 1e-9)
-        XCTAssertNil(ThermalCalculus.slope(times: [0, 1], values: [1, 2]), "Needs three points")
-        XCTAssertNil(ThermalCalculus.slope(times: [4, 4, 4], values: [1, 2, 3]), "No spread in time")
-    }
-
-    func testRateIsInDegreesPerMinute() throws {
-        let rate = try XCTUnwrap(ThermalCalculus.rate(ramp(seconds: 30, from: 30, perMinute: 0.6)))
-        XCTAssertEqual(rate, 0.6, accuracy: 1e-6)
-        XCTAssertNil(ThermalCalculus.rate(ramp(seconds: 2, from: 30, perMinute: 0.6)))
-    }
-
-    func testAccumulatedChangeIntegratesTheRate() throws {
-        // 0.6 °C/min for the 27 seconds that have a fitted rate: 0.27 °C.
-        let change = try XCTUnwrap(ThermalCalculus.accumulatedChange(ramp(seconds: 30, from: 30, perMinute: 0.6)))
-        XCTAssertEqual(change, 0.27, accuracy: 0.01)
-        let falling = try XCTUnwrap(ThermalCalculus.accumulatedChange(ramp(seconds: 30, from: 32, perMinute: -1.2)))
-        XCTAssertLessThan(falling, 0)
-    }
-
-    func testOneNoisyReadingDoesntAccumulate() throws {
-        var samples = ramp(seconds: 30, from: 30, perMinute: 0)
-        samples[15].footC = 31
-        let change = try XCTUnwrap(ThermalCalculus.accumulatedChange(samples))
-        XCTAssertEqual(change, 0, accuracy: 0.05, "A spike goes up and comes back down")
-    }
-
-    func testMissingSecondsAreSkipped() throws {
-        var samples = ramp(seconds: 30, from: 30, perMinute: 0.6)
-        for i in 10..<14 { samples[i].footC = nil }
-        XCTAssertEqual(try XCTUnwrap(ThermalCalculus.rate(samples)), 0.6, accuracy: 1e-6)
-    }
-
     func testPhaseSummaryRecordsWhereAndHowTheFootMoved() throws {
         let summary = CalibrationPhaseSummary(activity: .walking, outdoor: true, samples: ramp(seconds: 30, from: 31, perMinute: 1.2, activity: .walking))
         XCTAssertEqual(try XCTUnwrap(summary.footMeanC), 31.29, accuracy: 0.01)
-        XCTAssertEqual(try XCTUnwrap(summary.ratePerMinute), 1.2, accuracy: 1e-6)
-        XCTAssertGreaterThan(try XCTUnwrap(summary.accumulatedC), 0.5)
         XCTAssertEqual(summary.cadenceMean, 104)
         XCTAssertEqual(summary.seconds, 30)
     }
@@ -102,7 +64,7 @@ final class CalibrationRedesignTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(model.walkingStability?.mean), 0.9, accuracy: 1e-9)
         XCTAssertEqual(try XCTUnwrap(model.walkingCadence?.mean), 104, accuracy: 1e-9)
         XCTAssertEqual(model.phases?.count, 4)
-        XCTAssertEqual(try XCTUnwrap(model.phase(.walking, outdoor: true)?.ratePerMinute), 1.0, accuracy: 1e-6)
+        XCTAssertNotNil(model.phase(.walking, outdoor: true)?.footMeanC)
         XCTAssertEqual(try XCTUnwrap(model.footByActivity[.walking]).mean, 32.1, accuracy: 0.05, "Indoor usual stays indoor")
     }
 
@@ -118,17 +80,18 @@ final class CalibrationRedesignTests: XCTestCase {
 
     // MARK: About you
 
-    func testProfileNeedsEveryAnswer() {
+    func testProfileNeedsEveryAnswerButHealthConditions() {
         var profile = UserProfile()
         XCTAssertFalse(profile.isComplete)
         profile.age = 34
         profile.sex = .female
         profile.heightCm = 170
         profile.weightKg = 62
+        XCTAssertFalse(profile.isComplete, "Insight preference unanswered")
         profile.focus = .health
-        XCTAssertFalse(profile.isComplete, "Health conditions unanswered")
+        XCTAssertTrue(profile.isComplete, "Health conditions are optional")
         profile.conditionSet = []
-        XCTAssertTrue(profile.isComplete, "\"None\" is an answer")
+        XCTAssertTrue(profile.isComplete, "\"None\" is still fine")
         XCTAssertFalse(UserProfile.ageRange.contains(12), "Accounts are for 13 and over")
     }
 
@@ -153,24 +116,6 @@ final class CalibrationRedesignTests: XCTestCase {
 }
 
 extension CalibrationRedesignTests {
-    func testShownMathMatchesTheModel() throws {
-        var samples: [CalibrationSample] = []
-        for i in 0..<30 {
-            samples.append(CalibrationSample(time: Date(timeIntervalSince1970: Double(i)), footC: 30 + 0.01 * Double(i) + (i % 3 == 0 ? 0.02 : 0),
-                                             ambientC: nil, load: nil, gait: nil, cadence: nil, standing: nil))
-        }
-        let steps = ThermalCalculus.steps(samples)
-        XCTAssertEqual(steps.count, 30)
-        XCTAssertNil(steps[1].ratePerMinute, "Two readings make no slope")
-        XCTAssertEqual(try XCTUnwrap(steps.last?.ratePerMinute), try XCTUnwrap(ThermalCalculus.rate(samples)), accuracy: 1e-9)
-        XCTAssertEqual(try XCTUnwrap(steps.last?.accumulated), try XCTUnwrap(ThermalCalculus.accumulatedChange(samples)), accuracy: 1e-9)
-        let last = try XCTUnwrap(steps.last)
-        XCTAssertEqual(last.covariance / last.spread * 60, try XCTUnwrap(last.ratePerMinute), accuracy: 1e-9, "The shown fraction is the slope")
-        XCTAssertEqual(steps.compactMap(\.area).reduce(0, +), try XCTUnwrap(last.accumulated), accuracy: 1e-9, "The trapezoids add up to ∫")
-    }
-}
-
-extension CalibrationRedesignTests {
     func testArchOnlyLoadFlagRoundTrips() throws {
         var t = ThermyxProtocol.Telemetry(version: 3, mode: .ventilation, batteryPercent: nil, footTemperatureC: 31,
                                           ambientTemperatureC: nil, gaitStability: nil, pressureBalance: 0.42,
@@ -180,8 +125,8 @@ extension CalibrationRedesignTests {
         let decoded = try ThermyxProtocol.decode(ThermyxProtocol.encode(t)).get()
         XCTAssertTrue(decoded.loadIsArchLevel)
         XCTAssertEqual(decoded.footDetected, true, "Bit 7 leaves the foot bits alone")
-        XCTAssertEqual(decoded.reading(for: .left).loadLabel, "Arch load")
+        XCTAssertEqual(decoded.reading(for: .left).loadLabel, "Arch pressure")
         t.loadIsArchLevel = false
-        XCTAssertEqual(try ThermyxProtocol.decode(ThermyxProtocol.encode(t)).get().reading(for: .left).loadLabel, "Forefoot load")
+        XCTAssertEqual(try ThermyxProtocol.decode(ThermyxProtocol.encode(t)).get().reading(for: .left).loadLabel, "Arch pressure")
     }
 }

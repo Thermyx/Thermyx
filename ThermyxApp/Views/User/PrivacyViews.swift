@@ -14,7 +14,7 @@ struct GuidanceSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel(title)
 
             ThermyxGroupedCard {
@@ -38,21 +38,21 @@ struct GuidanceSection: View {
                 .frame(minHeight: Thermyx.minimumTapTarget)
             }
 
-            Text("Guidance is a set of simple rules that run on this phone, not AI, and nothing is sent anywhere. Learning your normal takes \(PersonalBaseline.calibrationMinutes) calm minutes of wear. After that, a foot temperature well above your usual, steadiness well below it, or a fast rise can add a Caution. It never lowers a level the fixed rules set. A session label is just a note; there is one baseline.")
+            Text("Your alerts are worked out on this phone, and none of this is sent anywhere. Thermyx needs about \(PersonalBaseline.calibrationMinutes) calm minutes of wear to learn what's normal for you. After that, a foot running well above your usual, steps much less steady than usual, or a fast rise can add a Caution. It can only make things more careful, never less. A session name is just a note for you.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
 
             if store.baseline.minutesLearned > 0 {
-                Button("Reset my baseline") { confirmingReset = true }
+                Button("Forget what's usual for me") { confirmingReset = true }
                     .buttonStyle(ThermyxSecondaryButtonStyle())
             }
         }
-        .confirmationDialog("Reset your baseline?", isPresented: $confirmingReset, titleVisibility: .visible) {
+        .confirmationDialog("Start learning again?", isPresented: $confirmingReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { store.reset() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Thermyx forgets your usual readings and calibrates again over the next \(PersonalBaseline.calibrationMinutes) calm minutes.")
+            Text("Thermyx forgets what's usual for you and learns it again over your next \(PersonalBaseline.calibrationMinutes) calm minutes of wear.")
         }
     }
 
@@ -85,6 +85,7 @@ struct GuidanceSection: View {
 /// A plain account of where each kind of data goes and how long it is kept.
 struct DataFlowView: View {
     @ObservedObject var settings: ThermyxSettingsStore
+    @ObservedObject private var cloud = ThermyxCloudService.shared
 
     private struct Item: Identifiable {
         let title: String
@@ -96,7 +97,7 @@ struct DataFlowView: View {
         [
             Item(title: "Live readings", detail: "Shown live and folded into minute summaries. Raw packets are not kept."),
             Item(title: "History", detail: "Minute summaries for 7 days, hourly summaries for 180 days, risk events for 30 days. Older data is deleted automatically."),
-            Item(title: "Personal baseline", detail: "Your usual foot temperature and steadiness. Deleted if unused for 90 days."),
+            Item(title: "What's usual for you", detail: "Your usual foot temperature and steadiness. Deleted if unused for 90 days. Copied to your account only if you turn on Back up to my account."),
             Item(title: "Trusted contacts", detail: "Names and numbers stay on this phone unless texting is turned on."),
             Item(title: "Relay key", detail: "Kept in the iPhone Keychain.")
         ]
@@ -121,24 +122,55 @@ struct DataFlowView: View {
         return items
     }
 
+    private var account: [Item] {
+        [
+            Item(title: "Back up to my account — \(cloud.backupEnabled ? "on" : "off")",
+                 detail: cloud.backupEnabled
+                    ? "Your profile, settings, what Thermyx has learned about you, and your recovery checks are copied to a private space in your account, so a new phone can pick up where you left off. Only you can read it. Your history, contacts and location stay on this phone."
+                    : "Nothing is copied. Turn it on in Device to keep your profile, calibration and recoveries with your account."),
+            Item(title: "Anonymous numbers for new wearers — \(cloud.populationEnabled ? "on" : "off")",
+                 detail: cloud.populationEnabled
+                    ? "Once a month, a few rounded averages from your own calm minutes go out with no name, email or account ID, grouped only by what you mostly use Thermyx for and an age band. They can't be traced back to you, and expire within about five weeks."
+                    : "Nothing is sent. Turn it on in Device to start from what's typical for people like you, and to add your numbers to that.")
+        ]
+    }
+
     private let never = [
-        "Raw sensor readings, history, or your baseline",
+        "Raw sensor readings or history",
+        "Your trusted contacts' names or numbers, to your account",
+        "Your Apple Health data, to anyone",
         "Analytics, ads, or tracking of any kind",
         "Anything to emergency services — Call 911 opens your phone's dialer"
     ]
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xl) {
+        ThermyxDetailScreen(title: "What leaves your phone?", backTitle: "Advanced") {
+            VStack(alignment: .leading, spacing: Thermyx.Space.section) {
                 group("Stays on this phone", items: staysHere)
-                VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                     SectionLabel(settings.isPairedWithRelay ? "Goes to the relay" : "Would go to the relay (not connected)")
                     list(relay)
                 }
+                VStack(alignment: .leading, spacing: Thermyx.Space.header) {
+                    HStack(spacing: Thermyx.Space.xs) {
+                        AIMark(size: 22)
+                        SectionLabel("AI Insights — \(settings.aiInsightsEnabled ? "on" : "off")", color: Thermyx.Ink.ai)
+                    }
+                    list([
+                        Item(title: "One day's totals and averages",
+                             detail: settings.aiInsightsEnabled
+                                ? "Sent through the relay to Anthropic's Claude API, which writes the day's summary. No live readings, name, contacts or location. The relay keeps nothing."
+                                : "Nothing is sent. Turn AI Insights on in Device to get a daily summary written by Claude.")
+                    ])
+                }
+                group("Your Thermyx account — only if you turn it on", items: account)
+                group("Local weather — only with location allowed", items: [
+                    Item(title: "Your location, rounded to about 1 km", detail: "Sent to Open-Meteo during calibration's outdoor half, for the air temperature.")
+                ])
                 group("Apple Health — only if you turn it on", items: [
                     Item(title: "Walk sessions", detail: "Start, end, and heat-exposure time. Managed in the Health app.")
                 ])
-                VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+                VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                     SectionLabel("Never leaves")
                     ThermyxCard(padding: Thermyx.Space.l) {
                         VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
@@ -155,16 +187,11 @@ struct DataFlowView: View {
                     .foregroundStyle(Thermyx.Ink.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(Thermyx.Space.screen)
         }
-        .scrollIndicators(.hidden)
-        .background(Thermyx.Ink.midnight)
-        .navigationTitle("What leaves your phone?")
-        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func group(_ title: String, items: [Item]) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel(title)
             list(items)
         }
@@ -192,10 +219,11 @@ struct DataFlowView: View {
 // MARK: - Delete my data
 
 /// Removes what Thermyx stored on this phone and, when connected, what the
-/// relay holds about this wearer.
+/// relay and the wearer's account backup hold about them.
 enum DataDeletion {
     @MainActor
-    static func deleteEverything(viewModel: ThermyxViewModel, settings: ThermyxSettingsStore) async -> String? {
+    static func deleteEverything(viewModel: ThermyxViewModel, settings: ThermyxSettingsStore,
+                                 cloud: ThermyxCloudService = .shared) async -> String? {
         var relayError: String?
         if settings.isPairedWithRelay {
             do {
@@ -210,35 +238,91 @@ enum DataDeletion {
                 relayError = "This phone's data was deleted, but the relay couldn't be reached. Its copy expires within 7 days, or ask the team to remove this device."
             }
         }
+        // The account's backup too, and both cloud switches go back to off.
+        // First, so wiping this phone below isn't backed up as an empty
+        // phone. Numbers already sent anonymously can't be traced to this
+        // wearer, so they can't be pulled back; they expire on their own.
+        let cloudError = await cloud.deleteEverything()
         settings.disconnectRelay()
         settings.contacts = []
         settings.shareLocationDuringEvents = false
         viewModel.history.deleteAll()
+        viewModel.recovery.deleteAll()
         await viewModel.history.save()
         viewModel.baseline.deleteAll()
-        return relayError
+        return [relayError, cloudError].compactMap { $0 }.joined(separator: " ").nilIfEmpty
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: - Demo Mode banner
 
 /// Stamped along the bottom of every screen while Demo Mode runs, in debug
 /// and release builds alike, so a screenshot can never pass simulated
-/// readings off as live ones.
+/// readings off as live ones. Its Exit button leaves the demo: the simulated
+/// insoles disconnect, their made-up history is cleared, and the app goes
+/// back to real Bluetooth.
 struct DemoModeBanner: ViewModifier {
+    @ObservedObject var viewModel: ThermyxViewModel
     @ObservedObject var ble: ThermyxBLEService
+    @State private var confirming = false
+
+    init(viewModel: ThermyxViewModel) {
+        self.viewModel = viewModel
+        self.ble = viewModel.ble
+    }
 
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom, spacing: 0) {
             if ble.isDemoMode {
-                Text(ble.isFakeInsole ? "Fake insole — test data, not live" : "Simulated — not live sensor data")
-                    .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.onEmber)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 5)
-                    .background(Thermyx.Ink.ember)
-                    .allowsHitTesting(false)
-                    .accessibilityLabel(ble.isFakeInsole ? "Fake insole. Test data, not live sensor data." : "Simulated. This is not live sensor data.")
+                HStack(spacing: Thermyx.Space.m) {
+                    Image(systemName: "waveform.path")
+                        .font(.system(size: 14, weight: .bold))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(ble.isFakeInsole ? "Fake insole" : "Simulated insoles")
+                            .font(.custom(ThermyxFont.Family.bold, size: 14, relativeTo: .subheadline))
+                        Text("Not live sensor data")
+                            .font(.custom(ThermyxFont.Family.medium, size: 12, relativeTo: .caption))
+                            .opacity(0.8)
+                    }
+                    Spacer(minLength: Thermyx.Space.s)
+                    Button {
+                        confirming = true
+                    } label: {
+                        Text("Exit demo")
+                            .font(.custom(ThermyxFont.Family.bold, size: 15, relativeTo: .subheadline))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, Thermyx.Space.l)
+                            .frame(height: 36)
+                            .background(Thermyx.Ink.onEmber, in: Capsule())
+                            .frame(minHeight: Thermyx.minimumTapTarget)
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(PressableStyle())
+                    .accessibilityLabel("Exit the demo")
+                    .accessibilityHint("Disconnects the simulated insoles and returns to real Bluetooth.")
+                }
+                .foregroundStyle(Thermyx.Ink.onEmber)
+                .padding(.horizontal, Thermyx.Space.screen)
+                .padding(.vertical, 2)
+                .frame(maxWidth: .infinity)
+                .background(Thermyx.Ink.ember.ignoresSafeArea(edges: .bottom))
+                .accessibilityElement(children: .contain)
+                .confirmationDialog("Leave the demo?", isPresented: $confirming, titleVisibility: .visible) {
+                    Button("Exit demo", role: .destructive) { exit() }
+                    Button("Keep demoing", role: .cancel) {}
+                } message: {
+                    Text("The simulated insoles disconnect and the made-up history goes away. Your real history comes back as it was, and Thermyx goes back to real Bluetooth.")
+                }
             }
         }
+    }
+
+    private func exit() {
+        viewModel.exitDemo()
     }
 }

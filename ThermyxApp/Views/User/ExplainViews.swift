@@ -4,7 +4,7 @@ import SwiftUI
 
 /// A small link under a risk level that opens the explanation.
 struct WhyButton: View {
-    var tint: Color = Thermyx.Ink.ice
+    var tint: Color = Thermyx.Ink.link
     let action: () -> Void
 
     var body: some View {
@@ -12,6 +12,7 @@ struct WhyButton: View {
             Label("Why am I seeing this?", systemImage: "questionmark.circle")
                 .font(ThermyxFont.captionSmall.weight(.semibold))
                 .foregroundStyle(tint)
+                .underline(tint == .white)
                 .frame(minHeight: Thermyx.minimumTapTarget, alignment: .leading)
                 .contentShape(.rect)
         }
@@ -90,7 +91,7 @@ struct RiskExplanationSheet: View {
     }
 
     private func signals(_ e: RiskExplanation) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Signals")
             ThermyxCard(padding: Thermyx.Space.l) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -108,7 +109,7 @@ struct RiskExplanationSheet: View {
     }
 
     private func confidence(_ e: RiskExplanation) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("How much to trust this")
             ThermyxCard(padding: Thermyx.Space.l) {
                 VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
@@ -131,7 +132,7 @@ struct RiskExplanationSheet: View {
     }
 
     private func nextStep(_ e: RiskExplanation) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("What to do")
             Text(e.nextStep)
                 .font(ThermyxFont.body)
@@ -154,8 +155,8 @@ struct BaselineStatus: View {
     @ObservedObject var store: PersonalBaselineStore
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SectionLabel("Personal baseline")
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
+            SectionLabel("What's usual for you")
             Text(text)
                 .font(ThermyxFont.caption)
                 .foregroundStyle(Thermyx.Ink.textMuted)
@@ -236,7 +237,7 @@ struct DeviceHealthStrip: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Insoles")
             HStack(spacing: Thermyx.Space.xs) {
                 ForEach(Foot.allCases) { foot in

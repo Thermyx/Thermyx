@@ -10,8 +10,8 @@ struct TemperatureDetailView: View {
     private var digest: BilateralDigest {
         BilateralDigest(
             range: settings.insightsRange,
-            style: settings.periodStyle,
-            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.periodStyle)
+            style: settings.insightsStyle,
+            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.insightsStyle, now: settings.insightsNow)
         )
     }
     private var pairs: [(Foot, InsightsDigest)] { digest.digests(for: footFilter) }
@@ -19,7 +19,7 @@ struct TemperatureDetailView: View {
     var body: some View {
         ThermyxDetailScreen(
             title: "Temperature",
-            caption: settings.insightsRange.caption(style: settings.periodStyle)
+            caption: settings.insightsCaption
         ) {
             let digest = digest
 
@@ -50,7 +50,6 @@ struct TemperatureDetailView: View {
                 )
             }
         }
-        .hidesThermalControlBar()
     }
 
     // MARK: - Peak / average / low
@@ -92,9 +91,9 @@ struct TemperatureDetailView: View {
 
     private func chartCard(_ digest: InsightsDigest, foot: Foot) -> some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("\(foot.label) foot temperature") {
-                    Text("Hold to scrub")
+                    Text("Touch and hold to read")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
                 }
 
@@ -103,7 +102,8 @@ struct TemperatureDetailView: View {
                         ChartSeries(
                             id: "foot-\(foot.rawValue)", name: "\(foot.label) foot temperature",
                             points: digest.points { $0.footMeanC.map(unit.convert) },
-                            color: Thermyx.Ink.ember, isFilled: true
+                            color: Thermyx.Ink.ember, isFilled: true,
+                            scale: .footTemperature(unit)
                         )
                     ],
                     range: settings.insightsRange,
@@ -114,15 +114,18 @@ struct TemperatureDetailView: View {
                     shading: digest.thermalShading(heat: Thermyx.Ink.ember, cool: Thermyx.Ink.signal)
                 )
 
-                HStack(spacing: Thermyx.Space.m) {
+                FlowRow(spacing: Thermyx.Space.m) {
                     ChartLegendChip(color: Thermyx.Ink.ember.opacity(0.4), label: "Heating")
                     ChartLegendChip(color: Thermyx.Ink.signal.opacity(0.4), label: "Cooling")
+                    ChartLegendChip(color: Thermyx.Tint.comfortKey, label: "Comfort band")
                 }
-                HStack(spacing: Thermyx.Space.m) {
-                    ChartLegendChip(color: Color(hex: 0x2C9CF0, opacity: 0.5), label: "Comfort band")
-                    ChartLegendChip(color: Thermyx.Ink.ember, label: "High")
-                    ChartLegendChip(color: Thermyx.Ink.ice, label: "Low")
-                }
+                ChartScaleKey(
+                    scale: .footTemperature(unit),
+                    low: unit.convert(FootScale.thermalRangeC.lowerBound),
+                    high: unit.convert(FootScale.thermalRangeC.upperBound),
+                    lowLabel: TemperatureFormat.degrees(FootScale.thermalRangeC.lowerBound, in: unit, decimals: 0),
+                    highLabel: TemperatureFormat.degrees(FootScale.thermalRangeC.upperBound, in: unit, decimals: 0)
+                )
             }
         }
     }
@@ -130,7 +133,7 @@ struct TemperatureDetailView: View {
     // MARK: - Time in zone
 
     private func timeInZone(_ digest: InsightsDigest) -> some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Time in zone")
             TimeInZoneBar(seconds: digest.timeInZone)
         }
@@ -140,8 +143,8 @@ struct TemperatureDetailView: View {
 
     @ViewBuilder
     private var events: some View {
-        let recorded = viewModel.history.events(for: settings.insightsRange, style: settings.periodStyle, foot: footFilter.foot)
-        VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+        let recorded = viewModel.history.events(for: settings.insightsRange, style: settings.insightsStyle, foot: footFilter.foot, now: settings.insightsNow)
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Events")
             if recorded.isEmpty {
                 ThermyxEmptyState(

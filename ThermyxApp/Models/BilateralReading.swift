@@ -71,11 +71,24 @@ struct BilateralReading: Equatable {
         return l - r
     }
 
-    /// Difference in load share between feet, as a proportion. Favouring one
+    /// Difference in load level between feet, as a proportion. Favouring one
     /// foot shows up here long before the wearer notices it.
+    ///
+    /// This is one instant. Walking swings it by tens of points with every
+    /// step, so never judge a person by a single value: `AsymmetryMonitor`
+    /// averages whole step cycles over minutes before it says anything.
     var loadAsymmetry: Double? {
         guard let l = left?.pressureBalance, let r = right?.pressureBalance else { return nil }
         return l - r
+    }
+
+    /// Left-minus-right load as a share of the total, (L − R) / (L + R), in
+    /// −1…1; positive leans left. Unlike the raw difference it doesn't depend
+    /// on how hard the person is pressing, which is what makes it comparable
+    /// between standing and walking and across people.
+    var loadLean: Double? {
+        guard let l = left?.pressureBalance, let r = right?.pressureBalance, l + r > 0.1 else { return nil }
+        return (l - r) / (l + r)
     }
 
     /// Difference in gait stability between feet.
@@ -96,10 +109,24 @@ struct BilateralReading: Equatable {
         return parts.reduce(0, +) / Double(parts.count)
     }
 
-    /// Which foot is carrying more, when the difference is big enough to name.
+    /// Mean steps per minute at or above this counts as walking (the same
+    /// line the history buckets use).
+    static let walkingCadence = 30.0
+
+    /// Whether the pair is walking right now. Nil when no cadence is reported.
+    var isWalking: Bool? {
+        cadenceStepsPerMinute.map { $0 >= Self.walkingCadence }
+    }
+
+    /// Which foot is carrying clearly more weight *right now*, for labels
+    /// that need a name in the moment. Never while walking, because then the
+    /// load alternates between the feet by design, and only for a lean of
+    /// 15 points or more, well past ordinary standing sway. Whether someone
+    /// is genuinely favouring a foot is `AsymmetryMonitor`'s question, and it
+    /// takes minutes of evidence to answer.
     var favouredFoot: Foot? {
-        guard let load = loadAsymmetry, abs(load) > 0.08 else { return nil }
-        return load > 0 ? .left : .right
+        guard isWalking != true, let lean = loadLean, abs(lean) >= 0.15 else { return nil }
+        return lean > 0 ? .left : .right
     }
 
     /// Which foot is running hotter, when the gap is big enough to name.

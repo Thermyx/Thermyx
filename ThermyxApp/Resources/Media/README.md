@@ -1,13 +1,13 @@
-# Onboarding slide videos
+# Onboarding media
 
-- `slide-construction.mp4` — "Built for construction workers."
-- `slide-athletes.mp4` — "Built for athletes."
-- `slide-soldiers.mp4` — "Built for soldiers."
+The welcome screen's photo stack ends on an app walkthrough video when this
+folder contains:
 
-Each plays silently on a loop while its slide is showing. They're 600 × 1080
-(portrait), HEVC at about 1.8 Mbps, with no audio track, cropped from the
-1920 × 1080 originals that had the clip centred on white.
+- `onboarding-walkthrough.mp4` — a screen recording of the app, played muted
+  until the wearer presses play. Portrait or landscape both work; the card
+  fills its frame. Keep it short (about 40 seconds) and under ~15 MB.
 
-To replace one, keep the name and the portrait shape (the frame on screen
-takes the 600 × 1080 shape; see `SlideVideo.aspect` in
-`OnboardingSlides.swift`), then run `xcodegen generate`.
+Without the file, the stack ends on the last photo. Nothing else changes.
+
+The photographs themselves live in `Assets.xcassets/Photos`, with credits and
+licences in `Resources/Content/photo-credits.json`.

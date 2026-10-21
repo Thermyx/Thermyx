@@ -42,15 +42,41 @@ struct InsightsDigest {
         samples.max { ($0.footMaxC ?? -.infinity) < ($1.footMaxC ?? -.infinity) }
     }
 
-    /// Seconds in each temperature band, from bucket durations.
+    /// Seconds in each temperature band. A bucket counts for the time it was
+    /// actually worn where that was recorded, not its whole length, so a
+    /// shift that ends at half past isn't credited the full hour.
     var timeInZone: [ThermyxTemperatureScale.Band: TimeInterval] {
         var result: [ThermyxTemperatureScale.Band: TimeInterval] = [:]
-        let bucketLength = range.usesHourlyTier ? TimeInterval(3600) : TimeInterval(60)
         for sample in samples {
             guard let foot = sample.footMeanC else { continue }
-            result[ThermyxTemperatureScale.band(for: foot), default: 0] += bucketLength
+            result[ThermyxTemperatureScale.band(for: foot), default: 0] += wornSeconds(sample)
         }
         return result
+    }
+
+    private var bucketLength: TimeInterval { range.usesHourlyTier ? 3600 : 60 }
+
+    private func wornSeconds(_ sample: ThermyxHistorySample) -> TimeInterval {
+        min(sample.trackedSeconds ?? bucketLength, bucketLength)
+    }
+
+    /// The heat-exposure bars: one per hour on Day, one per day on Week and
+    /// Month, each with the hottest moment and the time spent above the
+    /// comfort band.
+    func exposureBars(calendar: Calendar = .current) -> [ExposureBar] {
+        let component: Calendar.Component = range == .day ? .hour : .day
+        let groups = Dictionary(grouping: samples) { calendar.dateInterval(of: component, for: $0.start)?.start ?? $0.start }
+        return groups.compactMap { start, group -> ExposureBar? in
+            guard let peak = group.compactMap({ $0.footMaxC ?? $0.footMeanC }).max() else { return nil }
+            var hot: TimeInterval = 0, worn: TimeInterval = 0
+            for sample in group {
+                let seconds = wornSeconds(sample)
+                worn += seconds
+                if let mean = sample.footMeanC, mean >= ThermyxTemperatureScale.comfortable { hot += seconds }
+            }
+            return ExposureBar(start: start, peakC: peak, hotSeconds: hot, wornSeconds: worn)
+        }
+        .sorted { $0.start < $1.start }
     }
 
     /// Proportion of the window spent above the comfort band — the donut.
@@ -105,6 +131,20 @@ struct InsightsDigest {
     }
 
     var balanceLatest: Double? { samples.last(where: { $0.balanceMean != nil })?.balanceMean }
+
+    // MARK: - Activity
+
+    private func total(_ value: (ThermyxHistorySample) -> Double?) -> Double? {
+        let values = samples.compactMap(value)
+        return values.isEmpty ? nil : values.reduce(0, +)
+    }
+
+    /// Steps in the window, from cadence over time worn.
+    var steps: Double? { total(\.steps) }
+    var sittingSeconds: TimeInterval? { total(\.sittingSeconds) }
+    var standingTime: TimeInterval? { total(\.standingSeconds) }
+    var walkingSeconds: TimeInterval? { total(\.walkingSeconds) }
+    var hasActivity: Bool { sittingSeconds != nil || walkingSeconds != nil || standingTime != nil }
 
     // MARK: - Cadence and standing
     //
@@ -172,21 +212,12 @@ struct InsightsDigest {
     // MARK: - Series for the shared chart
 
     func points(_ value: (ThermyxHistorySample) -> Double?) -> [SeriesPoint] {
-        samples.compactMap { sample in
+        SeriesPoint.averaged(samples.compactMap { sample in
             guard let v = value(sample) else { return nil }
             return SeriesPoint(date: sample.start, value: v)
-        }
+        }, window: range.chartWindow)
     }
 
-    /// Forefoot / arch / heel share of load. Derived from the single balance
-    /// channel the current hardware reports, so only forefoot and heel are
-    /// measured; the arch share is the remainder, and the UI says so.
-    var pressureSplit: (forefoot: Double, arch: Double, heel: Double)? {
-        guard let balance = balanceLatest else { return nil }
-        let forefoot = min(max(balance, 0), 1)
-        let heel = 1 - forefoot
-        return (forefoot: forefoot * 0.82, arch: 0.18, heel: heel * 0.82)
-    }
 
     // MARK: - Zones
 
@@ -241,6 +272,34 @@ struct InsightsDigest {
         return (0..<count).map { index in
             formatter.string(from: first.addingTimeInterval(span * Double(index) / Double(count - 1)))
         }
+    }
+}
+
+/// One bar on the heat-exposure chart.
+struct ExposureBar: Identifiable, Equatable {
+    /// The hour (Day) or the day (Week, Month) it covers.
+    let start: Date
+    /// The hottest the foot got in it, °C.
+    let peakC: Double
+    /// Time with the foot above the comfort band.
+    let hotSeconds: TimeInterval
+    /// Time worn.
+    let wornSeconds: TimeInterval
+    var id: Date { start }
+
+    /// Left and right become one bar: the warmer peak and the longer exposure.
+    static func merged(_ bars: [[ExposureBar]]) -> [ExposureBar] {
+        var byStart: [Date: ExposureBar] = [:]
+        for bar in bars.flatMap({ $0 }) {
+            if let existing = byStart[bar.start] {
+                byStart[bar.start] = ExposureBar(start: bar.start, peakC: max(existing.peakC, bar.peakC),
+                                                 hotSeconds: max(existing.hotSeconds, bar.hotSeconds),
+                                                 wornSeconds: max(existing.wornSeconds, bar.wornSeconds))
+            } else {
+                byStart[bar.start] = bar
+            }
+        }
+        return byStart.values.sorted { $0.start < $1.start }
     }
 }
 
@@ -342,6 +401,40 @@ struct ThermyxWeeklyReport: Equatable {
     /// Consecutive days worn, ending today (or yesterday, if today has no
     /// wear yet, so a streak isn't lost at breakfast).
     var streak: Int
+    /// The last seven days, oldest first, worn or not.
+    var days: [ThermyxDailySummary] = []
+    /// The same figures for the seven days before, to compare against.
+    var previous: Totals = .init()
+    var current: Totals = .init()
+
+    /// One week's figures, side by side with the week before.
+    struct Totals: Equatable {
+        var daysWorn = 0
+        var wornSeconds: TimeInterval = 0
+        var steps: Double?
+        var hotHours = 0
+        var heatingSeconds: TimeInterval = 0
+        var coolingSeconds: TimeInterval = 0
+        var steadiness: Double?
+        var peakC: Double?
+        var events = 0
+
+        init() {}
+
+        init(_ days: [ThermyxDailySummary]) {
+            daysWorn = days.count
+            wornSeconds = days.reduce(0) { $0 + $1.wornSeconds }
+            let steps = days.compactMap(\.steps)
+            self.steps = steps.isEmpty ? nil : steps.reduce(0, +)
+            hotHours = days.reduce(0) { $0 + $1.hotHours }
+            heatingSeconds = days.compactMap(\.heatingSeconds).reduce(0, +)
+            coolingSeconds = days.compactMap(\.coolingSeconds).reduce(0, +)
+            let gait = days.compactMap(\.gaitAverage)
+            steadiness = gait.isEmpty ? nil : gait.reduce(0, +) / Double(gait.count)
+            peakC = days.compactMap(\.peakFootC).max()
+            events = days.reduce(0) { $0 + $1.events }
+        }
+    }
 
     /// A day counts once the insoles were worn for this long.
     static let minimumWear: TimeInterval = 10 * 60
@@ -365,6 +458,12 @@ struct ThermyxWeeklyReport: Equatable {
         let thisTotal = thisWeek.reduce(0) { $0 + $1.wornSeconds }
         let lastTotal = lastWeek.reduce(0) { $0 + $1.wornSeconds }
         let steps = thisWeek.compactMap(\.steps)
+        let allDays = days.filter { $0.day >= weekStart }
+        let week = (0..<7).compactMap { offset -> ThermyxDailySummary? in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: weekStart) else { return nil }
+            return allDays.first { calendar.isDate($0.day, inSameDayAs: day) }
+                ?? ThermyxDailySummary(day: day, wornSeconds: 0, hotHours: 0, events: 0, feet: [])
+        }
         return ThermyxWeeklyReport(
             daysWorn: thisWeek.count,
             wornSeconds: thisTotal,
@@ -372,7 +471,10 @@ struct ThermyxWeeklyReport: Equatable {
             coolingSeconds: thisWeek.compactMap(\.coolingSeconds).reduce(0, +),
             steps: steps.isEmpty ? nil : steps.reduce(0, +),
             wornChange: lastTotal > 0 ? (thisTotal - lastTotal) / lastTotal : nil,
-            streak: streak
+            streak: streak,
+            days: week,
+            previous: Totals(lastWeek),
+            current: Totals(thisWeek)
         )
     }
 }

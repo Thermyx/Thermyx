@@ -1,3 +1,4 @@
+import Combine
 import FirebaseAuth
 import FirebaseCore
 import GoogleSignIn
@@ -31,13 +32,20 @@ struct ThermyxAccount: Codable, Equatable {
 /// Sign in with Google, through Firebase Authentication.
 ///
 /// The account says who the wearer is and whether they may use the test
-/// tools. It holds no readings: the profile, history and calibration stay on
-/// this phone, as the privacy policy promises.
+/// tools. It holds no readings: the history stays on this phone, as the
+/// privacy policy promises. Optional backup of the profile, preferences and
+/// calibration, and anonymous population priors, live in `cloud` and are off
+/// until the wearer turns them on.
 @MainActor
 final class ThermyxAccountStore: ObservableObject {
     @Published private(set) var account: ThermyxAccount?
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
+
+    /// Backup and population priors for this account. Inert until
+    /// `startCloud` is called, and until the wearer opts in.
+    let cloud = ThermyxCloudService.shared
+    private var cloudObserver: AnyCancellable?
 
     var isSignedIn: Bool { account != nil }
     var isAdmin: Bool { account?.isAdmin == true }
@@ -66,6 +74,14 @@ final class ThermyxAccountStore: ObservableObject {
         #endif
         // Firebase keeps the session in the Keychain across launches.
         account = Self.isFirebaseConfigured ? Auth.auth().currentUser.map(Self.account) : nil
+    }
+
+    /// Hands the cloud service the phone's stores and keeps it informed of
+    /// who is signed in. Call once at launch, after the stores exist.
+    func startCloud(viewModel: ThermyxViewModel, settings: ThermyxSettingsStore, roles: ThermyxRoleStore?) {
+        guard cloudObserver == nil else { return }
+        cloud.attach(viewModel: viewModel, settings: settings, roles: roles)
+        cloudObserver = $account.sink { [cloud] account in cloud.accountChanged(account) }
     }
 
     // MARK: Sign in with Google
@@ -102,6 +118,18 @@ final class ThermyxAccountStore: ObservableObject {
     }
 
     func signOut() {
+        // Backup writes are accepted only while signed in; give any pending
+        // one a moment to go through first.
+        guard cloud.hasUnsyncedChanges else { finishSignOut(); return }
+        isWorking = true
+        Task {
+            await cloud.flushBeforeSignOut()
+            isWorking = false
+            finishSignOut()
+        }
+    }
+
+    private func finishSignOut() {
         if Self.isFirebaseConfigured { try? Auth.auth().signOut() }
         GIDSignIn.sharedInstance.signOut()
         account = nil
@@ -110,7 +138,8 @@ final class ThermyxAccountStore: ObservableObject {
     // MARK: Delete account
 
     /// Deletes the account, as App Review requires an app with sign-in to
-    /// offer: Google confirms who it is, the Firebase user is deleted, and
+    /// offer: Google confirms who it is, the account's cloud backup is
+    /// deleted, the Firebase user is deleted, and
     /// Thermyx's access to the Google account is revoked. The caller wipes
     /// the data on this phone once this returns without throwing.
     func deleteAccount() async throws {
@@ -123,6 +152,9 @@ final class ThermyxAccountStore: ObservableObject {
         guard let user = Auth.auth().currentUser else { account = nil; return }
         // Deleting needs a recent sign-in.
         try await user.reauthenticate(with: googleCredential())
+        // The backup first: once the user is gone nobody can delete it. If it
+        // can't be confirmed gone, the account stays and the wearer can retry.
+        try await cloud.deleteForAccountDeletion()
         try await user.delete()
         try? await GIDSignIn.sharedInstance.disconnect()
         account = nil

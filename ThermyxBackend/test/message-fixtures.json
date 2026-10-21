@@ -1,0 +1,417 @@
+[
+  {
+    "name": "critical, zone known, rising, confirmed, location",
+    "event": {
+      "level": "Critical",
+      "kind": "alert",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "zone": "forefoot",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.4,
+      "trend": "rising",
+      "confidence": "confirmed",
+      "time": "4:18 PM CDT",
+      "unit": "F"
+    },
+    "expected": "Thermyx Critical Alert - Miheer\nRight forefoot temperature is elevated and still rising: 101.1F at the insole.\nData confirmed at 4:18 PM CDT.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nThermyx told them to stop and get help.\nCall them now. If they don't answer or seem unresponsive, call 911.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "high, today's insoles, two causes, limited, low battery, no fix",
+    "event": {
+      "level": "High risk",
+      "kind": "alert",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "left",
+      "causes": [
+        "hot",
+        "unsteady"
+      ],
+      "footC": 38.9,
+      "trend": "steady",
+      "confidence": "limited",
+      "battery": {
+        "foot": "left",
+        "percent": 8
+      },
+      "time": "2:05 PM",
+      "unit": "F"
+    },
+    "expected": "Thermyx High-Risk Alert - Miheer\nLeft foot temperature is elevated: 102.0F at the insole. Also: their steps are less steady.\nLimited data at 2:05 PM: check on them directly.\nLeft insole battery is at 8%.\nLocation unavailable.\nThermyx told them to stop, drink water and cool down.\nCall them now.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "high, location turned off, celsius",
+    "event": {
+      "level": "High risk",
+      "kind": "alert",
+      "locationConsent": false
+    },
+    "detail": {
+      "name": "Sam",
+      "foot": "right",
+      "causes": [
+        "heatLimit"
+      ],
+      "footC": 40.2,
+      "confidence": "confirmed",
+      "time": "11:40",
+      "unit": "C"
+    },
+    "expected": "Thermyx High-Risk Alert - Sam\nRight foot reached the insole's heat limit (40.2C). Heating has switched off.\nData confirmed at 11:40.\nLocation not shared.\nThermyx told them to stop, drink water and cool down.\nCall them now.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "caution, cold and cooling, one insole",
+    "event": {
+      "level": "Caution",
+      "kind": "alert",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Ana",
+      "foot": "left",
+      "causes": [
+        "cold"
+      ],
+      "footC": 24.1,
+      "trend": "falling",
+      "confidence": "limited",
+      "connection": "oneInsole",
+      "time": "7:12 AM",
+      "unit": "F"
+    },
+    "expected": "Thermyx Caution Alert - Ana\nLeft foot is cold and still cooling: 75.4F at the insole.\nLimited data at 7:12 AM: check on them directly.\nOnly one insole is connected.\nCheck in with them within 5 minutes.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "sos with location",
+    "event": {
+      "level": "Critical",
+      "kind": "sos",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.6,
+      "trend": "rising",
+      "confidence": "confirmed",
+      "time": "4:19 PM CDT",
+      "unit": "F",
+      "sos": "pressed"
+    },
+    "expected": "Thermyx SOS - Miheer\nMiheer pressed Call 911 at 4:19 PM CDT.\nRight foot temperature is elevated and still rising: 101.5F at the insole.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now. If you can't reach them, call 911 and give their location.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "sos after no response",
+    "event": {
+      "level": "Critical",
+      "kind": "sos",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "zone": "heel",
+      "causes": [
+        "heatLimit",
+        "unsteady"
+      ],
+      "footC": 40.3,
+      "confidence": "confirmed",
+      "time": "4:21 PM CDT",
+      "unit": "F",
+      "sos": "noResponse"
+    },
+    "expected": "Thermyx SOS - Miheer\nMiheer didn't respond to a Critical alert for 60 seconds (4:21 PM CDT).\nRight heel reached the insole's heat limit (104.5F). Heating has switched off. Also: their steps are less steady.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now. If you can't reach them, call 911 and give their location.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "sos with what led up to it",
+    "event": {
+      "level": "Critical",
+      "kind": "sos",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.9,
+      "trend": "rising",
+      "confidence": "confirmed",
+      "time": "4:40 PM CDT",
+      "unit": "F",
+      "sos": "pressed",
+      "episodeLevel": "High risk",
+      "episodeMinutes": 14,
+      "lastCheckIn": "4:31 PM CDT"
+    },
+    "expected": "Thermyx SOS - Miheer\nMiheer pressed Call 911 at 4:40 PM CDT.\nBefore this: High risk for 14 minutes. Last check-in: 4:31 PM CDT.\nRight foot temperature is elevated and still rising: 102.0F at the insole.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now. If you can't reach them, call 911 and give their location.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "help request with a preset and a note",
+    "event": {
+      "level": "High risk",
+      "kind": "help",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "left",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.4,
+      "trend": "steady",
+      "time": "2:12 PM CDT",
+      "unit": "F",
+      "help": "water",
+      "note": "By the north gate 🔥",
+      "episodeLevel": "High risk",
+      "episodeMinutes": 6
+    },
+    "expected": "Thermyx Help Request - Miheer\nMiheer asked for help at 2:12 PM CDT: they need water.\nThey wrote: \"By the north gate\"\nBefore this: High risk for 6 minutes.\nLeft foot temperature is elevated: 101.1F at the insole.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now, and go to them if you can.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "help request, nothing else known, location off",
+    "event": {
+      "level": "Normal",
+      "kind": "help",
+      "locationConsent": false
+    },
+    "detail": {
+      "name": "Ana",
+      "time": "9:05 AM",
+      "unit": "F",
+      "help": "pickup"
+    },
+    "expected": "Thermyx Help Request - Ana\nAna asked for help at 9:05 AM: they want someone to come and get them.\nLocation not shared.\nCall them now, and go to them if you can. If you can't reach them, call 911.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "a limp, wearer-only at Caution but texted when it comes with heat",
+    "event": {
+      "level": "High risk",
+      "kind": "alert",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Sam",
+      "foot": "left",
+      "causes": [
+        "limp",
+        "hot"
+      ],
+      "footC": 38.3,
+      "confidence": "confirmed",
+      "time": "3:10 PM",
+      "unit": "F"
+    },
+    "expected": "Thermyx High-Risk Alert - Sam\nTheir steps have been uneven for a while, with more weight on their left foot. Also: foot temperature is high.\nData confirmed at 3:10 PM.\nLocation unavailable.\nThermyx told them to stop, drink water and cool down.\nCall them now.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "circle test",
+    "event": {
+      "level": "Normal",
+      "kind": "test",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Jordan",
+      "unit": "F"
+    },
+    "expected": "Thermyx TEST - Jordan\nThis is a test of Thermyx alerts. Jordan set you up as a trusted contact. No action needed."
+  },
+  {
+    "name": "sos, no name, location off",
+    "event": {
+      "level": "Critical",
+      "kind": "sos",
+      "locationConsent": false
+    },
+    "detail": {
+      "unit": "F",
+      "time": "9:02 PM"
+    },
+    "expected": "Thermyx SOS - your contact\nThey pressed Call 911 at 9:02 PM.\nLocation not shared.\nCall them now. If you can't reach them, call 911.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "still elevated after 2 minutes",
+    "event": {
+      "level": "Critical",
+      "kind": "update",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "zone": "forefoot",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.7,
+      "trend": "steady",
+      "confidence": "confirmed",
+      "time": "4:20 PM CDT",
+      "unit": "F",
+      "update": "still",
+      "minutes": 2
+    },
+    "expected": "Thermyx update - Miheer\nStill Critical after 2 minutes.\nRight forefoot temperature is elevated: 101.7F at the insole.\nData confirmed at 4:20 PM CDT.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now. If they don't answer or seem unresponsive, call 911."
+  },
+  {
+    "name": "recovering",
+    "event": {
+      "level": "Caution",
+      "kind": "update",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "zone": "forefoot",
+      "footC": 37.6,
+      "trend": "falling",
+      "confidence": "confirmed",
+      "time": "4:27 PM CDT",
+      "unit": "F",
+      "update": "recovering"
+    },
+    "expected": "Thermyx update - Miheer\nReadings are recovering: now Caution as of 4:27 PM CDT.\nRight forefoot reads 99.7F at the insole and is falling."
+  },
+  {
+    "name": "resolved",
+    "event": {
+      "level": "Normal",
+      "kind": "update",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Miheer",
+      "time": "4:35 PM CDT",
+      "unit": "F",
+      "update": "resolved"
+    },
+    "expected": "Thermyx update - Miheer\nReadings are back to Normal as of 4:35 PM CDT."
+  },
+  {
+    "name": "checked in, still high",
+    "event": {
+      "level": "High risk",
+      "kind": "ok",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Miheer",
+      "checkedIn": "4:22 PM CDT",
+      "unit": "F"
+    },
+    "expected": "Thermyx update - Miheer\nMiheer checked in at 4:22 PM CDT and says they're OK.\nReadings are still High risk, so stay in touch."
+  },
+  {
+    "name": "checked in, normal",
+    "event": {
+      "level": "Normal",
+      "kind": "ok",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Miheer",
+      "checkedIn": "4:31 PM CDT",
+      "unit": "F"
+    },
+    "expected": "Thermyx update - Miheer\nMiheer checked in at 4:31 PM CDT and says they're OK."
+  },
+  {
+    "name": "both feet hot, uneven load",
+    "event": {
+      "level": "High risk",
+      "kind": "alert",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Jordan",
+      "foot": "both",
+      "causes": [
+        "hot",
+        "hotAir"
+      ],
+      "footC": 38.3,
+      "trend": "rising",
+      "confidence": "confirmed",
+      "time": "1:15 PM",
+      "unit": "F"
+    },
+    "expected": "Thermyx High-Risk Alert - Jordan\nBoth feet are hot and still rising: 100.9F at the warmer insole. Also: the air is very hot.\nData confirmed at 1:15 PM.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nThermyx told them to stop, drink water and cool down.\nCall them now.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "silence",
+    "silence": {
+      "name": "Miheer",
+      "level": "Critical",
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      },
+      "minutes": 3
+    },
+    "expected": "Thermyx - no update from Miheer\nTheir phone hasn't sent anything for 3 minutes during a Critical alert. Their phone, signal or insoles may be off.\nLast location: https://maps.google.com/?q=29.76043,-95.36981\nCheck on them directly. If you can't reach them, call 911."
+  },
+  {
+    "name": "reconnected",
+    "reconnected": true,
+    "event": {
+      "level": "High risk",
+      "kind": "status"
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.2,
+      "trend": "falling",
+      "unit": "F"
+    },
+    "expected": "Thermyx update - Miheer\nTheir phone is back in touch. Now High risk.\nRight foot temperature is elevated but falling: 100.8F at the insole."
+  }
+]

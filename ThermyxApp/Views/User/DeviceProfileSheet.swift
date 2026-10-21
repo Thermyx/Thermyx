@@ -10,7 +10,6 @@ struct DeviceProfileSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var name: String = ""
-    @State private var showingSizePicker = false
 
     var body: some View {
         NavigationStack {
@@ -49,7 +48,7 @@ struct DeviceProfileSheet: View {
 
     @ViewBuilder
     private var connectionSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Insole")
 
             if viewModel.anyConnected {
@@ -124,7 +123,7 @@ struct DeviceProfileSheet: View {
     // MARK: - Device identity
 
     private var deviceIdentitySection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Device")
             ThermyxGroupedCard {
                 ThermyxValueRow(
@@ -140,7 +139,7 @@ struct DeviceProfileSheet: View {
     // MARK: - Profile
 
     private var profileSection: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Profile")
 
             ThermyxGroupedCard {
@@ -161,38 +160,10 @@ struct DeviceProfileSheet: View {
 
                 ThermyxDivider()
 
-                Button { showingSizePicker = true } label: {
-                    HStack(spacing: Thermyx.Space.m) {
-                        Text("Shoe size")
-                            .font(ThermyxFont.body)
-                            .foregroundStyle(Thermyx.Ink.textSupporting)
-                        Spacer(minLength: Thermyx.Space.xs)
-                        Text(settings.soleSize?.label ?? "Not set")
-                            .font(ThermyxFont.body)
-                            .monospacedDigit()
-                            .foregroundStyle(settings.soleSize == nil ? Thermyx.Ink.textFaint : Thermyx.Ink.textPrimary)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(Thermyx.Ink.textFaint)
-                    }
+                ShoeSizeField(settings: settings, glass: false)
                     .padding(.horizontal, Thermyx.Space.xl)
-                    .frame(minHeight: Thermyx.minimumTapTarget)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
+                    .padding(.vertical, Thermyx.Space.xs)
             }
-
-            if let size = settings.soleSize {
-                Text("Insole \(String(format: "%.0f", size.lengthMM)) mm long, \(String(format: "%.0f", size.widthMM)) mm at the ball. Trim only along the toe lines.")
-                    .font(ThermyxFont.captionSmall)
-                    .foregroundStyle(Thermyx.Ink.textFaint)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .sheet(isPresented: $showingSizePicker) {
-            SoleSizePicker(settings: settings)
-                .presentationDetents([.large])
-                .presentationBackground(Thermyx.Ink.midnight)
         }
     }
 
@@ -200,96 +171,5 @@ struct DeviceProfileSheet: View {
 
     private var assistSection: some View {
         GuidanceSection(settings: settings, store: viewModel.baseline)
-    }
-}
-
-/// Sole size.
-///
-/// Every US size is listed so the range is legible at a glance, but only the
-/// sizes the prototype is actually cut for can be chosen. Hiding the rest
-/// would leave a wearer wondering whether their size exists; showing them
-/// disabled says plainly that it does, just not yet.
-struct SoleSizePicker: View {
-    @ObservedObject var settings: ThermyxSettingsStore
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: Thermyx.Space.l) {
-                    ThermyxCard(fill: Thermyx.Tint.signalFill, border: Thermyx.Tint.signalBorder) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionLabel("Available now", color: Thermyx.Ink.ice)
-                            Text("The Thermyx platform is built for US men's 11–12. The trim lines, the protected no-cut zone, and the thermal cassette are all cut for that range. Other sizes are on the roadmap.")
-                                .font(ThermyxFont.caption)
-                                .foregroundStyle(Thermyx.Ink.textSecondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-
-                    LazyVGrid(
-                        columns: Array(repeating: GridItem(.flexible(), spacing: Thermyx.Space.xs), count: 4),
-                        spacing: Thermyx.Space.xs
-                    ) {
-                        ForEach(SoleSize.all) { size in
-                            sizeCell(size)
-                        }
-                    }
-                }
-                .padding(Thermyx.Space.screen)
-            }
-            .scrollIndicators(.hidden)
-            .background(Thermyx.Ink.midnight.ignoresSafeArea())
-            .navigationTitle("Shoe size")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
-            }
-        }
-    }
-
-    private func sizeCell(_ size: SoleSize) -> some View {
-        let isSelected = settings.soleSize?.usMens == size.usMens
-        let isEnabled = size.isSupported
-        return Button {
-            guard isEnabled else { return }
-            settings.soleSize = size
-        } label: {
-            VStack(spacing: 1) {
-                Text(size.label)
-                    .font(ThermyxFont.rowTitleRegular)
-                    .monospacedDigit()
-                    .foregroundStyle(
-                        isSelected ? Thermyx.Ink.onSignal
-                            : (isEnabled ? Thermyx.Ink.textPrimary : Thermyx.Ink.textFaint)
-                    )
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-                if isEnabled {
-                    Text("\(Int(size.lengthMM.rounded())) mm")
-                        .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel,
-                                     color: isSelected ? Thermyx.Ink.onSignal : Thermyx.Ink.ice)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: Thermyx.minimumTapTarget)
-            .background(
-                isSelected ? Thermyx.Ink.signal : Thermyx.Tint.neutralFill,
-                in: RoundedRectangle(cornerRadius: Thermyx.Radius.button, style: .continuous)
-            )
-            .overlay {
-                RoundedRectangle(cornerRadius: Thermyx.Radius.button, style: .continuous)
-                    .strokeBorder(
-                        isEnabled && !isSelected ? Thermyx.Tint.liveBorder : .clear,
-                        lineWidth: Thermyx.Stroke.hairline
-                    )
-            }
-            .opacity(isEnabled ? 1 : 0.4)
-            .contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(!isEnabled)
-        .accessibilityLabel(isEnabled ? size.label : "\(size.label), not available yet")
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     }
 }

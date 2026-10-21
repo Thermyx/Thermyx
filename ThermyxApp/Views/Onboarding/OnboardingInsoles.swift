@@ -37,39 +37,60 @@ private struct InsoleSearch: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, Thermyx.Space.s)
 
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                if !ble.isDemoMode {
-                    PermissionPrompt(symbol: "dot.radiowaves.left.and.right", title: "Bluetooth",
-                                     detail: "Thermyx uses Bluetooth to find and talk to your insoles.",
-                                     status: .init(ble.authorization)) { ble.requestBluetooth() }
-                    if ble.authorization == .allowedAlways && ble.state == .poweredOff {
-                        notice("Turn on Bluetooth in Control Center to find your insoles.")
+            if !ble.isDemoMode {
+                PermissionPrompt(asset: "BluetoothLogo", title: "Bluetooth",
+                                 detail: "Thermyx uses Bluetooth to find and talk to your insoles.",
+                                 status: bluetoothStatus,
+                                 offDetail: ble.state == .unsupported
+                                    ? "This device has no Bluetooth LE. Pair from an iPhone."
+                                    : "Bluetooth is off on this iPhone. Turn it on to find your insoles.",
+                                 onAllow: { ble.requestBluetooth() },
+                                 onTurnOn: ble.state == .unsupported ? nil : { ble.promptPowerOn() })
+                    .animation(SiteMotion.settle, value: bluetoothStatus)
+            }
+
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
+                HStack(alignment: .center) {
+                    SiteEyebrow("Nearby")
+                    Spacer(minLength: Thermyx.Space.s)
+                    ScanAgainButton(scanning: viewModel.isScanning && ble.state == .poweredOn) {
+                        withAnimation(SiteMotion.settle) { viewModel.rescan() }
                     }
                 }
-                ForEach(Foot.allCases.filter(ble.connected.contains)) { foot in
-                    connectedRow(foot)
-                }
-                ForEach(found) { device in
-                    deviceRow(device)
-                }
-                if found.isEmpty && ble.connected.count < 2 && ble.state == .poweredOn {
-                    searchingRow
+                VStack(alignment: .leading, spacing: Thermyx.Space.item) {
+                    ForEach(Foot.allCases.filter(ble.connected.contains)) { foot in
+                        connectedRow(foot)
+                    }
+                    ForEach(found) { device in
+                        deviceRow(device)
+                    }
+                    if found.isEmpty && ble.connected.count < 2 {
+                        if ble.state == .poweredOn && viewModel.isScanning {
+                            searchingRow
+                        } else {
+                            idleRow
+                        }
+                    }
                 }
                 if let step = ble.insoleStep {
                     Text(step)
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Site.textMuted)
                 }
-                if let error = ble.errorMessage, ble.isDemoMode || ble.authorization == .allowedAlways {
+                if let error = ble.errorMessage, ble.isDemoMode || bluetoothStatus == .allowed, ble.state != .unsupported {
                     Text(error)
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.amber)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                Text("Not showing up? Switch the insole off and on, hold it near the phone, then Scan again. Scanning again also clears insoles that have gone out of range.")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Site.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .animation(SiteMotion.settle, value: found.map(\.id))
             .animation(SiteMotion.settle, value: ble.connected)
-            .animation(SiteMotion.settle, value: ble.authorization)
+            .animation(SiteMotion.settle, value: viewModel.isScanning)
 
             if isAdmin { developerTools }
         } actions: {
@@ -101,6 +122,10 @@ private struct InsoleSearch: View {
         }
     }
 
+    private var bluetoothStatus: PermissionPrompt.Status {
+        ble.isDemoMode ? .allowed : .init(ble.authorization, state: ble.state)
+    }
+
     /// Keeps searching until both feet are connected.
     private func scanIfNeeded() {
         guard ble.connected.count < 2, !viewModel.isScanning else { return }
@@ -113,6 +138,24 @@ private struct InsoleSearch: View {
         HStack(spacing: Thermyx.Space.m) {
             ProgressView().tint(Thermyx.Site.textMuted)
             Text("Searching for nearby insoles…")
+                .font(ThermyxFont.body)
+                .foregroundStyle(Thermyx.Site.textMuted)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, Thermyx.Space.xl)
+        .frame(minHeight: 60)
+        .siteGlass(radius: Thermyx.Radius.control)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Not searching: Bluetooth needs attention, or the search was stopped.
+    private var idleRow: some View {
+        HStack(spacing: Thermyx.Space.m) {
+            Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Thermyx.Site.textFaint)
+                .frame(width: 22)
+            Text(bluetoothStatus == .allowed ? "Not searching. Tap Scan again." : "Searching starts once Bluetooth is on.")
                 .font(ThermyxFont.body)
                 .foregroundStyle(Thermyx.Site.textMuted)
             Spacer(minLength: 0)
@@ -204,9 +247,8 @@ private struct InsoleSearch: View {
     // MARK: Admin
 
     private var developerTools: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            SiteEyebrow("Admin · test tools", color: Thermyx.Ink.amber)
-            FakeInsolePairControls(ble: ble)
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
+            SiteEyebrow("Admin · relay testing", color: Thermyx.Ink.amber)
             Button(showingRelay ? "Hide relay" : "Connect a relay") {
                 withAnimation(SiteMotion.settle) { showingRelay.toggle() }
             }
@@ -217,6 +259,38 @@ private struct InsoleSearch: View {
             }
         }
         .padding(.top, Thermyx.Space.m)
+    }
+}
+
+/// Starts the search over, clearing what the last one found. Spins while a
+/// search is running so it's clear one is.
+struct ScanAgainButton: View {
+    let scanning: Bool
+    let action: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                spinner
+                Text("Scan again")
+            }
+        }
+        .buttonStyle(PermissionButtonStyle(prominent: false))
+        .sensoryFeedback(.impact(weight: .light), trigger: scanning)
+        .accessibilityLabel("Scan again")
+        .accessibilityHint("Clears the list and searches for insoles again.")
+    }
+
+    @ViewBuilder
+    private var spinner: some View {
+        let image = Image(systemName: "arrow.clockwise").font(.system(size: 13, weight: .bold))
+        if #available(iOS 18.0, *) {
+            image.symbolEffect(.rotate, options: .repeat(.continuous), isActive: scanning && !reduceMotion)
+        } else {
+            image
+        }
     }
 }
 
@@ -251,14 +325,17 @@ struct InsolePairFigure: View {
             ForEach(Foot.allCases) { foot in
                 let on = connected.contains(foot)
                 VStack(spacing: Thermyx.Space.s) {
-                    ZStack {
-                        SoleShape(foot: foot)
-                            .fill(on ? Thermyx.Ink.signal.opacity(0.22) : Color.white.opacity(0.03))
-                        SoleShape(foot: foot)
-                            .stroke(on ? Thermyx.Ink.signal : Thermyx.Site.textFaint, lineWidth: on ? 1.5 : 1)
-                            .opacity(on ? 1 : (searching && !reduceMotion ? (breathe ? 0.9 : 0.3) : 0.6))
+                    GeometryReader { proxy in
+                        let rect = CGRect(origin: .zero, size: proxy.size)
+                        ZStack {
+                            FootOutline.path(foot, in: rect)
+                                .fill(on ? Thermyx.Ink.signal.opacity(0.22) : Color.white.opacity(0.03))
+                            FootOutline.path(foot, in: rect)
+                                .stroke(on ? Thermyx.Ink.signal : Thermyx.Site.textFaint, lineWidth: on ? 1.5 : 1)
+                                .opacity(on ? 1 : (searching && !reduceMotion ? (breathe ? 0.9 : 0.3) : 0.6))
+                        }
                     }
-                    .frame(width: 128 * SoleShape.widthRatio, height: 128)
+                    .frame(width: 140 * FootOutline.aspect, height: 140)
                     .shadow(color: on ? Thermyx.Ink.signal.opacity(0.45) : .clear, radius: 14)
                     Text(foot.label)
                         .narrowLabel(ThermyxFont.zoneLabel, tracking: ThermyxTracking.zoneLabel,

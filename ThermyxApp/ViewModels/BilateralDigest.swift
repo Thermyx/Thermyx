@@ -95,6 +95,20 @@ struct BilateralDigest {
         byFoot.values.map(\.comfortSeconds).max()
     }
 
+    /// Steps and time sitting, standing and walking, from whichever foot
+    /// recorded more (they walk together; a dropped link shouldn't halve it).
+    func activity(for filter: FootFilter) -> (steps: Double?, sitting: TimeInterval?, standing: TimeInterval?, walking: TimeInterval?)? {
+        let digests = digests(for: filter).map(\.1).filter(\.hasActivity)
+        guard !digests.isEmpty else { return nil }
+        return (digests.compactMap(\.steps).max(), digests.compactMap(\.sittingSeconds).max(),
+                digests.compactMap(\.standingTime).max(), digests.compactMap(\.walkingSeconds).max())
+    }
+
+    /// The heat-exposure bars for the feet in `filter`, merged.
+    func exposureBars(for filter: FootFilter) -> [ExposureBar] {
+        ExposureBar.merged(digests(for: filter).map { $0.1.exposureBars() })
+    }
+
     var heatExposureFraction: Double? {
         byFoot.values.compactMap(\.heatExposureFraction).max()
     }
@@ -107,16 +121,17 @@ struct BilateralDigest {
     func asymmetrySeries(_ value: @escaping (ThermyxHistorySample) -> Double?) -> [SeriesPoint] {
         guard let left = byFoot[.left], let right = byFoot[.right] else { return [] }
         let rightByStart = Dictionary(right.samples.map { ($0.start, $0) }, uniquingKeysWith: { a, _ in a })
-        return left.samples.compactMap { sample in
+        return SeriesPoint.averaged(left.samples.compactMap { sample in
             guard let counterpart = rightByStart[sample.start],
                   let l = value(sample), let r = value(counterpart)
             else { return nil }
             return SeriesPoint(date: sample.start, value: l - r)
-        }
+        }, window: range.chartWindow)
     }
 
     var temperatureAsymmetry: [SeriesPoint] { asymmetrySeries(\.footMeanC) }
     var loadAsymmetry: [SeriesPoint] { asymmetrySeries { $0.balanceMean.map { $0 * 100 } } }
+    var steadinessAsymmetry: [SeriesPoint] { asymmetrySeries { $0.gaitMean.map { $0 * 100 } } }
 
     /// Mean absolute temperature gap across the window.
     var meanTemperatureGapC: Double? {
@@ -149,14 +164,25 @@ struct BilateralDigest {
         if Double(negative) / total > 0.7 { return .right }
         return nil
     }
+
+    /// Which foot stepped less steadily, on the same rule (a 6-point gap).
+    var consistentlyUnsteadyFoot: Foot? {
+        let points = steadinessAsymmetry
+        guard points.count >= 5 else { return nil }
+        let leftLower = points.filter { $0.value < -6 }.count
+        let rightLower = points.filter { $0.value > 6 }.count
+        let total = Double(points.count)
+        if Double(leftLower) / total > 0.7 { return .left }
+        if Double(rightLower) / total > 0.7 { return .right }
+        return nil
+    }
 }
 
 extension Foot {
-    /// Left is drawn solid, right dashed.
-    ///
-    /// Colour already carries temperature in this app, so it cannot also carry
-    /// which foot — the two meanings would fight. Line style is free.
-    var isDashedInCharts: Bool { self == .right }
+    /// With both feet on one chart, each gets its own solid colour, chosen
+    /// from outside the temperature scale (white and lavender), so which foot
+    /// never reads as how hot. A single foot keeps the temperature colours.
+    var chartColor: Color { self == .left ? Color(hex: 0xF2F4F7) : Color(hex: 0xB59CFF) }
 
     /// A neutral tint for charts where the value is not a temperature.
     var chartTint: Color { self == .left ? Thermyx.Ink.ice : Thermyx.Ink.signal }

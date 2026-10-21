@@ -42,7 +42,7 @@ struct ZoneHeatMap: View {
 
     var body: some View {
         ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 HStack {
                     SectionLabel(title)
                     Spacer(minLength: Thermyx.Space.xs)
@@ -60,7 +60,9 @@ struct ZoneHeatMap: View {
                         width: .ratio(0.9),
                         height: .ratio(0.62)
                     )
-                    .foregroundStyle(ThermyxTemperatureScale.tint(for: cell.value))
+                    // The maps' thermal ramp, so a cell reads the colour
+                    // the sole would at that temperature.
+                    .foregroundStyle(FootScale.thermalColor(cell.value))
                     .cornerRadius(4)
                 }
                 .frame(height: 96)
@@ -85,12 +87,13 @@ struct ZoneHeatMap: View {
                 ChartAxisRow(labels: columnLabels)
 
                 if showsScale {
-                    FlowRow(spacing: Thermyx.Space.m) {
-                        ForEach(ThermyxTemperatureScale.Band.allCases) { band in
-                            ChartLegendChip(color: band.color, label: band.label)
-                        }
-                    }
-                    .padding(.top, 2)
+                    ChartScaleKey(
+                        scale: .footTemperature(unit),
+                        low: unit.convert(FootScale.thermalRangeC.lowerBound),
+                        high: unit.convert(FootScale.thermalRangeC.upperBound),
+                        lowLabel: TemperatureFormat.degrees(FootScale.thermalRangeC.lowerBound, in: unit, decimals: 0),
+                        highLabel: TemperatureFormat.degrees(FootScale.thermalRangeC.upperBound, in: unit, decimals: 0)
+                    )
                 }
             }
         }

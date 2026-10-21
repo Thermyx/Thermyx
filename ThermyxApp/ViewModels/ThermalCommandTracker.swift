@@ -31,8 +31,15 @@ struct ThermalCommandTracker: Equatable {
         return nil
     }
 
-    mutating func begin(_ setting: ThermalSetting, feet: Set<Foot>, now: Date = .now) {
-        state = feet.isEmpty ? .idle : .pending(setting, waitingOn: feet, since: now)
+    /// The wall-clock moment the request started, for the timeout.
+    private var startedAt = Date.distantPast
+
+    /// `since` is the reading clock the insoles stamp with (the demo's story
+    /// clock differs from the wall clock); readings must be stamped after it.
+    /// The timeout always runs on the wall clock, from `now`.
+    mutating func begin(_ setting: ThermalSetting, feet: Set<Foot>, now: Date = .now, since: Date? = nil) {
+        startedAt = now
+        state = feet.isEmpty ? .idle : .pending(setting, waitingOn: feet, since: since ?? now)
     }
 
     /// Feeds the latest readings in. Feet that disconnected are no longer
@@ -46,7 +53,7 @@ struct ThermalCommandTracker: Equatable {
         }
         if remaining.isEmpty {
             state = .confirmed(setting)
-        } else if now.timeIntervalSince(since) >= Self.timeout {
+        } else if now.timeIntervalSince(startedAt) >= Self.timeout {
             let names = remaining.sorted { $0.rawValue < $1.rawValue }.map(\.label)
             let what = names.count == 2 ? "Neither insole switched" : "The \(names[0].lowercased()) insole didn't switch"
             state = .failed(setting, message: "\(what) to \(setting.label). Check it's on and in range, then try again.")

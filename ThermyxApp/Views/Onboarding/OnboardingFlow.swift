@@ -1,7 +1,9 @@
 import SwiftUI
 
-/// First run: sign in, choose a role, then for a wearer About you, the
-/// insoles and calibration; for a watcher, who they watch.
+/// First run (design O1–O4): the photo stack and Google sign-in; a profile
+/// (role, what it's for, units); then for a wearer About you, pairing and
+/// calibration, and for a watcher, who they watch. The spotlight tutorial
+/// runs on Home once onboarding is done.
 struct OnboardingFlow: View {
     @EnvironmentObject private var viewModel: ThermyxViewModel
     @EnvironmentObject private var account: ThermyxAccountStore
@@ -12,7 +14,18 @@ struct OnboardingFlow: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     enum Step: Hashable {
-        case welcome, role, about, insoles, calibrate, watch
+        case welcome, profile, about, insoles, calibrate, watch
+
+        var label: String {
+            switch self {
+            case .welcome: return "Welcome"
+            case .profile: return "Profile"
+            case .about: return "About you"
+            case .insoles: return "Insoles"
+            case .calibrate: return "Calibrate"
+            case .watch: return "Who you watch"
+            }
+        }
     }
 
     @State private var step: Step = {
@@ -29,21 +42,23 @@ struct OnboardingFlow: View {
     @State private var watchedName = ""
 
     private var steps: [Step] {
-        role == .user ? [.welcome, .role, .about, .insoles, .calibrate] : [.welcome, .role, .watch]
+        role == .user ? [.welcome, .profile, .about, .insoles, .calibrate] : [.welcome, .profile, .watch]
     }
     private var index: Int { steps.firstIndex(of: step) ?? 0 }
 
     var body: some View {
         ZStack {
+            Color.black.ignoresSafeArea()
             TopographyBackground()
-                // Quieter behind forms, so the copy is what's read.
-                .opacity(step == .welcome ? 1 : 0.55)
+                .opacity(step == .welcome ? 0.5 : 0.35)
                 .animation(.easeInOut(duration: 0.6), value: step)
 
             VStack(spacing: 0) {
                 if step != .welcome {
-                    OnboardingTopBar(progress: index, total: steps.count - 1) { go(to: steps[max(index - 1, 0)]) }
-                        .transition(.opacity)
+                    OnboardingTopBar(step: index, total: steps.count - 1, label: step.label) {
+                        go(to: steps[max(index - 1, 0)])
+                    }
+                    .transition(.opacity)
                 }
                 ZStack {
                     page
@@ -65,9 +80,14 @@ struct OnboardingFlow: View {
     private var page: some View {
         switch step {
         case .welcome:
-            WelcomeSlides { go(to: .role) }
-        case .role:
-            RoleStep(selection: $role) { go(to: role == .user ? .about : .watch) }
+            WelcomeScreen { go(to: .profile) }
+        case .profile:
+            ProfileStep(role: $role, settings: settings) {
+                go(to: role == .user ? .about : .watch)
+            } onChangeAccount: {
+                account.signOut()
+                go(to: .welcome)
+            }
         case .about:
             AboutYouStep(name: $name, settings: settings, health: health) {
                 roles.profileName = name.trimmed
@@ -116,44 +136,48 @@ extension String {
 
 // MARK: - Chrome
 
-/// Back, and a segmented progress line, the way iOS setup shows it.
+/// Back, a segmented progress line, and "Step 2 of 4 · About you".
 private struct OnboardingTopBar: View {
-    let progress: Int
+    let step: Int
     let total: Int
+    let label: String
     let onBack: () -> Void
 
     var body: some View {
-        HStack(spacing: Thermyx.Space.m) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Thermyx.Site.text)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
-
-            HStack(spacing: 6) {
-                ForEach(0..<max(total, 1), id: \.self) { i in
-                    Capsule()
-                        .fill(i < progress ? Thermyx.Site.text : Thermyx.Site.hairlineStrong)
-                        .frame(height: 3)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+                HStack(spacing: 6) {
+                    ForEach(0..<max(total, 1), id: \.self) { i in
+                        Capsule()
+                            .fill(i < step ? Thermyx.Ink.textPrimary : Thermyx.Tint.track)
+                            .frame(height: 3)
+                    }
+                }
+                .animation(SiteMotion.settle, value: step)
             }
-            .animation(SiteMotion.settle, value: progress)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Step \(progress) of \(total)")
-
-            Color.clear.frame(width: 44, height: 44)
+            Text("Step \(step) of \(total) · \(label)")
+                .font(.custom(ThermyxFont.Family.medium, size: 13, relativeTo: .footnote))
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .padding(.leading, 46)
         }
-        .padding(.horizontal, Thermyx.Space.m)
-        .padding(.top, 4)
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Step \(step) of \(total), \(label)")
     }
 }
 
-/// A page: eyebrow, serif headline, one line of context, the content, and
-/// the actions pinned above the home indicator.
+/// A page: a 28 pt headline, a line of context, the content, and the
+/// actions pinned above the home indicator.
 struct OnboardingPage<Content: View, Actions: View>: View {
     var eyebrow: String?
     let title: String
@@ -161,25 +185,32 @@ struct OnboardingPage<Content: View, Actions: View>: View {
     @ViewBuilder var content: Content
     @ViewBuilder var actions: Actions
 
+    /// v1 marked italic emphasis with asterisks; v2 sets titles plain.
+    private var plainTitle: String { title.replacingOccurrences(of: "*", with: "") }
+
     var body: some View {
         ScrollViewReader { proxy in
         ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
-                VStack(alignment: .leading, spacing: Thermyx.Space.m) {
-                    if let eyebrow { SiteEyebrow(eyebrow) }
-                    RevealHeadline(text: title)
+            VStack(alignment: .leading, spacing: Thermyx.Space.group) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(plainTitle)
+                        .font(ThermyxFont.onboardingHeadline)
+                        .tracking(ThermyxTracking.onboardingHeadline)
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
                     if let subtitle {
                         Text(subtitle)
-                            .font(ThermyxFont.bodyLarge)
-                            .lineSpacing(3)
-                            .foregroundStyle(Thermyx.Site.textMuted)
+                            .font(ThermyxFont.bodySmall)
+                            .lineSpacing(2)
+                            .foregroundStyle(Thermyx.Ink.textMuted)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 content
             }
             .padding(.horizontal, Thermyx.Space.wide)
-            .padding(.top, Thermyx.Space.m)
+            .padding(.top, 22)
             .padding(.bottom, Thermyx.Space.wide)
             Color.clear.frame(height: 1).id("end")
         }
@@ -199,9 +230,15 @@ struct OnboardingPage<Content: View, Actions: View>: View {
                 .padding(.top, Thermyx.Space.m)
                 .padding(.bottom, Thermyx.Space.xs)
                 .background {
-                    Rectangle().fill(.ultraThinMaterial)
-                        .overlay(Thermyx.Site.bg.opacity(0.55))
-                        .ignoresSafeArea()
+                    // Solid under the buttons and hint, so nothing from the page
+                    // shows through; a short fade above hides the cut edge.
+                    Color.black.ignoresSafeArea()
+                        .overlay(alignment: .top) {
+                            LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom)
+                                .frame(height: 28)
+                                .offset(y: -28)
+                                .allowsHitTesting(false)
+                        }
                 }
         }
     }
@@ -217,62 +254,154 @@ struct TrailingIconLabelStyle: LabelStyle {
     }
 }
 
-// MARK: - Role
+// MARK: - Profile
 
-private struct RoleStep: View {
-    @Binding var selection: ThermyxRole
+/// Design O3: the signed-in account, how you'll use Thermyx, what it's
+/// mostly for, and units.
+private struct ProfileStep: View {
+    @EnvironmentObject private var account: ThermyxAccountStore
+    @Binding var role: ThermyxRole
+    @ObservedObject var settings: ThermyxSettingsStore
     let onContinue: () -> Void
+    let onChangeAccount: () -> Void
+
+    @State private var legal: LegalDocument.Kind?
 
     var body: some View {
-        OnboardingPage(eyebrow: "Getting started", title: "How will you use *Thermyx?*",
-                       subtitle: "You can change this later in Settings.") {
-            VStack(spacing: Thermyx.Space.m) {
-                card(.user, title: "I wear the insoles", detail: "Live comfort and safety, and control of heating and cooling.")
-                card(.trustedMember, title: "I'm watching someone", detail: "Their safety alerts on your phone. You never control their insoles.")
+        OnboardingPage(title: "How will you use Thermyx?") {
+            accountRow
+            VStack(spacing: 0) {
+                roleRow(.user, title: "I wear the insoles", detail: "See your feet live and control heating and cooling.")
+                roleRow(.trustedMember, title: "I'm in someone's circle", detail: "Get alerts and check in on a wearer. You never control their insoles.")
             }
+            if role == .user {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Mostly for")
+                        .font(ThermyxFont.bodySmall)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                    UsageChips(settings: settings)
+                }
+                .transition(.opacity)
+            }
+            HStack {
+                Text("Units")
+                    .font(ThermyxFont.bodySmall)
+                    .foregroundStyle(Thermyx.Ink.textMuted)
+                Spacer()
+                ThermyxSegmentedControl(options: TemperatureUnit.allCases, label: \.shortLabel,
+                                        selection: $settings.temperatureUnit, accessibilityPrefix: "Show temperatures in ")
+                    .fixedSize()
+            }
+            AIInsightsToggle(isOn: $settings.aiInsightsEnabled) { legal = $0 }
         } actions: {
-            Button(action: onContinue) {
-                Label("Continue", systemImage: "arrow.right").labelStyle(TrailingIconLabelStyle())
-            }
-            .buttonStyle(SitePrimaryButtonStyle())
+            Button("Continue", action: onContinue)
+                .buttonStyle(ThermyxPrimaryButtonStyle())
+        }
+        .animation(SiteMotion.settle, value: role)
+        .sheet(item: $legal) { kind in
+            LegalSheet(selection: kind)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
     }
 
-    private func card(_ role: ThermyxRole, title: String, detail: String) -> some View {
-        let selected = selection == role
+    private var accountRow: some View {
+        let name = account.account?.displayName ?? "Signed in"
+        let initials = name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return HStack(spacing: 12) {
+            Circle()
+                .fill(Thermyx.Ink.elevated)
+                .frame(width: 44, height: 44)
+                .overlay {
+                    Text(initials.isEmpty ? "?" : initials)
+                        .font(.custom(ThermyxFont.Family.semibold, size: 16, relativeTo: .headline))
+                        .foregroundStyle(Thermyx.Ink.ice)
+                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(name)
+                    .font(ThermyxFont.rowTitle)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                if let email = account.account?.email {
+                    Text(email)
+                        .font(ThermyxFont.caption)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                }
+            }
+            Spacer()
+            Button("Change", action: onChangeAccount)
+                .font(.custom(ThermyxFont.Family.medium, size: 14, relativeTo: .subheadline))
+                .foregroundStyle(Thermyx.Ink.link)
+                .frame(minHeight: 44)
+                .accessibilityLabel("Use a different account")
+        }
+        .padding(.bottom, 18)
+        .overlay(alignment: .bottom) { ThermyxDivider() }
+        .accessibilityElement(children: .contain)
+    }
+
+    private func roleRow(_ value: ThermyxRole, title: String, detail: String) -> some View {
+        let selected = role == value
         return Button {
-            withAnimation(SiteMotion.settle) { selection = role }
+            withAnimation(SiteMotion.settle) { role = value }
         } label: {
-            HStack(alignment: .top, spacing: Thermyx.Space.l) {
-                Image(systemName: role.icon)
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(selected ? Thermyx.Ink.ice : Thermyx.Site.textMuted)
-                    .frame(width: 28)
-                    .padding(.top, 2)
-                VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .top, spacing: 14) {
+                Circle()
+                    .strokeBorder(selected ? Thermyx.Ink.ice : Color(hex: 0x3A3D43), lineWidth: 2)
+                    .frame(width: 22, height: 22)
+                    .overlay { Circle().fill(selected ? Thermyx.Ink.ice : .clear).frame(width: 10, height: 10) }
+                    .padding(.top, 1)
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(ThermyxFont.cardTitle)
-                        .foregroundStyle(Thermyx.Site.text)
+                        .font(.custom(ThermyxFont.Family.semibold, size: 17, relativeTo: .headline))
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
                     Text(detail)
                         .font(ThermyxFont.caption)
-                        .foregroundStyle(Thermyx.Site.textMuted)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: Thermyx.Space.xs)
-                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 22))
-                    .foregroundStyle(selected ? Thermyx.Ink.signal : Thermyx.Site.hairlineStrong)
-                    .contentTransition(.symbolEffect(.replace))
+                Spacer(minLength: 0)
             }
-            .padding(Thermyx.Space.xxl)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .siteGlass(radius: Thermyx.Radius.section, highlighted: selected)
-            .contentShape(Rectangle())
+            .padding(.vertical, 16)
+            .overlay(alignment: .bottom) { ThermyxDivider() }
+            .contentShape(.rect)
         }
-        .buttonStyle(PressableStyle())
+        .buttonStyle(.plain)
         .sensoryFeedback(.selection, trigger: selected)
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// What the wearer mostly uses Thermyx for: chips, any number on. Shapes the
+/// Simulator's first scenario and the AI summary's suggestions.
+struct UsageChips: View {
+    @ObservedObject var settings: ThermyxSettingsStore
+
+    var body: some View {
+        FlowRow(spacing: 8) {
+            ForEach(ThermyxSettingsStore.usageOptions, id: \.self) { option in
+                chip(option)
+            }
+        }
+    }
+
+    private func chip(_ label: String) -> some View {
+        let on = settings.usage.contains(label)
+        return Button {
+            if on { settings.usage.removeAll { $0 == label } } else { settings.usage.append(label) }
+        } label: {
+            Text(label)
+                .font(.custom(ThermyxFont.Family.medium, size: 14, relativeTo: .subheadline))
+                .foregroundStyle(on ? Thermyx.Ink.onPrimary : Thermyx.Ink.textPrimary)
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .background(on ? Thermyx.Ink.textPrimary : .clear, in: Capsule())
+                .overlay { Capsule().strokeBorder(on ? .clear : Color(hex: 0x2A2D33), lineWidth: 1) }
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .sensoryFeedback(.selection, trigger: on)
+        .accessibilityAddTraits(on ? [.isButton, .isSelected] : .isButton)
     }
 }
 
@@ -302,7 +431,7 @@ private struct WatchStep: View {
                 OnboardingTextField(label: "Your name", text: $name, placeholder: "Name", contentType: .name)
                 OnboardingTextField(label: "Their name", text: $watchedName, placeholder: "Name", contentType: .name)
             }
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SiteEyebrow("Their invite code")
                 RelayConnectionCard(settings: settings, role: "watcher", watcherName: name)
                 Text("No code yet? You can add it later in Settings.")

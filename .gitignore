@@ -1,30 +1,35 @@
-.DS_Store
-.venv-cad/
-__pycache__/
-DerivedData/
-build/
-Build/
-*.xcarchive
-*.ipa
-*.dSYM
-*.dSYM.zip
-*.xcuserstate
-xcuserdata/
+# Secrets: never commit these. The relay reads ThermyxBackend/.env.
 .env
 .env.*
 !.env.example
-*.moved-aside
-.swiftpm/
-.build/
-*.pem
-*.key
-*.p12
-*.mobileprovision
-fastlane/report.xml
-fastlane/Preview.html
-fastlane/screenshots/
-fastlane/test_output/
+*.p8
+Config/Local.xcconfig
 
-# Alert relay runtime state
+# Relay data and logs (database, wearer codes, tunnel and relay logs)
 ThermyxBackend/data/
-ThermyxBackend/node_modules/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Xcode and Swift Package Manager (per-user state and build output)
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.build/
+*.xccheckout
+*.xcscmblueprint
+
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Scratch and local tooling
+.claude/

@@ -68,6 +68,42 @@ final class ThermyxHistoryStore: ObservableObject {
         prune()
     }
 
+    // MARK: - Demo
+
+    /// The wearer's real history, set aside while the demo shows made-up
+    /// history in its place. Nothing is saved while it's set aside, so the
+    /// demo can never overwrite real data on disk.
+    private var realArchive: Archive?
+    var isInDemo: Bool { realArchive != nil }
+
+    /// Swaps in generated demo history, keeping the real history to restore.
+    func enterDemo(minutes: [ThermyxHistorySample], hours: [ThermyxHistorySample], events: [ThermyxRiskEvent]) {
+        saveTask?.cancel()
+        if realArchive == nil {
+            realArchive = Archive(minuteSamples: minuteSamples, hourSamples: hourSamples, events: self.events, sensorMinutes: sensorMinutes)
+        }
+        isLoaded = true
+        minuteSamples = minutes
+        hourSamples = hours
+        self.events = events
+        sensorMinutes = []
+        openEvent = [:]
+        lastReadingAt = [:]
+    }
+
+    /// Drops the demo history and puts the real history back, as it was.
+    func exitDemo() {
+        guard let real = realArchive else { return }
+        realArchive = nil
+        minuteSamples = real.minuteSamples
+        hourSamples = real.hourSamples
+        events = real.events
+        sensorMinutes = real.sensorMinutes ?? []
+        openEvent = [:]
+        lastReadingAt = [:]
+        prune()
+    }
+
     // MARK: - Recording
 
     /// Fold a live reading into the current minute and hour buckets.
@@ -182,7 +218,8 @@ final class ThermyxHistoryStore: ObservableObject {
         now: Date = .now
     ) -> [ThermyxHistorySample] {
         let window = range.window(style: style, now: now)
-        let source = range.usesHourlyTier ? hourSamples : minuteSamples
+        // Minute buckets are kept a week; older windows read the hourly tier.
+        let source = range.usesHourlyTier || window.start < Date.now.addingTimeInterval(-6.5 * 86_400) ? hourSamples : minuteSamples
         return source.filter { sample in
             sample.start >= window.start && sample.start <= window.end
                 && (foot == nil || sample.foot == foot)
@@ -271,6 +308,7 @@ final class ThermyxHistoryStore: ObservableObject {
     }
 
     private func scheduleSave() {
+        guard !isInDemo else { return }
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
@@ -280,6 +318,7 @@ final class ThermyxHistoryStore: ObservableObject {
     }
 
     func save() async {
+        guard !isInDemo else { return }
         let archive = Archive(
             minuteSamples: minuteSamples,
             hourSamples: hourSamples,

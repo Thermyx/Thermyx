@@ -49,18 +49,22 @@ struct ThermyxAlertAPIClient {
 
     /// What the wearer's phone sends. Phone numbers are included only when
     /// the relay has texting on; location only with consent during an event.
+    /// `detail` is the status card: no history and no raw sensor stream.
     struct Event: Encodable {
         let level: String
         let kind: String
-        let reasons: [String]
         let recipients: [String]?
         let location: ThermyxAlertEvent.AlertLocation?
         let locationConsent: Bool
+        let detail: ThermyxCircleDetail
+        /// An admin's test send: real-looking, on record at the relay as a test.
+        var test: Bool? = nil
     }
 
     struct EventResult: Decodable {
         let smsEnabled: Bool?
         let texted: Int?
+        var pushed: Int? = nil
         let reason: String?
     }
 
@@ -126,19 +130,53 @@ struct ThermyxAlertAPIClient {
 
     // MARK: Watcher
 
+    struct PushRegistration: Decodable {
+        let registered: Bool
+        /// Whether the relay has APNs configured.
+        let pushEnabled: Bool
+    }
+
+    /// Gives the relay this phone's push token, so alerts arrive with the app closed.
+    func registerPush(deviceToken: String, environment: String, baseURL: String, token: String) async throws -> PushRegistration {
+        try await request("PUT", "/v1/watch/push", baseURL: baseURL, token: token,
+                          body: ["token": deviceToken, "environment": environment])
+    }
+
     /// Stop watching: ends this watcher's own access.
     func leaveWatching(baseURL: String, token: String) async throws {
         struct Ack: Decodable {}
         let _: Ack = try await request("DELETE", "/v1/watch", baseURL: baseURL, token: token, body: Optional<String>.none)
     }
 
-    /// The minimal view a watcher gets: level, kind, freshness, and a
-    /// location only during an active event the wearer chose to share.
-    struct WatchState: Decodable {
+    /// What a watcher gets: the level and its freshness, the status card,
+    /// the current event's timeline, and a location only during an active
+    /// event the wearer shares it for.
+    struct WatchState: Decodable, Equatable {
         let level: String
         let kind: String
         let updatedAt: String
         let location: ThermyxAlertEvent.AlertLocation?
+        var detail: ThermyxCircleDetail?
+        /// When the current event started.
+        var since: String?
+        var timeline: [TimelineEntry]?
+
+        var updatedDate: Date? { ThermyxAlertAPIClient.parseDate(updatedAt) }
+        var sinceDate: Date? { since.flatMap(ThermyxAlertAPIClient.parseDate) }
+    }
+
+    /// One step in the current event: an alert, a follow-up, an SOS, a
+    /// check-in, a change of level, or the relay noticing silence.
+    struct TimelineEntry: Decodable, Equatable, Identifiable {
+        let at: String
+        /// alert, sos, ok, update, level, silence
+        let kind: String
+        let level: String
+        var update: String?
+        var minutes: Int?
+
+        var id: String { at + kind }
+        var date: Date? { ThermyxAlertAPIClient.parseDate(at) }
     }
 
     struct WatchResult: Decodable {
@@ -171,8 +209,15 @@ struct ThermyxAlertAPIClient {
         var events: Int
         var focus: String?
         var unit: String
+        var steps: Double?
+        var walkingMinutes: Double?
+        var sittingMinutes: Double?
+        /// What the wearer said Thermyx is mostly for (the app's own fixed
+        /// list), so the suggestions fit their day.
+        var usage: [String]?
 
-        init(_ s: ThermyxDailySummary, unit: TemperatureUnit, focus: UserProfile.Focus?, calendar: Calendar = .current) {
+        init(_ s: ThermyxDailySummary, unit: TemperatureUnit, focus: UserProfile.Focus?, usage: [String] = [],
+             calendar: Calendar = .current) {
             let parts = calendar.dateComponents([.year, .month, .day], from: s.day)
             day = String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
             wornMinutes = (s.wornSeconds / 60).rounded()
@@ -190,6 +235,11 @@ struct ThermyxAlertAPIClient {
             events = s.events
             self.focus = focus?.rawValue
             self.unit = unit == .fahrenheit ? "F" : "C"
+            steps = s.steps.map { $0.rounded() }
+            walkingMinutes = s.walkingSeconds.map { ($0 / 60).rounded() }
+            sittingMinutes = s.sittingSeconds.map { ($0 / 60).rounded() }
+            let known = usage.filter(ThermyxSettingsStore.usageOptions.contains)
+            self.usage = known.isEmpty ? nil : known
         }
     }
 
@@ -197,6 +247,23 @@ struct ThermyxAlertAPIClient {
         struct Result: Decodable { let summary: String }
         let result: Result = try await request("POST", "/v1/summary", baseURL: baseURL, token: token, body: body)
         return result.summary
+    }
+
+    // MARK: AI chat
+
+    struct ChatMessage: Codable, Equatable, Identifiable {
+        var role: String
+        var content: String
+        var id = UUID()
+        enum CodingKeys: String, CodingKey { case role, content }
+    }
+
+    /// A reply about one day, from its totals and the conversation so far.
+    func chat(day: SummaryRequest, messages: [ChatMessage], baseURL: String, token: String) async throws -> String {
+        struct Body: Encodable { let day: SummaryRequest; let messages: [ChatMessage] }
+        struct Reply: Decodable { let reply: String }
+        let reply: Reply = try await request("POST", "/v1/chat", baseURL: baseURL, token: token, body: Body(day: day, messages: messages))
+        return reply.reply
     }
 
     // MARK: Plumbing
@@ -231,7 +298,7 @@ struct ThermyxAlertAPIClient {
         case 403:
             if path == "/v1/pair" { throw ClientError.codeRejected }
             // The relay has the AI summary switched off (a removed token is 401).
-            if path == "/v1/summary" { throw ClientError.aiSummaryOff }
+            if path == "/v1/summary" || path == "/v1/chat" { throw ClientError.aiSummaryOff }
             throw ClientError.accessRemoved
         case 429: throw ClientError.tooManyAttempts
         default: throw ClientError.server(http.statusCode)

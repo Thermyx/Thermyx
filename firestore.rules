@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// Thermyx Firestore rules. Everything not matched below is denied.
+//
+// Two collections:
+//
+//   users/{uid}/backup/{part}   a wearer's own backup (profile, preferences,
+//                               baseline, calibration model, recoveries).
+//                               Only that wearer can read or write it.
+//
+//   priorSamples/{id}           anonymous population numbers. Create-only: no
+//                               user ID, no timestamp, nothing that says who
+//                               wrote it, so nothing can authorise a later
+//                               edit or delete. They expire by TTL on
+//                               `expireAt`.
+//
+// What a signed-in user CAN read, plainly: aggregation queries (count, sum,
+// average) are authorised by the `list` rule, and `list` also allows
+// reading the documents themselves. So any signed-in user with a verified
+// email could list every priorSamples document: a metric name, a coarse
+// cohort (what someone mostly uses Thermyx for, an age band), one rounded
+// number and its square. No identifier of any kind is stored with them. They
+// can never read anyone's users/{uid}/backup documents.
+//
+// What a signed-in user CAN write: well-formed priorSamples documents with
+// in-range values. Rules can't tell an honest wearer from someone scripting
+// the API, so the app treats priors as a weak hint (it shrinks toward them
+// only when 20+ contributors agree, and a baseline can only ever add caution).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // ---- Per-account backup ------------------------------------------------
+
+    match /users/{uid}/backup/{part} {
+      function validPart() {
+        return part in ['settings', 'baseline', 'model', 'recoveries'];
+      }
+
+      // `payload` is the part as JSON; `updatedAt` and `deviceId` decide
+      // last-writer-wins. A phone with a clock far ahead can't win forever:
+      // timestamps more than five minutes in the future are refused.
+      function validBackup(d) {
+        return d.keys().hasOnly(['schema', 'payload', 'updatedAt', 'deviceId'])
+          && d.keys().hasAll(['schema', 'payload', 'updatedAt', 'deviceId'])
+          && d.schema == 1
+          && d.payload is string
+          && d.payload.size() <= 900000
+          && d.updatedAt is timestamp
+          && d.updatedAt <= request.time + duration.value(5, 'm')
+          && d.deviceId is string
+          && d.deviceId.size() <= 64;
+      }
+
+      allow read, delete: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && validPart()
+        && validBackup(request.resource.data);
+    }
+
+    // ---- Anonymous population numbers --------------------------------------
+
+    match /priorSamples/{id} {
+      function inRange(metric, v) {
+        return v is number && (
+          (metric in ['footSitting', 'footStanding', 'footWalking'] && v >= 24 && v <= 40)
+          || (metric == 'steadiness' && v >= 0.5 && v <= 1)
+          || (metric in ['standingLean', 'walkingLean'] && v >= -0.6 && v <= 0.6)
+          || (metric == 'steadinessGap' && v >= -0.5 && v <= 0.5)
+        );
+      }
+
+      // Exactly these fields: no uid, no email, no timestamp but the expiry.
+      function validSample(d) {
+        return d.keys().hasOnly(['v', 'metric', 'cohort', 'usage', 'band', 'value', 'sq', 'expireAt'])
+          && d.keys().hasAll(['v', 'metric', 'cohort', 'usage', 'band', 'value', 'sq', 'expireAt'])
+          && d.v == 1
+          && d.metric is string
+          && inRange(d.metric, d.value)
+          && d.sq is number
+          && math.abs(d.sq - d.value * d.value) < 0.001
+          && d.usage in ['outdoor-work', 'sports', 'cold', 'everyday', 'general']
+          && d.band in ['under-30', '30-59', '60-plus', 'unknown']
+          && d.cohort == d.usage + '|' + d.band
+          && d.expireAt is timestamp
+          && d.expireAt > request.time
+          && d.expireAt < request.time + duration.value(40, 'd');
+      }
+
+      function verified() {
+        return signedIn() && request.auth.token.email_verified == true;
+      }
+
+      allow create: if verified()
+        && id.matches('^[a-f0-9]{32}$')
+        && validSample(request.resource.data);
+      // Aggregation queries (count, sum, average) need `list`.
+      allow list: if verified();
+      allow get, update, delete: if false;
+    }
+  }
+}

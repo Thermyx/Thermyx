@@ -4,14 +4,16 @@
 // and the retention job below running.
 //
 // Secrets are never stored in the clear. Device tokens and pairing codes are
-// kept only as SHA-256 hashes, and nothing here holds phone numbers or sensor
-// readings.
+// kept only as SHA-256 hashes. Nothing here holds phone numbers or a history
+// of readings: only the wearer's latest status for their approved watchers
+// (level, the name they chose, which foot, its temperature and trend, data
+// confidence, a low battery) and a short timeline of the current event.
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { DatabaseSync } = require("node:sqlite");
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 4;
 
 // Lifetimes.
 const CODE_TTL_MS = 10 * 60_000;                 // pairing codes: 10 minutes, single use
@@ -20,6 +22,7 @@ const WATCHER_TTL_MS = 90 * 24 * 3_600_000;       // watcher access: 90 days, re
 const LOCATION_TTL_MS = 60 * 60_000;              // shared location: 1 hour at most
 const AUDIT_RETENTION_MS = 30 * 24 * 3_600_000;
 const STATUS_RETENTION_MS = 7 * 24 * 3_600_000;
+const TIMELINE_LENGTH = 16;                       // entries kept for the current event
 const CONTACT_CODE_TTL_MS = 10 * 60_000;          // contact confirmation codes: 10 minutes
 const CONTACT_CODE_ATTEMPTS = 5;
 
@@ -143,6 +146,7 @@ function openStore(file, now = () => Date.now()) {
 
     /** Removes a watcher's access immediately. */
     revokeWatcher(deviceID, watcherID) {
+      db.prepare("DELETE FROM watcher_push WHERE watcher_id = ?").run(watcherID);
       const result = db.prepare("UPDATE watchers SET status = 'revoked', revoked_at = ? WHERE id = ? AND device_id = ? AND status != 'revoked'")
         .run(now(), watcherID, deviceID);
       if (result.changes !== 1) return false;
@@ -151,7 +155,33 @@ function openStore(file, now = () => Date.now()) {
       return true;
     },
 
+    /** Stores (or replaces) the phone's push token for a watcher. */
+    setPushToken(watcherID, token, environment) {
+      db.prepare(`INSERT INTO watcher_push (watcher_id, token, environment, updated_at) VALUES (?, ?, ?, ?)
+                  ON CONFLICT(watcher_id) DO UPDATE SET token = excluded.token, environment = excluded.environment, updated_at = excluded.updated_at`)
+        .run(watcherID, token, environment, now());
+      audit(`watcher:${watcherID}`, "push_registered", environment);
+    },
+
+    clearPushToken(watcherID) {
+      db.prepare("DELETE FROM watcher_push WHERE watcher_id = ?").run(watcherID);
+    },
+
+    /** Drops a token Apple said is dead, wherever it is stored. */
+    forgetPushToken(token) {
+      db.prepare("DELETE FROM watcher_push WHERE token = ?").run(token);
+    },
+
+    /** Push tokens of this wearer's approved, unexpired watchers. */
+    pushTargets(deviceID) {
+      return db.prepare(`SELECT p.token, p.environment, w.id AS watcher_id FROM watcher_push p
+                         JOIN watchers w ON w.id = p.watcher_id
+                         WHERE w.device_id = ? AND w.status = 'approved' AND w.expires_at > ?`)
+        .all(deviceID, now());
+    },
+
     leaveAsWatcher(watcherID) {
+      db.prepare("DELETE FROM watcher_push WHERE watcher_id = ?").run(watcherID);
       db.prepare("UPDATE watchers SET status = 'revoked', revoked_at = ? WHERE id = ? AND status != 'revoked'").run(now(), watcherID);
       db.prepare("UPDATE tokens SET revoked_at = ? WHERE watcher_id = ? AND revoked_at IS NULL").run(now(), watcherID);
       audit(`watcher:${watcherID}`, "watcher_left", watcherID);
@@ -164,11 +194,14 @@ function openStore(file, now = () => Date.now()) {
     /**
      * Records the wearer's current state. Location is kept only when the
      * wearer consented and a safety event is active, and only for an hour.
+     * `detail` is the cleaned status card (see message.js). Each event that
+     * isn't a heartbeat, and each change of level, goes on the event's
+     * timeline; a new event (rising from Normal, or an SOS) starts a fresh one.
      */
-    updateStatus(deviceID, { level, kind, location, locationConsent }) {
-      const activeEvent = kind === "sos" || level === "High risk" || level === "Critical";
+    updateStatus(deviceID, { level, kind, location, locationConsent, detail = null }) {
+      const activeEvent = kind === "sos" || kind === "help" || level === "High risk" || level === "Critical";
       const consented = Boolean(locationConsent);
-      const previous = db.prepare("SELECT lat, lon, accuracy_m, location_expires_at FROM status WHERE device_id = ?").get(deviceID);
+      const previous = db.prepare("SELECT * FROM status WHERE device_id = ?").get(deviceID);
 
       let loc = { lat: null, lon: null, acc: null, exp: null };
       if (activeEvent && consented && location) {
@@ -183,15 +216,46 @@ function openStore(file, now = () => Date.now()) {
       }
       // Anything else (event over, consent withdrawn) clears the location.
 
-      db.prepare(`INSERT INTO status (device_id, level, kind, updated_at, lat, lon, accuracy_m, location_expires_at)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      const elevated = level !== "Normal" || kind === "sos" || kind === "help";
+      const wasElevated = previous ? previous.level !== "Normal" || previous.kind === "sos" || previous.kind === "help" : false;
+      let since = previous ? previous.since : null;
+      let timeline = previous && previous.timeline ? JSON.parse(previous.timeline) : [];
+      if (elevated && !wasElevated) { since = now(); timeline = []; }
+      let entry = null;
+      if (kind !== "status") entry = { at: iso(now()), kind, level };
+      else if (previous && previous.level !== level && (elevated || wasElevated)) entry = { at: iso(now()), kind: "level", level };
+      if (entry && kind === "update" && detail && detail.update) entry.update = detail.update;
+      if (entry && (elevated || wasElevated || kind !== "status")) timeline = [...timeline, entry].slice(-TIMELINE_LENGTH);
+
+      db.prepare(`INSERT INTO status (device_id, level, kind, updated_at, lat, lon, accuracy_m, location_expires_at, detail, timeline, since)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                   ON CONFLICT(device_id) DO UPDATE SET level = excluded.level, kind = excluded.kind,
                     updated_at = excluded.updated_at, lat = excluded.lat, lon = excluded.lon,
-                    accuracy_m = excluded.accuracy_m, location_expires_at = excluded.location_expires_at`)
-        .run(deviceID, level, kind, now(), loc.lat, loc.lon, loc.acc, loc.exp);
+                    accuracy_m = excluded.accuracy_m, location_expires_at = excluded.location_expires_at,
+                    detail = excluded.detail, timeline = excluded.timeline, since = excluded.since`)
+        .run(deviceID, level, kind, now(), loc.lat, loc.lon, loc.acc, loc.exp,
+             detail ? JSON.stringify(detail) : null, timeline.length ? JSON.stringify(timeline) : null, since);
     },
 
-    /** The minimal view a watcher gets: state, kind, freshness, and an active-event location. */
+    /** Adds a relay-side entry (e.g. "silence") to the current event's timeline. */
+    addTimelineEntry(deviceID, entry) {
+      const row = db.prepare("SELECT timeline FROM status WHERE device_id = ?").get(deviceID);
+      if (!row) return;
+      const timeline = [...(row.timeline ? JSON.parse(row.timeline) : []), { at: iso(now()), ...entry }].slice(-TIMELINE_LENGTH);
+      db.prepare("UPDATE status SET timeline = ? WHERE device_id = ?").run(JSON.stringify(timeline), deviceID);
+    },
+
+    /** The last location kept for an active event, if it hasn't expired. */
+    activeLocation(deviceID) {
+      const row = db.prepare("SELECT lat, lon, location_expires_at FROM status WHERE device_id = ?").get(deviceID);
+      return row && row.lat != null && row.location_expires_at > now() ? { latitude: row.lat, longitude: row.lon } : null;
+    },
+
+    /**
+     * What an approved watcher sees: the level and its freshness, the status
+     * card the wearer's phone sent, the current event's timeline, and a
+     * location only during an active event the wearer shares it for.
+     */
     watcherView(deviceID) {
       const row = db.prepare("SELECT * FROM status WHERE device_id = ?").get(deviceID);
       if (!row) return null;
@@ -199,6 +263,9 @@ function openStore(file, now = () => Date.now()) {
       if (row.lat != null && row.location_expires_at > now()) {
         view.location = { latitude: row.lat, longitude: row.lon, accuracyM: row.accuracy_m, expiresAt: iso(row.location_expires_at) };
       }
+      if (row.detail) view.detail = JSON.parse(row.detail);
+      if (row.since) view.since = iso(row.since);
+      if (row.timeline) view.timeline = JSON.parse(row.timeline);
       return view;
     },
 
@@ -206,8 +273,22 @@ function openStore(file, now = () => Date.now()) {
       return db.prepare("SELECT severity, at FROM sms_log WHERE device_id = ? AND delivered > 0 AND kind = 'alert' ORDER BY at DESC LIMIT 1").get(deviceID);
     },
 
+    /** An admin's test send, for the audit trail: real-looking, but on record as a test. */
+    noteTest(deviceID, kind) {
+      audit(`wearer:${deviceID}`, "test_event", kind);
+    },
+
+    /** Whether an alert or SOS reached anyone in the current event. */
+    eventTexted(deviceID) {
+      return Boolean(db.prepare("SELECT 1 FROM sms_log WHERE device_id = ? AND delivered > 0 AND kind IN ('alert', 'sos', 'help') LIMIT 1").get(deviceID));
+    },
+
+    lastTextOfKind(deviceID, kind) {
+      return db.prepare("SELECT severity, at FROM sms_log WHERE device_id = ? AND delivered > 0 AND kind = ? ORDER BY at DESC LIMIT 1").get(deviceID, kind);
+    },
+
     clearLastText(deviceID) {
-      db.prepare("DELETE FROM sms_log WHERE device_id = ? AND kind = 'alert'").run(deviceID);
+      db.prepare("DELETE FROM sms_log WHERE device_id = ? AND kind IN ('alert', 'update', 'sos', 'help')").run(deviceID);
     },
 
     recordText(deviceID, kind, severity, delivered, failed) {
@@ -221,6 +302,7 @@ function openStore(file, now = () => Date.now()) {
       db.prepare("UPDATE watchers SET status = 'revoked', revoked_at = ? WHERE device_id = ? AND status != 'revoked'").run(now(), deviceID);
       db.prepare("DELETE FROM status WHERE device_id = ?").run(deviceID);
       db.prepare("DELETE FROM contact_checks WHERE device_id = ?").run(deviceID);
+      db.prepare("DELETE FROM watcher_push WHERE watcher_id IN (SELECT id FROM watchers WHERE device_id = ?)").run(deviceID);
       audit(actor, "revoke_device", deviceID);
       return result.changes;
     },
@@ -325,6 +407,27 @@ function migrate(db) {
         created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
         PRIMARY KEY (device_id, phone_hash));
       INSERT INTO schema_version (version) VALUES (2);
+    `);
+  }
+  if ((db.prepare("SELECT MAX(version) AS v FROM schema_version").get().v || 0) < 3) {
+    // The watcher's status card: the latest cleaned detail, the current
+    // event's timeline, and when that event started.
+    db.exec(`
+      ALTER TABLE status ADD COLUMN detail TEXT;
+      ALTER TABLE status ADD COLUMN timeline TEXT;
+      ALTER TABLE status ADD COLUMN since INTEGER;
+      INSERT INTO schema_version (version) VALUES (3);
+    `);
+  }
+  if ((db.prepare("SELECT MAX(version) AS v FROM schema_version").get().v || 0) < 4) {
+    // Watchers' push tokens: one per watcher, removed when they leave or are
+    // revoked, or when Apple says the token is dead.
+    db.exec(`
+      CREATE TABLE watcher_push (
+        watcher_id TEXT PRIMARY KEY, token TEXT NOT NULL,
+        environment TEXT NOT NULL CHECK (environment IN ('development','production')),
+        updated_at INTEGER NOT NULL);
+      INSERT INTO schema_version (version) VALUES (4);
     `);
   }
   if ((db.prepare("SELECT MAX(version) AS v FROM schema_version").get().v || 0) !== SCHEMA_VERSION) {

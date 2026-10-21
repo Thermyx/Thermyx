@@ -11,10 +11,11 @@ struct FootLegend: View {
     var body: some View {
         HStack(spacing: Thermyx.Space.m) {
             ForEach(feet) { foot in
-                HStack(spacing: 5) {
-                    DashSwatch(isDashed: foot.isDashedInCharts, tint: tint)
+                HStack(spacing: 6) {
+                    Capsule().fill(foot.chartColor).frame(width: 16, height: 3)
                     Text(foot.label)
-                        .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
                 }
                 .accessibilityElement(children: .combine)
             }
@@ -22,16 +23,3 @@ struct FootLegend: View {
     }
 }
 
-private struct DashSwatch: View {
-    let isDashed: Bool
-    let tint: Color
-
-    var body: some View {
-        Capsule()
-            .strokeBorder(
-                tint,
-                style: StrokeStyle(lineWidth: 2.5, dash: isDashed ? [3, 3] : [])
-            )
-            .frame(width: 18, height: 2.5)
-    }
-}

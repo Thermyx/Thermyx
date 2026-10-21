@@ -5,6 +5,8 @@ import WidgetKit
 struct ThermyxWidgetsBundle: WidgetBundle {
     var body: some Widget {
         ThermyxStatusWidget()
+        ThermyxReadinessWidget()
+        ThermyxSafetyWidget()
         ThermyxLiveActivity()
     }
 }

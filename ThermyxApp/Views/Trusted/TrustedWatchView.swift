@@ -10,39 +10,29 @@ struct TrustedWatchView: View {
 
     private var unit: TemperatureUnit { settings.temperatureUnit }
     private var event: ThermyxAlertEvent? { member.displayedEvent(deviceID: settings.deviceID) }
-    private var pair: BilateralReading? { member.displayedBilateral }
-
-    private var assessment: ThermyxRiskAssessment {
-        guard let event else { return .unavailable }
-        return ThermyxRiskAssessment(
-            level: ThermyxRiskLevel(rawValue: event.level) ?? .unavailable,
-            reasons: event.reasons
-        )
-    }
+    private var card: ThermyxAlertAPIClient.WatchState? { member.card }
+    private var level: ThermyxRiskLevel { event.flatMap { ThermyxRiskLevel(rawValue: $0.level) } ?? .unavailable }
+    /// The name the wearer chose, else the one this watcher saved.
+    private var name: String { card?.detail?.name ?? roles.watchedUserName }
 
     var body: some View {
         NavigationStack {
+            ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: Thermyx.Space.l) {
                     header
 
                     if let event {
                         silenceWarning
-                        riskCard(event: event)
-                        if let mapsURL = event.location?.mapsURL, !member.isShowingSample {
-                            Link(destination: mapsURL) {
-                                Label("Open their location in Maps", systemImage: "mappin.and.ellipse")
-                            }
-                            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
+                        HandoffStatusCard(level: level, card: card, updated: event.timestamp, unit: unit)
+                        NextStepCard(level: level, card: card, name: name, phone: contactNumber)
+                        if let timeline = card?.timeline, !timeline.isEmpty {
+                            EventTimeline(entries: timeline)
                         }
-                        actionCard
-                        // Readings appear only in the teaching sample. A live
-                        // watcher sees the safety level and its freshness,
-                        // never the wearer's sensor data.
-                        if member.isShowingSample {
-                            if let pair, pair.hasAny { soleRow(pair) }
-                            metricGrid(event.readings, pair: pair)
-                        }
+                        Text("You see what Thermyx sees right now, never their history or a live feed, and you can't change their insoles.")
+                            .font(ThermyxFont.captionSmall)
+                            .foregroundStyle(Thermyx.Ink.textFaint)
+                            .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Spacer(minLength: Thermyx.Space.xxl)
                         ThermyxEmptyState(
@@ -50,11 +40,10 @@ struct TrustedWatchView: View {
                             message: emptyMessage,
                             systemImage: member.access == .pending ? "hourglass" : "antenna.radiowaves.left.and.right"
                         )
-                        samplePrompt
                         Spacer(minLength: Thermyx.Space.xxl)
                     }
 
-                    if let error = member.lastError, !member.isShowingSample {
+                    if let error = member.lastError {
                         Text(error)
                             .font(ThermyxFont.captionSmall)
                             .foregroundStyle(Thermyx.Ink.amber)
@@ -64,12 +53,15 @@ struct TrustedWatchView: View {
                 .padding(.horizontal, Thermyx.Space.screen)
                 .padding(.bottom, Thermyx.Space.xxl)
                 .frame(maxHeight: .infinity)
+                .animation(SiteMotion.settle, value: card)
+                Color.clear.frame(height: 1).id("end")
+            }
+            .debugScroll(proxy)
             }
             .scrollIndicators(.hidden)
             .scrollBounceBehavior(.basedOnSize)
             .background(Thermyx.Ink.midnight)
             .thermyxTopScrim()
-            .trustedSampleBanner(member: member, watchedName: roles.watchedUserName)
         }
     }
 
@@ -101,7 +93,7 @@ struct TrustedWatchView: View {
                 .fill(Thermyx.Ink.elevated)
                 .frame(width: 42, height: 42)
                 .overlay {
-                    Text(roles.watchedUserName.thermyxInitials)
+                    Text(name.thermyxInitials)
                         .font(ThermyxFont.rowTitle)
                         .foregroundStyle(Thermyx.Ink.ice)
                 }
@@ -109,7 +101,7 @@ struct TrustedWatchView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Trusted circle")
                     .narrowLabel(ThermyxFont.zoneLabel, tracking: 2.4, color: Thermyx.Ink.ice)
-                Text(roles.watchedUserName)
+                Text(name)
                     .font(ThermyxFont.cardTitle)
                     .tracking(-0.3)
                     .foregroundStyle(Thermyx.Ink.textPrimary)
@@ -117,9 +109,7 @@ struct TrustedWatchView: View {
 
             Spacer(minLength: Thermyx.Space.xs)
 
-            if member.isShowingSample {
-                StatusPill("Sample", tint: Thermyx.Ink.amber, fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder, showsDot: false)
-            } else if member.isConnected {
+            if member.isConnected {
                 StatusPill.live()
             } else {
                 StatusPill.offline()
@@ -134,9 +124,9 @@ struct TrustedWatchView: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             if let silence = member.silence(now: context.date), silence >= TrustedMemberViewModel.silenceWarning {
                 ThermyxCard(fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
-                    VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
+                    VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                         SectionLabel("No update for \(Int(silence / 60)) min", color: Thermyx.Ink.amber)
-                        Text("Their phone, signal, or insoles may be off. The status below is the last one received, not a live one. Check in with them.")
+                        Text("Their phone, signal, or insoles may be off. What's below is the last status received, not a live one. Check in with them directly.")
                             .font(ThermyxFont.caption)
                             .foregroundStyle(Thermyx.Ink.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -146,223 +136,385 @@ struct TrustedWatchView: View {
         }
     }
 
-    private func riskCard(event: ThermyxAlertEvent) -> some View {
-        let level = assessment.level
-        return VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            HStack(spacing: Thermyx.Space.s) {
+    private var contactNumber: String? {
+        let number = roles.watchedUserPhone.trimmingCharacters(in: .whitespacesAndNewlines)
+        return number.isEmpty ? nil : number
+    }
+}
+
+// MARK: - Status
+
+/// The handoff: how serious, what the insoles saw and on which foot, the
+/// temperature and its direction, whether the data can be relied on, how
+/// fresh it is, and whether they've checked in.
+struct HandoffStatusCard: View {
+    let level: ThermyxRiskLevel
+    let card: ThermyxAlertAPIClient.WatchState?
+    let updated: Date
+    let unit: TemperatureUnit
+
+    private var detail: ThermyxCircleDetail? { card?.detail }
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Thermyx.Radius.readout, style: .continuous) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.l) {
+            HStack(alignment: .firstTextBaseline, spacing: Thermyx.Space.s) {
                 Image(systemName: level.severity >= 1 ? "exclamationmark.triangle.fill" : "checkmark.shield.fill")
-                    .font(.system(size: 24, weight: .semibold))
+                    .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(level.tint)
                 Text(level.rawValue)
                     .narrowLabel(ThermyxFont.riskHeadline, tracking: ThermyxTracking.riskHeadline, color: level.tint)
+                Spacer(minLength: Thermyx.Space.xs)
+                if let since = card?.sinceDate, level.severity >= 1 {
+                    Text("since \(since.formatted(date: .omitted, time: .shortened))")
+                        .font(ThermyxFont.monoCaption)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                }
             }
+            .accessibilityElement(children: .combine)
 
-            Text(assessment.reasons.joined(separator: " ").isEmpty ? level.explanation : assessment.reasons.joined(separator: " "))
+            Text(headline)
                 .font(ThermyxFont.bodyLarge)
                 .lineSpacing(3)
                 .foregroundStyle(Thermyx.Ink.textPrimary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Text("Updated \(event.timestamp.formatted(date: .omitted, time: .shortened))")
-                .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.statusPill, color: Thermyx.Ink.textMuted)
+            if let detail, detail.footC != nil || detail.foot != nil {
+                readout(detail)
+            }
+
+            if let checkIn = latestCheckIn {
+                Label("Checked in at \(checkIn.formatted(date: .omitted, time: .shortened)): says they're OK", systemImage: "hand.thumbsup.fill")
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(Thermyx.Ink.ice)
+                    .padding(.horizontal, Thermyx.Space.m)
+                    .frame(minHeight: 36)
+                    .background(Thermyx.Tint.liveFill, in: Capsule())
+            }
+
+            facts
         }
         .padding(Thermyx.Space.hero)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(level.fill, in: RoundedRectangle(cornerRadius: Thermyx.Radius.readout, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.readout, style: .continuous)
-                .strokeBorder(level.border, lineWidth: Thermyx.Stroke.hairline)
+        .background(level.fill, in: shape)
+        .overlay { shape.strokeBorder(level.border, lineWidth: Thermyx.Stroke.hairline) }
+    }
+
+    private var headline: String {
+        if let headline = ThermyxCircleMessage.headline(detail) { return headline }
+        if isRecovering { return "Recovering: readings are easing." }
+        switch level {
+        case .normal: return "All readings look normal."
+        case .caution: return "Readings deserve a check-in."
+        case .high: return "Readings are at High risk."
+        case .critical: return "Readings are at Critical."
+        case .unavailable: return "Waiting for readings from their insoles."
+        }
+    }
+
+    /// Both soles, the affected one tinted by its temperature, and the
+    /// number beside them. The other foot is only an outline: a watcher is
+    /// told about the foot that matters, not given both feet's readings.
+    private func readout(_ d: ThermyxCircleDetail) -> some View {
+        HStack(alignment: .center, spacing: Thermyx.Space.l) {
+            HStack(spacing: 5) {
+                ForEach(Foot.allCases) { foot in
+                    let lit = d.foot == "both" || d.affectedFoot == foot
+                    VStack(spacing: 4) {
+                        FootMap(foot: foot, content: lit ? .temperature(d.footC) : .outline(dimmed: true))
+                            .frame(width: 34, height: 74)
+                        Text(foot == .left ? "L" : "R")
+                            .font(ThermyxFont.monoCaption)
+                            .foregroundStyle(lit ? Thermyx.Ink.textSecondary : Thermyx.Ink.textFaint)
+                    }
+                }
+            }
+            .accessibilityHidden(true)
+
+            if let c = d.footC {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
+                        Text(TemperatureFormat.value(c, in: unit))
+                            .font(ThermyxFont.statNumeral)
+                            .monospacedDigit()
+                            .foregroundStyle(FootScale.thermalColor(c))
+                            .contentTransition(.numericText())
+                        Text(unit.symbol)
+                            .font(ThermyxFont.caption)
+                            .foregroundStyle(Thermyx.Ink.textMuted)
+                    }
+                    HStack(spacing: 5) {
+                        if let trend = d.trend {
+                            Image(systemName: trend == "rising" ? "arrow.up.right" : trend == "falling" ? "arrow.down.right" : "arrow.right")
+                                .font(.system(size: 12, weight: .bold))
+                            Text(trend)
+                        }
+                        Text(d.trend == nil ? "at the insole" : "· at the insole")
+                            .foregroundStyle(Thermyx.Ink.textFaint)
+                    }
+                    .font(ThermyxFont.caption)
+                    .foregroundStyle(trendTint(d.trend))
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(placeLabel(d)) temperature at the insole")
+                .accessibilityValue("\(TemperatureFormat.full(c, in: unit))\(d.trend.map { ", \($0)" } ?? "")")
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func placeLabel(_ d: ThermyxCircleDetail) -> String {
+        if d.foot == "both" { return "Both feet" }
+        return [d.affectedFoot?.label, d.footZone?.label.lowercased()].compactMap { $0 }.joined(separator: " ")
+    }
+
+    private func trendTint(_ trend: String?) -> Color {
+        switch trend {
+        case "rising": return level.severity >= 1 ? Thermyx.Ink.ember : Thermyx.Ink.textSecondary
+        case "falling": return Thermyx.Ink.ice
+        default: return Thermyx.Ink.textSecondary
+        }
+    }
+
+    /// Confidence and freshness always; battery and connection only when
+    /// they matter.
+    private var facts: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
+            ThermyxDivider()
+            TimelineView(.periodic(from: .now, by: 5)) { context in
+                HStack(spacing: Thermyx.Space.s) {
+                    if let detail, detail.confidence != nil {
+                        fact(detail.isConfirmed ? "checkmark.seal.fill" : "exclamationmark.circle",
+                             detail.isConfirmed ? "Data confirmed" : "Limited data · check with them directly",
+                             detail.isConfirmed ? Thermyx.Ink.ice : Thermyx.Ink.amber)
+                    }
+                    Spacer(minLength: 0)
+                    Text(freshness(now: context.date))
+                        .font(ThermyxFont.monoCaption)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                        .monospacedDigit()
+                }
+            }
+            if let battery = detail?.battery {
+                fact(battery.percent <= ThermyxBattery.critical ? "battery.0percent" : "battery.25percent",
+                     "\(battery.foot.capitalized) insole battery \(battery.percent)%", ThermyxBattery.tint(battery.percent))
+            }
+            if detail?.connection == "oneInsole" {
+                fact("shoeprints.fill", "Only one insole connected", Thermyx.Ink.amber)
+            } else if detail?.connection == "stale" {
+                fact("clock.badge.exclamationmark", "Readings more than a minute old", Thermyx.Ink.amber)
+            }
+        }
+    }
+
+    private func fact(_ symbol: String, _ text: String, _ tint: Color) -> some View {
+        Label {
+            Text(text).foregroundStyle(Thermyx.Ink.textSecondary)
+        } icon: {
+            Image(systemName: symbol).foregroundStyle(tint)
+        }
+        .font(ThermyxFont.caption)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func freshness(now: Date) -> String {
+        let age = max(0, now.timeIntervalSince(updated))
+        if age < 60 { return "Updated \(Int(age)) s ago" }
+        if age < 3600 { return "Updated \(Int(age / 60)) min ago" }
+        return "Updated \(updated.formatted(date: .omitted, time: .shortened))"
+    }
+
+    private var isRecovering: Bool { card?.timeline?.last?.update == "recovering" && level.severity >= 1 }
+
+    /// A check-in after the most recent alert, SOS or follow-up.
+    private var latestCheckIn: Date? {
+        guard let timeline = card?.timeline,
+              let ok = timeline.lastIndex(where: { $0.kind == "ok" }) else { return nil }
+        let laterAlarm = timeline[(ok + 1)...].contains { $0.kind == "alert" || $0.kind == "sos" }
+        return laterAlarm ? nil : timeline[ok].date
+    }
+}
+
+// MARK: - Next step
+
+/// What to do now, by level, and what the wearer was asked to do, with the
+/// buttons to do it.
+struct NextStepCard: View {
+    let level: ThermyxRiskLevel
+    let card: ThermyxAlertAPIClient.WatchState?
+    let name: String
+    let phone: String?
+
+    private var hadSOS: Bool { (card?.timeline ?? []).contains { $0.kind == "sos" || $0.kind == "help" } && card?.timeline?.last?.kind != "ok" }
+    private var urgent: Bool { hadSOS || level.severity >= ThermyxRiskLevel.high.severity }
+    /// Easing after an alert: the last word was "recovering".
+    private var recovering: Bool { !urgent && card?.timeline?.last?.update == "recovering" }
+
+    var body: some View {
+        ThermyxCard(padding: Thermyx.Space.xl) {
+            VStack(alignment: .leading, spacing: Thermyx.Space.m) {
+                SectionLabel("Next step", color: urgent ? Thermyx.Ink.ember : Thermyx.Ink.ice)
+
+                Text(action)
+                    .font(.custom(ThermyxFont.Family.semibold, size: 19, relativeTo: .title3))
+                    .lineSpacing(2)
+                    .foregroundStyle(Thermyx.Ink.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let asked = ThermyxCircleMessage.wearerWasAsked(level: level.rawValue) {
+                    Text(asked)
+                        .font(ThermyxFont.bodySmall)
+                        .foregroundStyle(Thermyx.Ink.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                HStack(spacing: Thermyx.Space.xs) {
+                    if urgent {
+                        Button { open("tel") } label: { Label("Call \(firstName)", systemImage: "phone.fill") }
+                            .buttonStyle(ThermyxPrimaryButtonStyle())
+                        Button { open("sms") } label: { Label("Message", systemImage: "message.fill") }
+                            .buttonStyle(ThermyxSecondaryButtonStyle())
+                    } else {
+                        Button { open("sms") } label: { Label("Message", systemImage: "message.fill") }
+                            .buttonStyle(ThermyxPrimaryButtonStyle())
+                        Button { open("tel") } label: { Label("Call", systemImage: "phone.fill") }
+                            .buttonStyle(ThermyxSecondaryButtonStyle())
+                    }
+                }
+                .disabled(phone == nil)
+                .opacity(phone == nil ? 0.5 : 1)
+
+                if phone == nil {
+                    Text("Add their number under Settings to call or message from here.")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if urgent { location }
+            }
+        }
+    }
+
+    private var firstName: String { name.split(separator: " ").first.map(String.init) ?? name }
+
+    private var action: String {
+        if level.severity < ThermyxRiskLevel.caution.severity && !hadSOS {
+            return "Nothing to do right now. Thermyx will tell you if that changes."
+        }
+        if recovering {
+            return "It's easing. Check in when you can; Thermyx will tell you if it rises again."
+        }
+        return ThermyxCircleMessage.action(level: level.rawValue, kind: hadSOS ? "sos" : "alert",
+                                           hasLocation: card?.location != nil)
+            ?? "Check in with them."
+    }
+
+    @ViewBuilder
+    private var location: some View {
+        if let mapsURL = card?.location?.mapsURL {
+            Link(destination: mapsURL) {
+                Label("Open their location in Maps", systemImage: "mappin.and.ellipse")
+            }
+            .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ice, border: Thermyx.Tint.liveBorder))
+            if let expires = card?.location?.expiresAt.flatMap(ThermyxAlertAPIClient.parseDate) {
+                Text("Shared for this emergency until \(expires.formatted(date: .omitted, time: .shortened)) at the latest.")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+            }
+        } else {
+            Label("Location not shared", systemImage: "location.slash")
+                .font(ThermyxFont.caption)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+        }
+    }
+
+    private func open(_ scheme: String) {
+        guard let phone else { return }
+        let digits = phone.filter { $0.isNumber || $0 == "+" }
+        guard let url = URL(string: "\(scheme)://\(digits)"), UIApplication.shared.canOpenURL(url) else { return }
+        UIApplication.shared.open(url)
+    }
+}
+
+// MARK: - Timeline
+
+/// The current event, oldest first: the alert, follow-ups, an SOS, a
+/// check-in, the recovery. Times are the watcher's own.
+struct EventTimeline: View {
+    let entries: [ThermyxAlertAPIClient.TimelineEntry]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
+            SectionLabel("This event")
+            VStack(alignment: .leading, spacing: 0) {
+                let shown = Array(entries.suffix(8))
+                ForEach(Array(shown.enumerated()), id: \.element.id) { index, entry in
+                    row(entry, isFirst: index == 0, isLast: index == shown.count - 1)
+                }
+            }
+        }
+    }
+
+    private func row(_ entry: ThermyxAlertAPIClient.TimelineEntry, isFirst: Bool, isLast: Bool) -> some View {
+        let tint = tint(entry)
+        return HStack(alignment: .top, spacing: Thermyx.Space.m) {
+            Text(entry.date?.formatted(date: .omitted, time: .shortened) ?? "")
+                .font(ThermyxFont.monoCaption)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .monospacedDigit()
+                .frame(width: 72, alignment: .trailing)
+                .padding(.top, 1)
+            VStack(spacing: 0) {
+                Rectangle().fill(isFirst ? .clear : Thermyx.Ink.hairline).frame(width: 1, height: 6)
+                Circle()
+                    .fill(tint)
+                    .frame(width: isLast ? 10 : 8, height: isLast ? 10 : 8)
+                    .overlay { if isLast { Circle().stroke(tint.opacity(0.35), lineWidth: 4) } }
+                Rectangle().fill(isLast ? .clear : Thermyx.Ink.hairline).frame(width: 1).frame(maxHeight: .infinity)
+            }
+            .frame(width: 12)
+            Text(label(entry))
+                .font(isLast ? ThermyxFont.rowTitle : ThermyxFont.body)
+                .foregroundStyle(isLast ? Thermyx.Ink.textPrimary : Thermyx.Ink.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, isLast ? 0 : Thermyx.Space.l)
+            Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
     }
 
-    private var actionCard: some View {
-        ThermyxCard(padding: Thermyx.Space.xxl) {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                SectionLabel("What to do", color: Thermyx.Ink.ice)
-
-                Text(guidance)
-                    .font(ThermyxFont.bodyLarge)
-                    .lineSpacing(3)
-                    .foregroundStyle(Thermyx.Ink.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: Thermyx.Space.xs) {
-                    Button("Message") { open(scheme: "sms") }
-                        .buttonStyle(ThermyxPrimaryButtonStyle())
-                    Button("Call") { open(scheme: "tel") }
-                        .buttonStyle(ThermyxSecondaryButtonStyle())
-                }
-                .padding(.top, 2)
-                .disabled(contactNumber == nil || member.isShowingSample)
-                .opacity(contactNumber == nil || member.isShowingSample ? 0.5 : 1)
-
-                if member.isShowingSample {
-                    Text("Disabled while you're reading the sample.")
-                        .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Ink.textFaint)
-                } else if contactNumber == nil {
-                    Text("Add their number under Settings to message or call from here.")
-                        .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Ink.textFaint)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+    private func label(_ e: ThermyxAlertAPIClient.TimelineEntry) -> String {
+        switch e.kind {
+        case "alert": return "\(e.level) alert"
+        case "sos": return "SOS sent"
+        case "help": return "Asked for help"
+        case "ok": return "Checked in: says they're OK"
+        case "silence": return "No update from their phone\(e.minutes.map { " for \($0) min" } ?? "")"
+        case "update":
+            switch e.update {
+            case "recovering": return "Recovering · now \(e.level)"
+            case "resolved": return "Back to Normal"
+            default: return "Still \(e.level)"
             }
+        default: return "Now \(e.level)"
         }
     }
 
-    private var samplePrompt: some View {
-        ThermyxCard(fill: Thermyx.Tint.signalFill, border: Thermyx.Tint.signalBorder) {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                SectionLabel("New to this?", color: Thermyx.Ink.ice)
-                Text("Read through a worked example of a shift — what a caution looks like, where the instruction appears, and which buttons matter — while nothing is wrong.")
-                    .font(ThermyxFont.caption)
-                    .foregroundStyle(Thermyx.Ink.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Show me a sample shift") {
-                    withAnimation { member.isShowingSample = true }
-                }
-                .buttonStyle(ThermyxPrimaryButtonStyle())
-                .padding(.top, 2)
-            }
-        }
-    }
-
-    private var guidance: String {
-        switch assessment.level {
-        case .critical, .high:
-            return "Check in now. If they report dizziness or stop responding, call them and then call 911."
-        case .caution:
-            return "Check in by message. If they report dizziness or stop responding, call them and then call 911."
+    private func tint(_ e: ThermyxAlertAPIClient.TimelineEntry) -> Color {
+        switch e.kind {
+        case "ok": return Thermyx.Ink.ice
+        case "sos": return Thermyx.Ink.ember
+        case "help": return Thermyx.Ink.amber
+        case "silence": return Thermyx.Ink.amber
         default:
-            return "Stay available and check in if they report discomfort."
-        }
-    }
-
-    private var contactNumber: String? {
-        let number = roles.watchedUserPhone.trimmingCharacters(in: .whitespacesAndNewlines)
-        return number.isEmpty ? nil : number
-    }
-
-    private func open(scheme: String) {
-        guard !member.isShowingSample, let number = contactNumber else { return }
-        let digits = number.filter { $0.isNumber || $0 == "+" }
-        guard let url = URL(string: "\(scheme)://\(digits)"), UIApplication.shared.canOpenURL(url) else { return }
-        UIApplication.shared.open(url)
-    }
-
-    /// Both soles, read-only. A watcher cannot scan for someone else's
-    /// insole, so a foot that is not reporting simply says so.
-    private func soleRow(_ pair: BilateralReading) -> some View {
-        ThermyxCard {
-            VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-                SectionLabel("Both feet")
-                HStack(alignment: .top, spacing: Thermyx.Space.xl) {
-                    ForEach(Foot.allCases) { foot in
-                        VStack(spacing: 6) {
-                            SoleView(foot: foot, reading: pair[foot], unit: unit)
-                                .frame(height: 150)
-                            Text(pair[foot] == nil ? "\(foot.label) · not reporting" : foot.label)
-                                .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel,
-                                             color: pair[foot] == nil ? Thermyx.Ink.textFaint : Thermyx.Ink.textSupporting)
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-
-                if let gap = pair.temperatureAsymmetryC, let hotter = pair.hotterFoot {
-                    Text("\(hotter.label) foot is \(TemperatureFormat.delta(gap, in: unit)) warmer right now.")
-                        .font(ThermyxFont.caption)
-                        .foregroundStyle(Thermyx.Ink.amber)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private func metricGrid(_ readings: ThermyxAlertEvent.AlertReadings, pair: BilateralReading?) -> some View {
-        LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: Thermyx.Space.s), GridItem(.flexible(), spacing: Thermyx.Space.s)],
-            spacing: Thermyx.Space.s
-        ) {
-            MetricTile(
-                label: "Foot temperature",
-                value: readings.footTemperatureC.map { TemperatureFormat.degrees($0, in: unit) },
-                tint: readings.footTemperatureC.map(ThermyxTemperatureScale.tint) ?? Thermyx.Ink.textPrimary,
-                numeralFont: ThermyxFont.zoneNumeral
-            )
-            MetricTile(
-                label: "Ambient",
-                value: readings.ambientTemperatureC.map { TemperatureFormat.degrees($0, in: unit) },
-                numeralFont: ThermyxFont.zoneNumeral
-            )
-            MetricTile(
-                label: "Movement",
-                value: readings.gaitStability.map { "\(Int(($0 * 100).rounded()))%" },
-                tint: Thermyx.Ink.ice,
-                numeralFont: ThermyxFont.zoneNumeral
-            )
-            MetricTile(
-                label: "Insole battery",
-                value: readings.batteryPercent.map { "\($0)%" },
-                numeralFont: ThermyxFont.zoneNumeral
-            )
-            if let index = pair?.asymmetryIndex {
-                MetricTile(
-                    label: "L–R gap",
-                    value: "\(Int((index * 100).rounded()))%",
-                    tint: index > 0.5 ? Thermyx.Ink.amber : Thermyx.Ink.textPrimary,
-                    numeralFont: ThermyxFont.zoneNumeral
-                )
-            }
+            if e.update == "resolved" { return Thermyx.Ink.ice }
+            return (ThermyxRiskLevel(rawValue: e.level) ?? .unavailable).tint
         }
     }
 }
 
 // MARK: - Sample banner
-
-/// Marks every trusted screen while the worked example is showing, and gives
-/// one-tap exit. A watcher must never be able to mistake the sample for the
-/// person they are responsible for.
-struct TrustedSampleBanner: ViewModifier {
-    @ObservedObject var member: TrustedMemberViewModel
-    let watchedName: String
-
-    func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .top, spacing: 0) {
-            if member.isShowingSample {
-                HStack(spacing: Thermyx.Space.s) {
-                    Image(systemName: "eye.fill")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("Sample shift · not \(watchedName)'s data")
-                        .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.onEmber)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                    Spacer(minLength: Thermyx.Space.xs)
-                    Button("Exit") {
-                        withAnimation { member.isShowingSample = false }
-                    }
-                    .font(ThermyxFont.rowTitle)
-                    .foregroundStyle(Thermyx.Ink.onEmber)
-                }
-                .foregroundStyle(Thermyx.Ink.onEmber)
-                .padding(.horizontal, Thermyx.Space.screen)
-                .padding(.vertical, Thermyx.Space.s)
-                .frame(maxWidth: .infinity)
-                .background(Thermyx.Ink.amber)
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel("Showing a sample shift. This is not \(watchedName)'s data.")
-            }
-        }
-    }
-}
-
-extension View {
-    func trustedSampleBanner(member: TrustedMemberViewModel, watchedName: String) -> some View {
-        modifier(TrustedSampleBanner(member: member, watchedName: watchedName))
-    }
-}
 
 extension String {
     /// Up to two initials from a display name.

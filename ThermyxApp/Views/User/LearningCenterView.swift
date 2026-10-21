@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// The Learn tab: one topic per card, with room between them.
+/// The Learn tab.
 struct LearnTab: View {
+    @ObservedObject var settings: ThermyxSettingsStore
     @State private var path: [InsightsDestination] = {
         #if DEBUG
         return ThermyxPreviewHarness.initialLearnPath
@@ -12,301 +13,359 @@ struct LearnTab: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            LearningCenterView(isTab: true)
+            LearningCenterView(isTab: true, settings: settings)
+                .thermyxNavigationRoot()
                 .navigationDestination(for: InsightsDestination.self) { destination in
-                    if case .article(let id) = destination, let article = ThermyxLearningLibrary.article(id: id) {
-                        ArticleView(article: article)
+                    switch destination {
+                    case .article(let id):
+                        if let article = ThermyxLearningLibrary.article(id: id) {
+                            ArticleView(article: article)
+                        }
+                    case .photoCredits:
+                        PhotoCreditsView()
+                    case .aiInsights(let day):
+                        AIInsightsView(settings: settings, day: day ?? .now)
+                    default:
+                        EmptyView()
                     }
                 }
+        }
+        // The evening notification: straight to that day's AI Insights.
+        .onReceive(ThermyxDeepLink.shared.$insightsDay.compactMap { $0 }) { day in
+            path = [.aiInsights(day)]
+            ThermyxDeepLink.shared.insightsDay = nil
         }
     }
 }
 
+/// Learn's front page: the lesson for right now, the lead story, then every
+/// story by section. Every article is educational, not a diagnosis, and
+/// cites its sources.
 struct LearningCenterView: View {
     /// True on the Learn tab (a top-level screen); false when pushed.
     var isTab = false
-    @State private var filter: LearningFilter = .all
+    var settings: ThermyxSettingsStore?
 
-    private var articles: [LearningArticle] {
-        ThermyxLearningLibrary.articles.filter { filter.matches($0) }
+    @EnvironmentObject private var viewModel: ThermyxViewModel
+    @State private var section: LearningSection?
+    @State private var air: ThermyxWeather.Current?
+
+    private var articles: [LearningArticle] { ThermyxLearningLibrary.articles }
+    private var unit: TemperatureUnit { settings?.temperatureUnit ?? .celsius }
+
+    private var suggestion: LearningSuggestion? {
+        let history = viewModel.history.minuteSamples
+        let cutoff = Date.now.addingTimeInterval(-2 * 3600)
+        let recentPeak = history.filter { $0.start >= cutoff }.compactMap(\.peakRiskLevel).max { $0.severity < $1.severity }
+        let first = history.first?.start ?? viewModel.history.hourSamples.first?.start
+        let days = first.map { Calendar.current.dateComponents([.day], from: $0, to: .now).day ?? 0 } ?? 0
+        return LearningSuggestion.current(.init(
+            reading: viewModel.reading,
+            assessment: viewModel.assessment,
+            connected: viewModel.connectedFeet,
+            pairExpected: viewModel.pairExpected,
+            trend10: viewModel.history.footTrend(over: 10 * 60, current: viewModel.reading.peakFootTemperatureC)?.delta,
+            recentPeak: recentPeak,
+            airC: air?.airC,
+            daysOfHistory: days,
+            unit: unit,
+            asymmetry: viewModel.asymmetry
+        ))
     }
 
-    private var featured: LearningArticle? {
-        articles.first(where: \.featured)
+    private var lead: LearningArticle? {
+        guard section == nil else { return nil }
+        return articles.first { $0.id != suggestion?.article.id }
     }
 
-    private var rest: [LearningArticle] {
-        articles.filter { !$0.featured }
-    }
-
-    /// When every article is still an outline, one notice says so better than
-    /// a badge on every row.
-    private var allDrafts: Bool {
-        !ThermyxLearningLibrary.articles.isEmpty
-            && ThermyxLearningLibrary.articles.allSatisfy { $0.status == .placeholder }
+    private var stories: [LearningArticle] {
+        articles.filter { a in
+            (section == nil || a.section == section) && a.id != lead?.id && a.id != suggestion?.article.id
+        }
     }
 
     var body: some View {
-        Group {
-            if isTab {
-                ThermyxScreen(title: "Learn") { content }
-            } else {
-                ThermyxDetailScreen(title: "Learn") { content }
-            }
-        }
-        .hidesThermalControlBar()
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        filterPills
-
-        if allDrafts { draftNotice }
-
-        VStack(spacing: Thermyx.Space.xl) {
-            if let featured {
-                NavigationLink(value: InsightsDestination.article(featured.id)) {
-                    FeaturedArticleCard(article: featured, showsBadge: !allDrafts)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                masthead
+                if isTab, let settings {
+                    AIInsightsEntry(settings: settings)
+                        .padding(.top, Thermyx.Space.titleGap)
                 }
-                .buttonStyle(.plain)
-            }
-
-            ForEach(rest) { article in
-                NavigationLink(value: InsightsDestination.article(article.id)) {
-                    LearnTopicCard(article: article, showsBadge: !allDrafts)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.top, Thermyx.Space.xs)
-
-        if articles.isEmpty {
-            ThermyxEmptyState(
-                title: "Nothing in this category yet",
-                message: "Try another filter.",
-                systemImage: "book.closed"
-            )
-        }
-    }
-
-    private var draftNotice: some View {
-        ThermyxCard(padding: Thermyx.Space.l, radius: Thermyx.Radius.compact, fill: Thermyx.Tint.amberFill, border: Thermyx.Tint.amberBorder) {
-            VStack(alignment: .leading, spacing: 4) {
-                SectionLabel("Draft library", color: Thermyx.Ink.amber)
-                Text("These articles are written but their sources have not been checked yet. Each one is marked as a draft until it is.")
-                    .font(ThermyxFont.caption)
-                    .foregroundStyle(Thermyx.Ink.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-
-    private var filterPills: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: Thermyx.Space.xs) {
-                ForEach(LearningFilter.allCases) { option in
-                    let isSelected = option == filter
-                    Button {
-                        filter = option
-                    } label: {
-                        Text(option.label)
-                            .narrowLabel(
-                                ThermyxFont.statusPill,
-                                tracking: ThermyxTracking.statusPill,
-                                color: isSelected ? Thermyx.Ink.textPrimary : Thermyx.Ink.textSupporting
-                            )
-                            .padding(.horizontal, 14)
-                            .frame(minHeight: Thermyx.minimumTapTarget)
-                            .background(
-                                isSelected ? Thermyx.Ink.elevated : Thermyx.Tint.neutralFill,
-                                in: Capsule()
-                            )
-                            .contentShape(.rect)
+                if articles.isEmpty {
+                    ThermyxEmptyState(title: "Articles unavailable", message: "Learn's articles didn't load. Reinstalling the app restores them.",
+                                      systemImage: "newspaper")
+                        .padding(.top, Thermyx.Space.titleGap)
+                } else {
+                    if let suggestion, section == nil {
+                        ForRightNow(suggestion: suggestion)
+                            .padding(.top, Thermyx.Space.titleGap)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+                    sections
+                        .padding(.top, Thermyx.Space.group)
+                    VStack(spacing: Thermyx.Space.titleGap) {
+                        if let lead {
+                            NavigationLink(value: InsightsDestination.article(lead.id)) {
+                                ArticleCard(article: lead, prominent: true)
+                            }
+                            .buttonStyle(PressableStyle())
+                            .spotlightTarget(.learnLead)
+                        }
+                        ForEach(stories) { article in
+                            NavigationLink(value: InsightsDestination.article(article.id)) {
+                                ArticleCard(article: article)
+                            }
+                            .buttonStyle(PressableStyle())
+                        }
+                    }
+                    .padding(.top, Thermyx.Space.titleGap)
+                    footer
+                        .padding(.top, Thermyx.Space.section)
                 }
             }
-            .padding(.horizontal, 1)
+            .padding(.horizontal, Thermyx.Space.screen)
+            .padding(.bottom, Thermyx.Space.xxl)
         }
         .scrollIndicators(.hidden)
+        .thermyxTopScrim()
+        .modifier(PushedBackground(isTab: isTab))
+        .task {
+            guard ThermyxWeather.shared.isAuthorized else { return }
+            air = await ThermyxWeather.shared.current()
+        }
     }
-}
 
-/// The gradient hero card at the top of the Learning Center.
-struct FeaturedArticleCard: View {
-    let article: LearningArticle
-    var showsBadge: Bool = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            Text("Start here · \(article.readMinutes) min")
-                .narrowLabel(ThermyxFont.sectionLabel, tracking: ThermyxTracking.sectionLabel, color: Thermyx.Ink.amber)
-
-            Text(article.title)
-                .font(ThermyxFont.featureHeadline)
-                .tracking(-0.8)
+    /// The same title as every tab, with one line under it.
+    private var masthead: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.item) {
+            Text("Learn")
+                .font(ThermyxFont.screenTitle)
+                .tracking(ThermyxTracking.screenTitle)
                 .foregroundStyle(Thermyx.Ink.textPrimary)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(article.deck)
+                .accessibilityAddTraits(.isHeader)
+            Text("Short, sourced reads on heat, cold and your feet.")
                 .font(ThermyxFont.bodySmall)
                 .foregroundStyle(Thermyx.Ink.textMuted)
-                .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
-
-            if showsBadge, article.status == .placeholder { DraftBadge() }
         }
-        .padding(Thermyx.Space.screen)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            LinearGradient(
-                colors: [Color(hex: 0x1B3552), Thermyx.Ink.deck],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .overlay(alignment: .topTrailing) {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [Color(hex: 0xFF6A13, opacity: 0.32), Color(hex: 0xFF6A13, opacity: 0)],
-                            center: .center,
-                            startRadius: 0,
-                            endRadius: 100
-                        )
-                    )
-                    .frame(width: 200, height: 200)
-                    .offset(x: 50, y: -40)
+        .padding(.top, Thermyx.Space.titleTop)
+    }
+
+    private var sections: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: Thermyx.Space.xs) {
+                sectionTab(nil, "All")
+                ForEach(LearningSection.allCases.filter { s in articles.contains { $0.section == s } }) { s in
+                    sectionTab(s, s.label)
+                }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Thermyx.Radius.hero, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.hero, style: .continuous)
-                .strokeBorder(Color(hex: 0xFF6A13, opacity: 0.3), lineWidth: Thermyx.Stroke.hairline)
+        .scrollIndicators(.hidden)
+        .sensoryFeedback(.selection, trigger: section)
+    }
+
+    private func sectionTab(_ value: LearningSection?, _ label: String) -> some View {
+        let selected = value == section
+        return Button {
+            withAnimation(SiteMotion.settle) { section = value }
+        } label: {
+            Text(label)
+                .font(.custom(ThermyxFont.Family.medium, size: 14, relativeTo: .subheadline))
+                .foregroundStyle(selected ? Thermyx.Ink.onPrimary : Thermyx.Ink.textPrimary)
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .background(selected ? Thermyx.Ink.textPrimary : .clear, in: Capsule())
+                .overlay { Capsule().strokeBorder(selected ? .clear : Thermyx.Site.hairlineStrong, lineWidth: 1) }
+                .contentShape(Capsule())
         }
-        .contentShape(.rect)
-        .accessibilityElement(children: .combine)
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    private var footer: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Educational, not a diagnosis tool. In an emergency, call 911.")
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Ink.textFaint)
+                .fixedSize(horizontal: false, vertical: true)
+            NavigationLink(value: InsightsDestination.photoCredits) {
+                Text("Photo credits")
+                    .font(ThermyxFont.controlLabel)
+                    .foregroundStyle(Thermyx.Ink.link)
+                    .frame(minHeight: 44)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 16)
+        .overlay(alignment: .top) { ThermyxDivider() }
     }
 }
 
-/// One topic per card: a large icon, the title, a short line on what it
-/// covers, and how long it takes to read.
-struct LearnTopicCard: View {
-    let article: LearningArticle
-    var showsBadge: Bool = true
+/// When pushed (from Insights) the page draws its own background.
+private struct PushedBackground: ViewModifier {
+    let isTab: Bool
+    func body(content: Content) -> some View {
+        if isTab {
+            content
+        } else {
+            content
+                .thermyxBackground()
+                .navigationBarBackButtonHidden(false)
+        }
+    }
+}
+
+// MARK: - Pieces
+
+/// The lesson Thermyx picked for the moment, and the reading behind it.
+private struct ForRightNow: View {
+    let suggestion: LearningSuggestion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.m) {
-            HStack(alignment: .center, spacing: Thermyx.Space.m) {
-                RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
-                    .fill(article.category.iconFill)
-                    .frame(width: 56, height: 56)
-                    .overlay {
-                        Image(systemName: article.symbol)
-                            .font(.system(size: 24, weight: .semibold))
-                            .foregroundStyle(article.category.tint)
-                    }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(article.category.label)
-                        .narrowLabel(ThermyxFont.sectionLabel, tracking: ThermyxTracking.sectionLabel, color: article.category.tint)
-                    Text("\(article.readMinutes) min read")
+        NavigationLink(value: InsightsDestination.article(suggestion.article.id)) {
+            HStack(alignment: .top, spacing: 14) {
+                Rectangle()
+                    .fill(Thermyx.Ink.ember)
+                    .frame(width: 3)
+                VStack(alignment: .leading, spacing: Thermyx.Space.item) {
+                    Text("For right now")
+                        .font(.custom(ThermyxFont.Family.semibold, size: 13, relativeTo: .caption))
+                        .foregroundStyle(Thermyx.Ink.ember)
+                    Text(suggestion.reason)
                         .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Ink.textSupporting)
+                        .foregroundStyle(Thermyx.Ink.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(suggestion.article.title)
+                        .font(.system(.title3, design: .serif).weight(.bold))
+                        .foregroundStyle(Thermyx.Ink.textPrimary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("\(suggestion.article.meta) · Read now")
+                        .font(ThermyxFont.captionSmall)
+                        .foregroundStyle(Thermyx.Ink.ice)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Thermyx.Ink.textFaint)
             }
-
-            Text(article.title)
-                .font(ThermyxFont.cardTitle)
-                .foregroundStyle(Thermyx.Ink.textPrimary)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Text(article.deck)
-                .font(ThermyxFont.body)
-                .foregroundStyle(Thermyx.Ink.textMuted)
-                .lineSpacing(3)
-                .lineLimit(3)
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if showsBadge, article.status == .placeholder { DraftBadge(compact: true) }
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(Thermyx.Space.xl)
+            .background(Thermyx.Tint.emberFill.opacity(0.5), in: RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous).strokeBorder(Thermyx.Tint.emberBorder, lineWidth: 1)
+            }
+            .contentShape(.rect)
         }
-        .padding(Thermyx.Space.xl)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.section, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.section, style: .continuous)
-                .strokeBorder(Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
-        }
-        .contentShape(.rect)
+        .buttonStyle(PressableStyle())
         .accessibilityElement(children: .combine)
+        .accessibilityHint("Opens the article Thermyx suggests for what's happening now.")
     }
 }
 
-struct ArticleRow: View {
+/// One article, one card: its photograph, the section, the headline, a
+/// two-line dek and how long it takes. The first is larger.
+private struct ArticleCard: View {
     let article: LearningArticle
-    var showsBadge: Bool = true
+    var prominent = false
+
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous) }
 
     var body: some View {
-        HStack(spacing: Thermyx.Space.m) {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.control, style: .continuous)
-                .fill(article.category.iconFill)
-                .frame(width: 54, height: 54)
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear
+                .frame(height: prominent ? 200 : 150)
                 .overlay {
-                    Image(systemName: article.category.symbol)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(article.category.tint)
+                    Image(article.image.asset)
+                        .resizable()
+                        .scaledToFill()
                 }
-
-            VStack(alignment: .leading, spacing: 3) {
+                .clipped()
+                .accessibilityLabel(article.image.alt)
+            VStack(alignment: .leading, spacing: Thermyx.Space.item) {
+                Kicker(section: article.section)
                 Text(article.title)
-                    .font(ThermyxFont.rowTitle)
+                    .font(.system(prominent ? .title2 : .title3, design: .serif).weight(.bold))
                     .foregroundStyle(Thermyx.Ink.textPrimary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 6) {
+                Text(article.dek)
+                    .font(ThermyxFont.bodySmall)
+                    .lineSpacing(2)
+                    .foregroundStyle(Thermyx.Ink.textMuted)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                HStack {
                     Text(article.meta)
                         .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Ink.textSupporting)
-                    if showsBadge, article.status == .placeholder { DraftBadge(compact: true) }
+                        .foregroundStyle(Thermyx.Ink.textFaint)
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(article.section.tint)
                 }
+                .padding(.top, 2)
             }
-
-            Spacer(minLength: Thermyx.Space.xs)
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Thermyx.Ink.textFaint)
+            .padding(Thermyx.Space.xl)
         }
-        .padding(Thermyx.Space.l)
-        .frame(minHeight: Thermyx.minimumTapTarget)
-        .background(Thermyx.Ink.deck, in: RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Thermyx.Radius.list, style: .continuous)
-                .strokeBorder(Thermyx.Ink.hairline, lineWidth: Thermyx.Stroke.hairline)
-        }
-        .contentShape(.rect)
+        .background(Thermyx.Site.surface, in: shape)
+        .clipShape(shape)
+        .overlay { shape.strokeBorder(Thermyx.Site.hairlineStrong, lineWidth: 1) }
+        .contentShape(shape)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Marks copy that is structural only. The headlines are real; the bodies are
-/// outlines waiting on writing and citations, and the app says so plainly
-/// rather than shipping invented statistics.
-struct DraftBadge: View {
-    var compact: Bool = false
+/// The section name over a headline, newspaper style.
+struct Kicker: View {
+    let section: LearningSection
 
     var body: some View {
-        Text(compact ? "Draft" : "Draft · sources unchecked")
-            .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.amber)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(Thermyx.Tint.amberFill, in: Capsule())
-            .overlay { Capsule().strokeBorder(Thermyx.Tint.amberBorder, lineWidth: Thermyx.Stroke.hairline) }
+        Text(section.label.uppercased())
+            .font(.custom(ThermyxFont.Family.semibold, size: 11, relativeTo: .caption2))
+            .tracking(1.2)
+            .foregroundStyle(section.tint)
+    }
+}
+
+// MARK: - Photo credits
+
+struct PhotoCreditsView: View {
+    var body: some View {
+        ThermyxDetailScreen(title: "Photo credits", backTitle: "Learn") {
+            Text("Photographs from Wikimedia Commons. Cropped where noted.")
+                .font(ThermyxFont.bodySmall)
+                .foregroundStyle(Thermyx.Ink.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 0) {
+                ForEach(PhotoCredit.all) { credit in
+                    HStack(alignment: .top, spacing: 14) {
+                        Image(credit.asset)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: 64, height: 64)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            .accessibilityHidden(true)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(credit.title)
+                                .font(ThermyxFont.rowTitle)
+                                .foregroundStyle(Thermyx.Ink.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("\(credit.author) · \(credit.license)\(credit.modified ? " · cropped" : "")")
+                                .font(ThermyxFont.captionSmall)
+                                .foregroundStyle(Thermyx.Ink.textMuted)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if let url = URL(string: credit.source) {
+                                Link("Source", destination: url)
+                                    .font(ThermyxFont.captionSmall)
+                                    .foregroundStyle(Thermyx.Ink.ice)
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 12)
+                    .overlay(alignment: .bottom) { ThermyxDivider() }
+                    .accessibilityElement(children: .combine)
+                }
+            }
+        }
     }
 }
