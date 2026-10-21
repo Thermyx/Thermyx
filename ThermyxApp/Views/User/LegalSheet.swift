@@ -30,7 +30,6 @@ struct LegalSheet: View {
                             ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
                         }
 
-                        placeholderNotice
                     }
                     .padding(.horizontal, Thermyx.Space.wide)
                     .padding(.bottom, 40)
