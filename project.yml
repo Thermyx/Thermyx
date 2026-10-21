@@ -84,6 +84,9 @@ targets:
         product: FirebaseAuth
       - package: Firebase
         product: FirebaseCore
+      # Per-account backup and anonymous population priors (Services/Cloud).
+      - package: Firebase
+        product: FirebaseFirestore
       - package: GoogleSignIn
         product: GoogleSignIn
       - package: GLTFKit2

@@ -173,6 +173,10 @@ final class ThermyxBLEService: NSObject, ObservableObject {
     /// screen carries "Simulated — not live sensor data", and nothing is sent
     /// to the relay, written to history, Apple Health, or the baseline.
     private(set) var simulator: ThermyxInsoleSimulator?
+
+    /// The clock readings are stamped on: the demo's story clock while it
+    /// runs, so a command's "is this reading newer?" check compares like with like.
+    var readingClock: Date { simulator?.storyNow ?? .now }
     @Published private(set) var isDemoMode = false
     /// Debug builds only: the preview harness's scripted pair, with
     /// repeatable data that follows calibration's instructions. Runs on the
@@ -1225,7 +1229,7 @@ final class ThermyxInsoleSimulator: ObservableObject {
 
     static let boardID = UUID(uuidString: "5E1A0000-0000-4000-8000-0000000000B0")!
 
-    private struct Insole {
+    fileprivate struct Insole {
         var contactC: Double
         var gait: Double
         var battery: Double
@@ -1242,6 +1246,77 @@ final class ThermyxInsoleSimulator: ObservableObject {
     private var tickTimer: Timer?
     private var scanWork: [DispatchWorkItem] = []
     private var tick = 0.0
+    /// Seeded, so the Demo studio can replay a timeline exactly.
+    private var rng = DemoRandom(seed: 0x7E57_1A2B)
+    /// Sensor noise on what's reported, apart from the physics, so reporting
+    /// (or not, while scrubbing) never changes how the feet evolve.
+    private var noise = DemoRandom(seed: 0x51DE)
+
+    // MARK: Timeline (Demo studio)
+
+    /// What the Demo studio's timeline says is happening; nil for the usual day.
+    var conditions: DemoConditions?
+    /// Minutes into the timeline while one is loaded.
+    var timelineMinute: Double?
+    /// The timeline's minute zero. Readings are stamped on the timeline's
+    /// clock, so detectors that need minutes of evidence see the story's
+    /// minutes even when it plays at ×30.
+    var timelineEpoch: Date?
+
+    /// The time readings are stamped with: the timeline's clock while one is
+    /// loaded, otherwise the wall clock.
+    var storyNow: Date {
+        timelineEpoch.map { $0.addingTimeInterval((timelineMinute ?? 0) * 60) } ?? .now
+    }
+    /// Physics seconds per tick while a timeline is loaded: its speed. 0 holds
+    /// the feet still (paused) but keeps reporting, so nothing goes stale.
+    var stepsPerTick = 1
+    /// Called before each physics second of a loaded timeline. Returning
+    /// false stops stepping for this tick (the end of the timeline).
+    var onStep: (() -> Bool)?
+
+    /// The pair's physical state, for replaying a timeline from its start.
+    struct Snapshot {
+        fileprivate var insoles: [Foot: Insole]
+        fileprivate var tick: Double
+        fileprivate var rng: DemoRandom
+    }
+
+    func snapshot() -> Snapshot { Snapshot(insoles: insoles, tick: tick, rng: rng) }
+
+    /// Back to a snapshot's feet. What's connected and what each insole was
+    /// told to do stay as they are now.
+    func restore(_ snapshot: Snapshot) {
+        for foot in Foot.allCases {
+            guard var restored = snapshot.insoles[foot], let current = insoles[foot] else { continue }
+            restored.isConnected = current.isConnected
+            restored.commanded = current.commanded
+            insoles[foot] = restored
+        }
+        tick = snapshot.tick
+        rng = snapshot.rng
+    }
+
+    /// Runs physics seconds without reporting them (a scrub's fast-forward).
+    func fastForward(seconds: Int) {
+        for _ in 0..<max(0, seconds) {
+            if let onStep, !onStep() { break }
+            physicsStep()
+            reportPhysicsSecond()
+        }
+    }
+
+    /// Reports both feet as they are now.
+    func publishNow() {
+        for foot in Foot.allCases where insoles[foot]?.isConnected == true && !(conditions?.dropped.contains(foot) ?? false) {
+            publish(foot)
+        }
+    }
+
+    /// One insole's charge, set outright (a timeline's battery event).
+    func setBattery(_ percent: Double, for foot: Foot) {
+        insoles[foot]?.battery = percent
+    }
 
     private static let deviceIDs: [Foot: UUID] = [
         .left: UUID(uuidString: "5E1A0000-0000-4000-8000-00000000000A")!,
@@ -1373,11 +1448,15 @@ final class ThermyxInsoleSimulator: ObservableObject {
     }
 
     /// Minutes into the simulated shift, and what the wearer is doing.
-    private var shiftMinute: Double { max(0, Date.now.timeIntervalSince(shiftStart) / 60) }
-    private var currentActivity: CalibrationActivity { DemoWearer.activity(minute: Int(shiftMinute)) }
-    private var currentAmbientC: Double {
-        followsDay ? DemoWearer.ambientC(progress: shiftMinute / 480, heat: dayHeat) : ambientC
+    private var shiftMinute: Double { timelineMinute ?? max(0, Date.now.timeIntervalSince(shiftStart) / 60) }
+    private var currentActivity: CalibrationActivity {
+        conditions?.activity ?? DemoWearer.activity(minute: Int(shiftMinute))
     }
+    private var currentAmbientC: Double {
+        if timelineMinute != nil { return conditions?.ambientC ?? DemoScript.baseAmbientC }
+        return followsDay ? DemoWearer.ambientC(progress: shiftMinute / 480, heat: dayHeat) : ambientC
+    }
+    private var faulty: Bool { coolingFault || conditions?.coolingFault == true }
 
     private func attach(_ foot: Foot) {
         guard let ble, var insole = insoles[foot], !insole.isConnected else { return }
@@ -1422,7 +1501,7 @@ final class ThermyxInsoleSimulator: ObservableObject {
     /// foot, a little warmer walking than sitting.
     private func naturalContact(_ foot: Foot) -> Double {
         DemoWearer.naturalContactC(ambientC: currentAmbientC, activity: currentActivity, foot: foot,
-                                   fatigue: min(1, shiftMinute / 480)) + (fatigued ? 0.6 : 0)
+                                   fatigue: min(1, shiftMinute / 480)) + (fatigued || conditions?.limp == foot ? 0.6 : 0)
     }
 
     /// Hold temperature for Auto: what the app last sent, else the default.
@@ -1431,18 +1510,30 @@ final class ThermyxInsoleSimulator: ObservableObject {
     }
 
     private func step() {
-        tick += 1
         if isScripted {
+            tick += 1
             scriptedStep()
             return
         }
         publishBoard()
+        let steps = timelineMinute == nil ? 1 : stepsPerTick
+        for _ in 0..<steps {
+            if let onStep, !onStep() { break }
+            physicsStep()
+            if timelineMinute != nil { reportPhysicsSecond() }
+        }
+        publishNow()
+    }
+
+    /// One second of the simulated feet.
+    private func physicsStep() {
+        tick += 1
         for foot in Foot.allCases {
             guard var insole = insoles[foot], insole.isConnected else { continue }
             let natural = naturalContact(foot)
 
             // What the firmware does with the command it was given.
-            switch coolingFault ? .off : insole.commanded {
+            switch faulty ? .off : insole.commanded {
             case .ventilation:
                 // Auto: heat below the target, cool above it, fan near it.
                 insole.active = DemoWearer.autoDecision(contactC: insole.contactC, targetC: autoTargetC(foot),
@@ -1460,20 +1551,22 @@ final class ThermyxInsoleSimulator: ObservableObject {
             // The foot heads for where the actuator can take it, with the
             // lag of a real foot in a shoe (about half a minute).
             var target = DemoWearer.settlingC(natural: natural, active: insole.active)
-            if coolingFault { target = natural + 2 }
-            insole.contactC += (target - insole.contactC) * 0.03 + Double.random(in: -0.015...0.015)
+            if faulty { target = natural + 2 }
+            insole.contactC += (target - insole.contactC) * 0.03 + rng.double(in: -0.015...0.015)
 
             // Steadiness is measured while walking and held otherwise.
             if currentActivity == .walking {
                 let steady = DemoWearer.steadiness(progress: min(1, shiftMinute / 480), heat: dayHeat, seconds: tick)
-                let gaitTarget = fatigued ? 0.73 : steady
-                insole.gait += (gaitTarget - insole.gait) * 0.08 + Double.random(in: -0.004...0.004)
+                var gaitTarget = fatigued ? 0.73 : steady
+                if conditions?.strained == true { gaitTarget = min(gaitTarget, 0.72) }
+                // A limp: the sore foot unsteady, the other compensating.
+                if let limp = conditions?.limp { gaitTarget = limp == foot ? 0.62 : min(gaitTarget, 0.84) }
+                insole.gait += (gaitTarget - insole.gait) * 0.08 + rng.double(in: -0.004...0.004)
             }
 
             insole.battery = max(3, insole.battery - DemoWearer.drainPerMinute(insole.active) / 60)
 
             insoles[foot] = insole
-            publish(foot)
         }
     }
 
@@ -1482,15 +1575,43 @@ final class ThermyxInsoleSimulator: ObservableObject {
     }
 
     private func publish(_ foot: Foot) {
-        guard let ble, let insole = insoles[foot] else { return }
+        guard let ble, let reading = makeReading(foot) else { return }
+        ble.simPublish(reading, rssi: rssiValue(foot))
+    }
+
+    /// The pair as it is this physics second, unpublished: what the
+    /// left/right monitor watches between reports while a timeline plays fast.
+    var onPhysicsSecond: ((BilateralReading) -> Void)?
+
+    private func reportPhysicsSecond() {
+        guard let onPhysicsSecond else { return }
+        func reading(_ foot: Foot) -> ThermyxReading? {
+            guard insoles[foot]?.isConnected == true, !(conditions?.dropped.contains(foot) ?? false) else { return nil }
+            return makeReading(foot)
+        }
+        onPhysicsSecond(BilateralReading(left: reading(.left), right: reading(.right)))
+    }
+
+    private func makeReading(_ foot: Foot) -> ThermyxReading? {
+        guard let insole = insoles[foot] else { return nil }
         let contact = insole.contactC
         let activity = currentActivity
-        let ambient = currentAmbientC + sin(tick / 40) * 0.2 + Double.random(in: -0.03...0.03)
-        let load = DemoWearer.archLoad(activity, seconds: tick, foot: foot) + (fatigued && foot == .right ? 0.08 : 0)
-        let cadence = DemoWearer.cadence(activity, minute: shiftMinute) * (fatigued ? 0.85 : 1)
+        let ambient = currentAmbientC + sin(tick / 40) * 0.2 + noise.double(in: -0.03...0.03)
+        var load = DemoWearer.archLoad(activity, seconds: tick, foot: foot) + (fatigued && foot == .right ? 0.08 : 0)
+        var cadence = DemoWearer.cadence(activity, minute: shiftMinute) * (fatigued ? 0.85 : 1)
+        if let limp = conditions?.limp {
+            // The sore foot carries less and for less time; steps slow.
+            load *= limp == foot ? 0.62 : 1.22
+            cadence *= 0.78
+        }
+        if let lean = conditions?.lean {
+            // Standing with most of the weight on one foot.
+            load = lean == foot ? 0.86 + 0.02 * sin(tick / 5) : 0.17 + 0.02 * sin(tick / 7)
+        }
+        let stamp = storyNow
         var reading = ThermyxReading(
             foot: foot,
-            timestamp: .now,
+            timestamp: stamp,
             footTemperatureC: contact,
             ambientTemperatureC: ambient,
             pressureBalance: min(1, max(0, load)),
@@ -1499,12 +1620,12 @@ final class ThermyxInsoleSimulator: ObservableObject {
             thermalMode: insole.active,
             zones: reportsZones
                 ? FootZoneTemperatures(
-                    forefootC: contact + 1.3 + Double.random(in: -0.05...0.05),
-                    archC: contact + 0.6 + Double.random(in: -0.05...0.05),
-                    heelC: contact - 1.9 + Double.random(in: -0.05...0.05)
+                    forefootC: contact + 1.3 + noise.double(in: -0.05...0.05),
+                    archC: contact + 0.6 + noise.double(in: -0.05...0.05),
+                    heelC: contact - 1.9 + noise.double(in: -0.05...0.05)
                   )
                 : nil,
-            cadenceStepsPerMinute: cadence > 0 ? cadence + Double.random(in: -1.5...1.5) : 0,
+            cadenceStepsPerMinute: cadence > 0 ? cadence + noise.double(in: -1.5...1.5) : 0,
             standingFraction: DemoWearer.standingFraction(activity)
         )
         reading.loadIsArchLevel = !reportsZones
@@ -1519,7 +1640,7 @@ final class ThermyxInsoleSimulator: ObservableObject {
         case .off: nil
         }
         echoed.burnCutoff = insole.commanded == .heating && insole.active != .heating && contact >= 38.5
-        ble.simPublish(echoed, rssi: rssiValue(foot))
+        return echoed
     }
 
     // MARK: Fake insole (TEMPORARY)

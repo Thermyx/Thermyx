@@ -17,7 +17,7 @@ struct WeeklyReportView: View {
             dailyBars(report)
             comparison(report)
             highlights(report)
-            Text("A day counts once the insoles are worn for 10 minutes. Steps and activity are estimated from cadence and pressure.")
+            Text("A day counts once you've worn the insoles for 10 minutes. Steps come from Apple Health when it's allowed, otherwise from the insoles.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -33,17 +33,14 @@ struct WeeklyReportView: View {
 
     private func streak(_ report: ThermyxWeeklyReport) -> some View {
         HStack(alignment: .center, spacing: Thermyx.Space.l) {
-            VStack(spacing: 0) {
-                Text("\(report.streak)")
-                    .font(ThermyxFont.statNumeral)
-                    .tracking(ThermyxTracking.statNumeral)
-                    .monospacedDigit()
-                    .foregroundStyle(report.streak > 0 ? Thermyx.Ink.amber : Thermyx.Ink.textFaint)
-                Text(report.streak == 1 ? "day" : "days")
+            VStack(spacing: 2) {
+                StreakFlame(days: report.streak, size: 64)
+                Text("\(report.streak) \(report.streak == 1 ? "day" : "days")")
                     .font(ThermyxFont.captionSmall)
+                    .monospacedDigit()
                     .foregroundStyle(Thermyx.Ink.textMuted)
             }
-            .frame(width: 64)
+            .frame(width: 72)
             VStack(alignment: .leading, spacing: 4) {
                 Text(report.streak > 1 ? "\(report.streak) days in a row" : report.streak == 1 ? "Worn today" : "No streak yet")
                     .font(ThermyxFont.cardTitle)

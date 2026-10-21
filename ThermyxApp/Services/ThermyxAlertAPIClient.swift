@@ -57,11 +57,14 @@ struct ThermyxAlertAPIClient {
         let location: ThermyxAlertEvent.AlertLocation?
         let locationConsent: Bool
         let detail: ThermyxCircleDetail
+        /// An admin's test send: real-looking, on record at the relay as a test.
+        var test: Bool? = nil
     }
 
     struct EventResult: Decodable {
         let smsEnabled: Bool?
         let texted: Int?
+        var pushed: Int? = nil
         let reason: String?
     }
 
@@ -246,6 +249,23 @@ struct ThermyxAlertAPIClient {
         return result.summary
     }
 
+    // MARK: AI chat
+
+    struct ChatMessage: Codable, Equatable, Identifiable {
+        var role: String
+        var content: String
+        var id = UUID()
+        enum CodingKeys: String, CodingKey { case role, content }
+    }
+
+    /// A reply about one day, from its totals and the conversation so far.
+    func chat(day: SummaryRequest, messages: [ChatMessage], baseURL: String, token: String) async throws -> String {
+        struct Body: Encodable { let day: SummaryRequest; let messages: [ChatMessage] }
+        struct Reply: Decodable { let reply: String }
+        let reply: Reply = try await request("POST", "/v1/chat", baseURL: baseURL, token: token, body: Body(day: day, messages: messages))
+        return reply.reply
+    }
+
     // MARK: Plumbing
 
     static func parseDate(_ string: String) -> Date? {
@@ -278,7 +298,7 @@ struct ThermyxAlertAPIClient {
         case 403:
             if path == "/v1/pair" { throw ClientError.codeRejected }
             // The relay has the AI summary switched off (a removed token is 401).
-            if path == "/v1/summary" { throw ClientError.aiSummaryOff }
+            if path == "/v1/summary" || path == "/v1/chat" { throw ClientError.aiSummaryOff }
             throw ClientError.accessRemoved
         case 429: throw ClientError.tooManyAttempts
         default: throw ClientError.server(http.statusCode)

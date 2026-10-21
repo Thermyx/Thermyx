@@ -12,7 +12,7 @@ struct FootLegend: View {
         HStack(spacing: Thermyx.Space.m) {
             ForEach(feet) { foot in
                 HStack(spacing: 6) {
-                    DashSwatch(isDashed: foot.isDashedInCharts, tint: tint)
+                    Capsule().fill(foot.chartColor).frame(width: 16, height: 3)
                     Text(foot.label)
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textMuted)
@@ -23,16 +23,3 @@ struct FootLegend: View {
     }
 }
 
-private struct DashSwatch: View {
-    let isDashed: Bool
-    let tint: Color
-
-    var body: some View {
-        Capsule()
-            .strokeBorder(
-                tint,
-                style: StrokeStyle(lineWidth: 2.5, dash: isDashed ? [3, 3] : [])
-            )
-            .frame(width: 16, height: 2.5)
-    }
-}

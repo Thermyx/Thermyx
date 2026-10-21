@@ -20,7 +20,7 @@ struct AppRootView: View {
             #endif
         }
         .animation(.easeInOut(duration: 0.35), value: account.isSignedIn && roles.hasCompletedOnboarding)
-        .tint(Thermyx.Ink.ice)
+        .tint(Thermyx.Ink.link)
         .preferredColorScheme(.dark)
         .onAppear { ThermyxFontRegistration.verify() }
     }
@@ -43,7 +43,7 @@ struct AppRootView: View {
 // MARK: - User
 
 enum UserTab: Hashable {
-    case home, insights, learn, simulator, safety
+    case home, insights, learn, safety
 }
 
 struct UserRoot: View {
@@ -58,6 +58,8 @@ struct UserRoot: View {
     /// After "I'm OK", the takeover stays quiet for a while unless the level
     /// drops and climbs back to Critical.
     @State private var criticalSnoozedUntil: Date?
+    /// The Critical takeover is showing for a Demo studio test.
+    @State private var criticalIsTest = false
     #if DEBUG
     @StateObject private var tour = ThermyxPreviewHarness.Tour.shared
     #endif
@@ -73,7 +75,6 @@ struct UserRoot: View {
         .init(.home, label: "Home", systemImage: "house", selectedImage: "house.fill"),
         .init(.insights, label: "Insights", systemImage: "chart.bar", selectedImage: "chart.bar.fill"),
         .init(.learn, label: "Learn", systemImage: "newspaper", selectedImage: "newspaper.fill"),
-        .init(.simulator, label: "Simulator", systemImage: "dial.medium", selectedImage: "dial.medium.fill"),
         .init(.safety, label: "Safety", systemImage: "shield", selectedImage: "shield.fill")
     ]
 
@@ -95,13 +96,11 @@ struct UserRoot: View {
         } content: { tab in
             switch tab {
             case .home:
-                HomeView(roles: roles, settings: settings)
+                HomeView(roles: roles, settings: settings, alerts: alerts, health: health)
             case .insights:
                 InsightsHubView(settings: settings, health: health)
             case .learn:
                 LearnTab(settings: settings)
-            case .simulator:
-                SimulatorTab(settings: settings)
             case .safety:
                 SafetyView(roles: roles, settings: settings, alerts: alerts, health: health)
             }
@@ -157,6 +156,7 @@ struct UserRoot: View {
             alerts.isDemoMode = viewModel.ble.isDemoMode
             alerts.evaluate(assessment, reading: reading, settings: settings)
             alerts.evaluateComfort(reading, unit: settings.temperatureUnit, conditions: settings.profile.conditionSet)
+            alerts.scheduleEveningInsights(history: viewModel.history, settings: settings)
             if assessment.level == .critical {
                 let snoozed = criticalSnoozedUntil.map { Date.now < $0 } ?? false
                 if !snoozed, !showingCritical { showingCritical = true }
@@ -164,13 +164,53 @@ struct UserRoot: View {
                 criticalSnoozedUntil = nil
             }
         }
+        .onReceive(ThermyxDeepLink.shared.$sosRequest.compactMap { $0 }) { _ in
+            withAnimation(SiteMotion.fade) { tab = .safety }
+        }
+        .onReceive(ThermyxDeepLink.shared.$insightsDay.compactMap { $0 }) { _ in
+            withAnimation(SiteMotion.fade) { tab = .learn }
+        }
+        .onChange(of: alerts.lastCheckInAt) { _, at in viewModel.widgets.lastCheckIn = at }
+        .onChange(of: settings.contacts) { _, contacts in viewModel.widgets.circleSize = contacts.filter(\.enabled).count }
+        .onChange(of: alerts.criticalTestRequest) { _, request in
+            guard request != nil else { return }
+            criticalIsTest = true
+            showingCritical = true
+        }
+        .task {
+            // The Demo studio's timeline: its one-off events act as the
+            // wearer would, and "phone goes quiet" holds the posts.
+            viewModel.player.onInstant = { [weak viewModel] event in
+                guard let viewModel else { return }
+                switch event.kind {
+                case .sos: alerts.notifyTrustedCircle(level: .critical, reading: viewModel.reading, settings: settings, trigger: .pressed)
+                case .help: alerts.askForHelp(.unwell, note: "", reading: viewModel.reading, settings: settings)
+                case .checkIn: alerts.sendImOK(level: viewModel.assessment.level, reading: viewModel.reading, settings: settings)
+                default: break
+                }
+            }
+            viewModel.player.onQuietChange = { quiet in alerts.holdingPosts = quiet }
+            viewModel.widgets.circleSize = settings.contacts.filter(\.enabled).count
+            // "I'm OK" from the Safety widget.
+            ThermyxCheckInInbox.onRequest = { [weak viewModel] in
+                Task { @MainActor in
+                    guard let viewModel, ThermyxCheckInInbox.take() != nil else { return }
+                    alerts.sendImOK(level: viewModel.assessment.level, reading: viewModel.reading, settings: settings)
+                }
+            }
+            ThermyxCheckInInbox.startListening()
+            if ThermyxCheckInInbox.take() != nil {
+                alerts.sendImOK(level: viewModel.assessment.level, reading: viewModel.reading, settings: settings)
+            }
+        }
         .onChange(of: viewModel.sessionEndedAt) { _, ended in
             guard ended != nil else { return }
             alerts.deliverSessionSummary(history: viewModel.history, settings: settings)
         }
         .fullScreenCover(isPresented: $showingCritical) {
-            CriticalAlertView(alerts: alerts, settings: settings) {
-                criticalSnoozedUntil = Date.now.addingTimeInterval(10 * 60)
+            CriticalAlertView(alerts: alerts, settings: settings, isTest: criticalIsTest) {
+                if !criticalIsTest { criticalSnoozedUntil = Date.now.addingTimeInterval(10 * 60) }
+                criticalIsTest = false
                 showingCritical = false
             }
             .environmentObject(viewModel)

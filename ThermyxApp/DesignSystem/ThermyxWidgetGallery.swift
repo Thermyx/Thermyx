@@ -19,6 +19,9 @@ struct WidgetGallery: View {
             footC: 34.4, leftC: 33.8, rightC: 34.4, leftLoad: 0.52, rightLoad: 0.46, leftSteady: 0.88, rightSteady: 0.84,
             level: .normal, concern: nil, temps: curve(from: 31.2, peak: 35.4, to: 34.4),
             batteryLeft: 61, batteryRight: 55)
+        s.readiness = .init(status: "typical", activity: "Sitting", lowC: 31.2, highC: 33.4, nowC: 32.1)
+        s.lastCheckIn = Date.now.addingTimeInterval(-40 * 60)
+        s.circleSize = 2
         build(&s)
         return s
     }
@@ -26,13 +29,14 @@ struct WidgetGallery: View {
     private let normal = snapshot()
     private let caution = snapshot { s in
         s.mode = .cool; s.footC = 38.4; s.leftC = 37.6; s.rightC = 38.4; s.level = .caution
+        s.readiness = .init(status: "warmer", activity: "Walking", lowC: 33.0, highC: 35.2, nowC: 36.4)
         s.concern = "Foot-contact temperature is elevated."
         s.temps = curve(from: 33.8, peak: 38.9, to: 38.4)
         s.batteryLeft = 8; s.batteryRight = 54
     }
     private let hot = snapshot { s in
         s.mode = .cool; s.footC = 39.1; s.leftC = 38.2; s.rightC = 39.1; s.level = .high
-        s.concern = "Movement stability is below baseline."
+        s.concern = "Steps are less steady than usual."
         s.temps = curve(from: 34, peak: 39.4, to: 39.1)
         s.leftSteady = 0.64; s.rightSteady = 0.58
         s.batteryLeft = 4; s.batteryRight = 40
@@ -71,6 +75,15 @@ struct WidgetGallery: View {
                         widget(338, 354) { WidgetLargeLayout(context: context(caution, .pressure)) }
                         widget(338, 354) { WidgetLargeLayout(context: context(off)) }
                     }.id("large")
+                    group("Readiness & Safety") {
+                        HStack(spacing: 14) {
+                            widget(158, 158) { WidgetReadinessLayout(snapshot: normal, family: .systemSmall) }
+                            widget(158, 158) { WidgetSafetyLayout(snapshot: normal, family: .systemSmall) }
+                        }
+                        widget(338, 158) { WidgetReadinessLayout(snapshot: caution, family: .systemMedium) }
+                        widget(338, 158) { WidgetSafetyLayout(snapshot: hot, family: .systemMedium) }
+                        accessory(170, 72) { WidgetReadinessLayout(snapshot: normal, family: .accessoryRectangular) }
+                    }.id("extras")
                     group("Lock Screen") {
                         HStack(spacing: 14) {
                             accessory(170, 72) { WidgetRectangularLayout(context: context(normal)) }

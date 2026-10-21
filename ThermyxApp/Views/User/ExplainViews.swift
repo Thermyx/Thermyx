@@ -4,7 +4,7 @@ import SwiftUI
 
 /// A small link under a risk level that opens the explanation.
 struct WhyButton: View {
-    var tint: Color = Thermyx.Ink.ice
+    var tint: Color = Thermyx.Ink.link
     let action: () -> Void
 
     var body: some View {
@@ -12,6 +12,7 @@ struct WhyButton: View {
             Label("Why am I seeing this?", systemImage: "questionmark.circle")
                 .font(ThermyxFont.captionSmall.weight(.semibold))
                 .foregroundStyle(tint)
+                .underline(tint == .white)
                 .frame(minHeight: Thermyx.minimumTapTarget, alignment: .leading)
                 .contentShape(.rect)
         }
@@ -155,7 +156,7 @@ struct BaselineStatus: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.header) {
-            SectionLabel("Personal baseline")
+            SectionLabel("What's usual for you")
             Text(text)
                 .font(ThermyxFont.caption)
                 .foregroundStyle(Thermyx.Ink.textMuted)

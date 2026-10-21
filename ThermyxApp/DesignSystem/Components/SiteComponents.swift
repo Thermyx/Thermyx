@@ -115,7 +115,7 @@ struct SiteSecondaryButtonStyle: ButtonStyle {
 
 /// A text button for low-emphasis choices ("Do this later").
 struct SiteTextButtonStyle: ButtonStyle {
-    var tint: Color = Thermyx.Site.textMuted
+    var tint: Color = Thermyx.Ink.link
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

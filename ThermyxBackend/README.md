@@ -150,6 +150,72 @@ iOS Simulator on the same Mac) and the code. Then **Safety → Watchers →
 Invite** makes a watcher code for a second phone or simulator, which joins as
 **Trusted member**.
 
+## Run it on your Mac (free, no card, no sudo)
+
+This is the way to get a relay running today for testing and recording. It
+uses your Mac's disk as the database volume and a free Cloudflare "quick
+tunnel" for the public HTTPS address. Nothing needs a card or an admin
+password.
+
+**One-time setup**
+
+1. Check Node: `node -v` should be **22.5 or newer**.
+2. Install the tunnel: `brew install cloudflared` (a formula, not a cask).
+3. If `npm` complains about missing modules, run `npm install` in this folder.
+4. Copy `.env.example` to `.env` if you haven't. Leave `SMS_ENABLED=false`
+   there; the start script forces texting off anyway until the A2P
+   registration is approved.
+
+**Every time you want the relay up**
+
+```sh
+cd ThermyxBackend
+./scripts/start-local.sh
+```
+
+The script:
+
+- starts the relay on port 8787 (or reuses it if it's already running), with
+  texting **forced off**, the database in `data/thermyx.sqlite`, and logs in
+  `data/logs/`;
+- opens the tunnel and prints the **relay address** (`https://….trycloudflare.com`);
+- waits until that address answers `/health` with 200, which can take up to a
+  minute on a new tunnel;
+- prints a **one-time wearer code**, valid for 10 minutes.
+
+**Pair the app**
+
+On the phone, go to Safety → Advanced → Connect to relay. Paste the relay
+address, enter the wearer code, and confirm.
+
+**Check it**
+
+- `curl <relay address>/health` should return `{"ok":true,…,"smsEnabled":false,…}`.
+- In the Demo studio, send a test alert to a contact, and confirm it reaches
+  the phone. If it doesn't, look in `data/logs/relay.log`.
+
+**Stop it**
+
+```sh
+./scripts/start-local.sh stop
+```
+
+**Things to know**
+
+- The address **changes every time the tunnel restarts**. After a restart,
+  run the script again and re-pair the app with the new address. The old
+  address stops working immediately.
+- The relay stops when the Mac sleeps, shuts down, or the script is stopped.
+  Keep the Mac awake while testing (`caffeinate -i` in another terminal), and
+  keep it on power.
+- A wearer code works once and expires after 10 minutes. Run the script again
+  for a new one.
+- The database and wearer data are in `data/thermyx.sqlite`. Copy that file to
+  back it up. Deleting it un-pairs every phone.
+- Quick tunnels have no uptime guarantee. Fine for testing and recording;
+  not for real people relying on it. For that, follow the Deployment section
+  below.
+
 ## Deployment
 
 1. Deploy behind a host that terminates HTTPS, with a **persistent volume**

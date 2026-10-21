@@ -48,7 +48,9 @@ const { openStore } = require("./store");
 const { cleanDetail, composeMessage, composeSilence, composeReconnected, composePush, pushFromText, LEVELS } = require("./message");
 const { apnsConfig, createApnsSender } = require("./apns");
 
-const KINDS = ["status", "alert", "sos", "ok", "update"];
+const KINDS = ["status", "alert", "sos", "ok", "update", "help", "test"];
+/// A wearer's own "send a test to my circle", at most this often.
+const CIRCLE_TEST_GAP_MS = 10 * 60_000;
 /// An active event's numbers are forgotten this long after the last update.
 const ACTIVE_EVENT_TTL_MS = 60 * 60_000;
 const TWILIO_KEYS = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"];
@@ -69,6 +71,7 @@ function validateEvent(event) {
   if (!event || typeof event !== "object" || Array.isArray(event)) return "invalid_body";
   if (!LEVELS.includes(event.level)) return "invalid_level";
   if (event.kind !== undefined && !KINDS.includes(event.kind)) return "invalid_kind";
+  if (event.test !== undefined && typeof event.test !== "boolean") return "invalid_test";
   if (event.recipients !== undefined && (!Array.isArray(event.recipients) || event.recipients.some(r => typeof r !== "string"))) {
     return "invalid_recipients";
   }
@@ -128,6 +131,51 @@ const SUMMARY_SYSTEM = [
   "Frame the day by the wearer's focus. Health: safety, comfort and circulation first (time above the comfort band, cold feet, rest and fluids). Performance: training, recovery and gait efficiency first (steps, cadence, walking steadiness, time on their feet). With no focus, use health.",
   "If they said what Thermyx is mostly for (usage), make the actions fit it, for example breaks in the shade for outdoor work, cool-down and recovery for training, warming up gradually for cold weather."
 ].join(" ");
+
+const CHAT_SYSTEM = [
+  "You are Thermyx's assistant, chatting with someone who wears Thermyx smart insoles (they sense foot temperature at the insole, an arch pressure sensor, steps and walking steadiness, and can heat or cool).",
+  "You are given one day's totals and averages, and the conversation so far. Use only those numbers; never invent a value. If they ask about something the numbers don't cover, say so plainly.",
+  "Talk like a friendly, knowledgeable person: warm, clear, everyday words, no jargon, no emoji, no markdown headings. Two to five sentences unless they ask for more.",
+  "Temperatures are in Celsius; give them in the requested unit (C or F) with one decimal.",
+  "You are not a doctor. Never diagnose. For anything worrying (feeling unwell, dizziness, a High risk or Critical level, numbness, pain), suggest resting, cooling down, drinking water, and talking to a doctor; for an emergency, tell them to call 911.",
+  "Frame advice by their focus (health or performance) and what they use Thermyx for, when given."
+].join(" ");
+
+/// Keeps a chat's messages to plain text turns: at most 16, alternating,
+/// each under 800 characters, ending with the wearer. Null when invalid.
+function cleanChat(messages) {
+  if (!Array.isArray(messages) || !messages.length || messages.length > 16) return null;
+  const clean = [];
+  for (const m of messages) {
+    if (!m || (m.role !== "user" && m.role !== "assistant") || typeof m.content !== "string") return null;
+    const content = m.content.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, " ").trim().slice(0, 800);
+    if (!content) return null;
+    clean.push({ role: m.role, content });
+  }
+  if (clean[0].role !== "user" || clean.at(-1).role !== "user") return null;
+  for (let i = 1; i < clean.length; i++) if (clean[i].role === clean[i - 1].role) return null;
+  return clean;
+}
+
+function anthropicChat(env) {
+  return async (day, messages) => {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model: env.AI_MODEL || "claude-haiku-4-5",
+        max_tokens: 400,
+        system: `${CHAT_SYSTEM}\nThe day's numbers: ${JSON.stringify(day)}`,
+        messages
+      })
+    });
+    if (!response.ok) throw new Error(`Anthropic request failed: ${response.status}`);
+    const data = await response.json();
+    const text = (data.content || []).filter(part => part.type === "text").map(part => part.text).join("").trim();
+    if (!text) throw new Error("empty reply");
+    return text;
+  };
+}
 
 function anthropicSummarize(env) {
   return async request => {
@@ -203,6 +251,8 @@ function createRelay(options = {}) {
   const aiSummary = env.AI_SUMMARY_ENABLED === "true";
   const summarize = options.summarize || anthropicSummarize(env);
   const summaryLimit = rateLimiter(20, 60 * 60_000, now); // AI summaries per wearer per hour
+  const chat = options.chat || anthropicChat(env);
+  const chatLimit = rateLimiter(60, 60 * 60_000, now);    // chat turns per wearer per hour
 
   store.purgeExpired();
   const purgeTimer = setInterval(() => store.purgeExpired(), 10 * 60_000);
@@ -254,12 +304,22 @@ function createRelay(options = {}) {
   function pushDue(event, deviceID) {
     const kind = event.kind || "alert";
     if (kind === "status") return false;
-    if (kind === "sos" || kind === "ok") return true;
+    // An admin's test send goes every time it's pressed.
+    if (event.test === true) return true;
+    if (kind === "sos" || kind === "ok" || kind === "help") return true;
+    if (kind === "test") return testDue(deviceID);
     const last = pushed.get(deviceID);
     if (kind === "update") return Boolean(last) && now() - (last.updateAt || 0) >= 60_000;
     const severity = LEVELS.indexOf(event.level);
     if (severity <= 0) return false;
     return !last || severity > last.severity || now() - last.at >= reminderMs;
+  }
+
+  /// The wearer's "test my circle": once per CIRCLE_TEST_GAP_MS.
+  const lastCircleTest = new Map();
+  function testDue(deviceID) {
+    const last = lastCircleTest.get(deviceID);
+    return !last || now() - last >= CIRCLE_TEST_GAP_MS;
   }
 
   async function textAll(recipients, message) {
@@ -308,7 +368,9 @@ function createRelay(options = {}) {
   function shouldText(event, deviceID) {
     const kind = event.kind || "alert";
     if (kind === "status") return false;
-    if (kind === "sos" || kind === "ok") return true;
+    if (event.test === true) return true;
+    if (kind === "sos" || kind === "ok" || kind === "help") return true;
+    if (kind === "test") return testDue(deviceID);
     const previous = store.lastText(deviceID);
     if (kind === "update") {
       if (!store.eventTexted(deviceID)) return false;
@@ -344,15 +406,22 @@ function createRelay(options = {}) {
       tracked.locationConsent = event.locationConsent === true;
     }
 
-    store.updateStatus(deviceID, {
-      level: event.level,
-      kind,
-      location: event.location,
-      locationConsent: event.locationConsent === true,
-      detail
-    });
+    if (event.test === true) store.noteTest(deviceID, kind);
+    if (kind === "test" && (texts || pushing)) lastCircleTest.set(deviceID, now());
+    // A circle test says nothing about how the wearer is: the status and
+    // the event timeline stay as they were.
+    if (kind !== "test") {
+      store.updateStatus(deviceID, {
+        level: event.level,
+        kind,
+        location: event.location,
+        locationConsent: event.locationConsent === true,
+        detail
+      });
+    }
+    const endsEvent = event.level === "Normal" && !["ok", "sos", "help", "test"].includes(kind);
     // The event is over: forget the numbers and the episode's text history.
-    if (event.level === "Normal" && kind !== "ok" && kind !== "sos") {
+    if (endsEvent) {
       active.delete(deviceID);
       if (!texts) store.clearLastText(deviceID);
     }
@@ -369,21 +438,22 @@ function createRelay(options = {}) {
     } else if (reconnecting && apns) {
       watchersPushed = pushWatchers(deviceID, pushFromText(composeReconnected(event, detail), false));
     }
-    if (event.level === "Normal" && kind !== "ok" && kind !== "sos") pushed.delete(deviceID);
-    // A pushed High risk, Critical or SOS is watched for silence even when
-    // nobody is texted.
-    const severeNow = kind === "sos" || event.level === "High risk" || event.level === "Critical";
-    if (watchersPushed && severeNow && kind !== "ok" && !active.has(deviceID)) {
+    if (endsEvent) pushed.delete(deviceID);
+    // A pushed High risk, Critical, SOS or help request is watched for
+    // silence even when nobody is texted.
+    const severeNow = kind === "sos" || kind === "help" || event.level === "High risk" || event.level === "Critical";
+    const watchLevel = event.level !== "Normal" ? event.level : kind === "help" ? "help request" : "SOS";
+    if (watchersPushed && severeNow && kind !== "ok" && kind !== "test" && !active.has(deviceID)) {
       active.set(deviceID, {
         recipients: smsEnabled ? recipients : [], name: detail && detail.name,
-        level: kind === "sos" && event.level === "Normal" ? "SOS" : event.level,
+        level: watchLevel,
         lastAt: now(), silenceSent: false, locationConsent: event.locationConsent === true
       });
     }
 
-    if (!recipients.length || (kind === "status" && !reconnecting)) return json(res, 202, { stored: true, texted: 0, smsEnabled });
-    if (!smsEnabled) return json(res, 202, { stored: true, texted: 0, smsEnabled: false, reason: "sms_disabled" });
-    if (!texts && !reconnecting) return json(res, 202, { stored: true, texted: 0, smsEnabled, reason: "throttled" });
+    if (!recipients.length || (kind === "status" && !reconnecting)) return json(res, 202, { stored: true, texted: 0, pushed: watchersPushed, smsEnabled });
+    if (!smsEnabled) return json(res, 202, { stored: true, texted: 0, pushed: watchersPushed, smsEnabled: false, reason: "sms_disabled" });
+    if (!texts && !reconnecting) return json(res, 202, { stored: true, texted: 0, pushed: watchersPushed, smsEnabled, reason: "throttled" });
     if (!options.sendSMS && TWILIO_KEYS.some(key => !env[key])) {
       log("SMS enabled but Twilio is not configured");
       return json(res, 503, { error: "sms_not_configured" });
@@ -394,15 +464,14 @@ function createRelay(options = {}) {
     store.recordText(deviceID, texts ? kind : "reconnect", LEVELS.indexOf(event.level), delivered, failed);
     if (texts && event.level === "Normal" && kind === "update") store.clearLastText(deviceID);
 
-    // A texted High risk, Critical or SOS event is watched for silence.
-    const severe = kind === "sos" || event.level === "High risk" || event.level === "Critical";
-    if (delivered && severe && kind !== "ok" && !active.has(deviceID)) {
+    // A texted High risk, Critical, SOS or help request is watched for silence.
+    if (delivered && severeNow && kind !== "ok" && kind !== "test" && !active.has(deviceID)) {
       active.set(deviceID, {
-        recipients, name: detail && detail.name, level: kind === "sos" && event.level === "Normal" ? "SOS" : event.level,
+        recipients, name: detail && detail.name, level: watchLevel,
         lastAt: now(), silenceSent: false, locationConsent: event.locationConsent === true
       });
     }
-    return json(res, failed && !delivered ? 502 : 202, { stored: true, texted: delivered, failed, smsEnabled });
+    return json(res, failed && !delivered ? 502 : 202, { stored: true, texted: delivered, failed, pushed: watchersPushed, smsEnabled });
   }
 
   const server = http.createServer((req, res) => {
@@ -476,6 +545,24 @@ function createRelay(options = {}) {
         }
       });
     }
+    // AI chat about one day: the same aggregate numbers as the summary, plus
+    // the conversation. Neither is stored or logged.
+    if (route === "POST /v1/chat") {
+      if (!aiSummary) return json(res, 403, { error: "ai_summary_disabled" });
+      if (!options.chat && !env.ANTHROPIC_API_KEY) return json(res, 503, { error: "ai_summary_not_configured" });
+      if (!chatLimit(identity.deviceID)) return json(res, 429, { error: "rate_limited" });
+      return readBody(req, res, async body => {
+        const day = cleanSummaryRequest(body.day);
+        const messages = cleanChat(body.messages);
+        if (!day || !messages) return json(res, 400, { error: "invalid_chat_request" });
+        try {
+          return json(res, 200, { reply: await chat(day, messages) });
+        } catch (error) {
+          log("AI chat failed:", error.message);
+          return json(res, 502, { error: "chat_failed" });
+        }
+      });
+    }
     if (route === "POST /v1/watchers/codes") return json(res, 201, store.createWatcherCode(identity.deviceID));
     // Contact confirmation: the relay texts a 6-digit code to the number; the
     // contact reads it back to the wearer, who enters it. Off by default.
@@ -542,7 +629,7 @@ function twilioSend(env) {
   };
 }
 
-module.exports = { createRelay, validateEvent, normalisePhone, composeMessage, cleanSummaryRequest };
+module.exports = { createRelay, validateEvent, normalisePhone, composeMessage, cleanSummaryRequest, cleanChat };
 
 if (require.main === module) {
   // Settings from .env beside this file, if there is one. Variables already

@@ -206,7 +206,7 @@ struct TrustedInsightsView: View {
         ThermyxCard {
             VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("Foot vs ambient") {
-                    Text("Hold to scrub")
+                    Text("Touch and hold to read")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
                 }
 
@@ -262,23 +262,21 @@ struct TrustedInsightsView: View {
                                 id: "gait-\(foot.rawValue)", name: "\(foot.label) stability",
                                 points: footDigest.points { $0.gaitMean.map { $0 * 100 } },
                                 color: Thermyx.Ink.ice,
-                                isDashed: foot.isDashedInCharts,
                                 isFilled: !bilateral.hasBoth,
-                                scale: .steadiness
+                                scale: .steadiness,
+                                foot: foot
                             )
                         }
                     },
                     range: .day,
                     height: 140,
                     format: { "\(Int($0.rounded()))%" },
-                    averageLabel: "Baseline",
+                    averageLabel: "Usual",
                     highTint: Thermyx.Ink.ice,
                     lowTint: Thermyx.Ink.amber
                 )
 
-                if bilateral.hasBoth { FootLegend(feet: bilateral.feet, tint: Thermyx.Ink.textMuted) }
-
-                Text("A sustained drop against their own baseline is the signal worth acting on, not a single dip.")
+                Text("One dip means little. A drop below their usual that lasts is the thing to act on.")
                     .font(ThermyxFont.captionSmall)
                     .foregroundStyle(Thermyx.Ink.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -302,7 +300,7 @@ struct TrustedInsightsView: View {
                 ThermyxTimeSeriesChart(
                     series: [
                         ChartSeries(
-                            id: "gap", name: "Temperature gap",
+                            id: "gap", name: "Temperature difference",
                             points: bilateral.temperatureAsymmetry.map {
                                 SeriesPoint(date: $0.date, value: unit.convertDelta($0.value))
                             },
@@ -339,21 +337,21 @@ struct TrustedInsightsView: View {
     private var signalRows: some View {
         VStack(spacing: Thermyx.Space.s) {
             signalRow(
-                title: "Cadence",
-                detail: "Steps per minute",
+                title: "Pace",
+                detail: "Steps a minute",
                 value: bilateral.byFoot.values.compactMap(\.cadenceAverage).average.map { "\(Int($0.rounded()))" },
                 tint: Thermyx.Ink.signal
             )
             signalRow(
                 title: "Standing",
-                detail: "Loaded but not stepping",
+                detail: "On their feet, standing still",
                 value: bilateral.byFoot.values.compactMap(\.standingSeconds).max().map(DurationFormat.long),
                 tint: Thermyx.Ink.textPrimary
             )
             signalRow(
-                title: "Pressure balance",
-                detail: "Share of load on the forefoot",
-                value: digest.balanceLatest.map { "\(Int(($0 * 100).rounded()))%" },
+                title: "Leaning",
+                detail: "Which foot takes more weight",
+                value: bilateral.hasBoth ? (bilateral.consistentlyLoadedFoot?.label ?? "Even") : nil,
                 tint: Thermyx.Ink.amber
             )
         }

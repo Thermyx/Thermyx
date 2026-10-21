@@ -62,6 +62,9 @@ struct ChartSeries: Identifiable, Equatable {
     /// Colours the line by value, so it reads hot where the values are hot.
     /// Without one, the series is drawn in `color`.
     var scale: ChartValueScale?
+    /// Set on per-foot series. With both feet on one chart they're drawn in
+    /// `Foot.chartColor`, solid and thick, so the two lines stay apart.
+    var foot: Foot? = nil
 
     var values: [Double] { points.map(\.value) }
 }
@@ -97,18 +100,36 @@ struct ThermyxTimeSeriesChart: View {
     /// With one, each mark takes the scale's colour at its value.
     var highTint: Color = Thermyx.Ink.ember
     var lowTint: Color = Thermyx.Ink.ice
+    /// The smallest y range drawn, so a nearly flat line isn't blown up
+    /// into noise with every axis label rounding to the same number.
+    var minimumSpan: Double = 4
 
     @State private var scrubDate: Date?
+    /// Pinch to zoom in on time: 1 shows the whole range.
+    @State private var zoom: CGFloat = 1
+    @State private var zoomAtStart: CGFloat = 1
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    static let maxZoom: CGFloat = 12
+
     private var primary: ChartSeries? { series.first(where: \.isFilled) ?? series.first }
+
+    /// Both feet on one chart: draw them apart, by colour.
+    private var comparesFeet: Bool { Set(series.compactMap(\.foot)).count > 1 }
+
+    private var firstDate: Date? { series.compactMap { $0.points.first?.date }.min() }
+    private var lastDate: Date? { series.compactMap { $0.points.last?.date }.max() }
+    private var span: TimeInterval {
+        guard let firstDate, let lastDate else { return 3600 }
+        return max(60, lastDate.timeIntervalSince(firstDate))
+    }
 
     private var allValues: [Double] {
         series.flatMap(\.values) + (band.map { [$0.lowerBound, $0.upperBound] } ?? [])
     }
 
     private var domain: ClosedRange<Double> {
-        ThermyxChartStyle.domain(for: allValues, minimumSpan: 4)
+        ThermyxChartStyle.domain(for: allValues, minimumSpan: minimumSpan)
     }
 
     private var average: Double? {
@@ -117,12 +138,12 @@ struct ThermyxTimeSeriesChart: View {
     }
 
     private var maxPoint: SeriesPoint? {
-        guard showsExtremes else { return nil }
+        guard showsExtremes, !comparesFeet else { return nil }
         return primary?.points.max { $0.value < $1.value }
     }
 
     private var minPoint: SeriesPoint? {
-        guard showsExtremes else { return nil }
+        guard showsExtremes, !comparesFeet else { return nil }
         return primary?.points.min { $0.value < $1.value }
     }
 
@@ -138,7 +159,20 @@ struct ThermyxTimeSeriesChart: View {
         VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
             scrubReadout
             chart
-            axisRow
+            if comparesFeet || zoom > 1.01 {
+                HStack(spacing: Thermyx.Space.m) {
+                    if comparesFeet { FootLegend(feet: Foot.allCases.filter { f in series.contains { $0.foot == f } }) }
+                    Spacer(minLength: 0)
+                    if zoom > 1.01 {
+                        Button("Show all") {
+                            withAnimation(SiteMotion.settle) { zoom = 1; zoomAtStart = 1 }
+                        }
+                        .font(ThermyxFont.controlLabel)
+                        .foregroundStyle(Thermyx.Ink.link)
+                        .frame(minHeight: Thermyx.minimumTapTarget)
+                    }
+                }
+            }
         }
     }
 
@@ -160,7 +194,7 @@ struct ThermyxTimeSeriesChart: View {
                     .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
                     .monospacedDigit()
             } else {
-                Text("Hold to read a value")
+                Text("Hold to read a value · pinch to zoom")
                     .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
             }
             Spacer(minLength: 0)
@@ -197,7 +231,7 @@ struct ThermyxTimeSeriesChart: View {
 
             ForEach(series) { item in
                 ForEach(item.points) { point in
-                    if item.isFilled {
+                    if item.isFilled, !comparesFeet {
                         AreaMark(
                             x: .value("Time", point.date),
                             yStart: .value("Base", domain.lowerBound),
@@ -216,10 +250,10 @@ struct ThermyxTimeSeriesChart: View {
                     .foregroundStyle(lineStyle(item))
                     .lineStyle(
                         StrokeStyle(
-                            lineWidth: item.isDashed ? 2.2 : ThermyxChartStyle.lineWidth,
+                            lineWidth: comparesFeet && item.foot != nil ? 3 : (item.isDashed ? 2.2 : ThermyxChartStyle.lineWidth),
                             lineCap: .round,
                             lineJoin: .round,
-                            dash: item.isDashed ? [5, 5] : []
+                            dash: item.isDashed && !(comparesFeet && item.foot != nil) ? [5, 5] : []
                         )
                     )
                     .interpolationMethod(.monotone)
@@ -247,29 +281,42 @@ struct ThermyxTimeSeriesChart: View {
         }
         .frame(height: height)
         .chartYScale(domain: domain)
-        .chartXScale(range: .plotDimension(startPadding: 14, endPadding: 14))
+        .chartXScale(range: .plotDimension(startPadding: 8, endPadding: 8))
         .chartYAxis {
-            AxisMarks(position: .leading) { _ in
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 4)) { value in
                 AxisGridLine().foregroundStyle(Thermyx.Ink.hairline)
+                AxisValueLabel {
+                    if let v = value.as(Double.self) {
+                        Text(format(v)).font(ThermyxFont.axisLabel).foregroundStyle(Thermyx.Ink.textFaint)
+                    }
+                }
             }
         }
-        .chartXAxis(.hidden)
-        .chartLegend(.hidden)
-        .chartOverlay { proxy in
-            GeometryReader { geometry in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(.rect)
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                guard let plot = proxy.plotFrame else { return }
-                                let x = value.location.x - geometry[plot].minX
-                                scrubDate = proxy.value(atX: x, as: Date.self)
-                            }
-                            .onEnded { _ in scrubDate = nil }
-                    )
+        .chartXAxis {
+            AxisMarks(values: .automatic(desiredCount: 4)) { value in
+                AxisGridLine().foregroundStyle(Thermyx.Ink.hairline.opacity(0.6))
+                AxisValueLabel {
+                    if let date = value.as(Date.self) {
+                        Text(axisLabel(date)).font(ThermyxFont.axisLabel).foregroundStyle(Thermyx.Ink.textFaint)
+                    }
+                }
             }
+        }
+        .chartLegend(.hidden)
+        // Apple's own selection: hold to read a value (it waits for a hold
+        // when the chart scrolls, so scrolling and reading don't fight).
+        .chartXSelection(value: $scrubDate)
+        .chartScrollableAxes(zoom > 1.01 ? .horizontal : [])
+        .chartXVisibleDomain(length: span / Double(zoom))
+        .chartScrollPosition(initialX: lastDate ?? .now)
+        .simultaneousGesture(
+            MagnifyGesture()
+                .onChanged { value in zoom = min(Self.maxZoom, max(1, zoomAtStart * value.magnification)) }
+                .onEnded { _ in zoomAtStart = zoom }
+        )
+        .accessibilityZoomAction { action in
+            zoom = min(Self.maxZoom, max(1, action.direction == .zoomIn ? zoom * 2 : zoom / 2))
+            zoomAtStart = zoom
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(primary?.name ?? "Chart")
@@ -286,6 +333,7 @@ struct ThermyxTimeSeriesChart: View {
     /// The line: the value scale stretched over the series' own range, so
     /// every point sits on its colour.
     private func lineStyle(_ item: ChartSeries) -> AnyShapeStyle {
+        if comparesFeet, let foot = item.foot { return AnyShapeStyle(foot.chartColor) }
         guard let scale = item.scale, let low = item.values.min(), let high = item.values.max() else {
             return AnyShapeStyle(item.color)
         }
@@ -317,18 +365,14 @@ struct ThermyxTimeSeriesChart: View {
         }
     }
 
-    private var axisRow: some View {
-        ChartAxisRow(labels: axisLabels)
-    }
-
-    private var axisLabels: [String] {
-        guard let points = primary?.points, let first = points.first?.date, let last = points.last?.date else { return [] }
-        let formatter = range.axisFormatter
-        let count = 4
-        let span = last.timeIntervalSince(first)
-        return (0..<count).map { index in
-            formatter.string(from: first.addingTimeInterval(span * Double(index) / Double(count - 1)))
-        }
+    /// Axis labels at the resolution the zoom shows: hours on a day, and
+    /// finer as it zooms in.
+    private func axisLabel(_ date: Date) -> String {
+        let visible = span / Double(zoom)
+        if visible <= 3 * 3600 { return date.formatted(.dateTime.hour().minute()) }
+        if visible <= 36 * 3600 { return date.formatted(.dateTime.hour()) }
+        if visible <= 10 * 86_400 { return date.formatted(.dateTime.weekday(.abbreviated)) }
+        return date.formatted(.dateTime.day().month(.abbreviated))
     }
 
     private var accessibilitySummary: String {

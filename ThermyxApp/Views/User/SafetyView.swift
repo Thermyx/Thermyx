@@ -18,6 +18,7 @@ struct SafetyView: View {
     }()
     @State private var showingAddContact = false
     @State private var showingCircleSharing = false
+    @State private var showingHelp = false
     /// What to do once "What your circle gets" is acknowledged the first time.
     @State private var afterCircleSharing: (() -> Void)?
     @State private var verifying: ThermyxContact?
@@ -52,6 +53,7 @@ struct SafetyView: View {
                     .spotlightTarget(.holdToCall)
                     .padding(.top, Thermyx.Space.titleGap)
                     imOKRow
+                    helpRow
                     readiness
                     ladder
                         .padding(.top, Thermyx.Space.section)
@@ -74,7 +76,10 @@ struct SafetyView: View {
             .thermyxNavigationRoot()
             .task { await permissions.refresh() }
             #if DEBUG
-            .onAppear { if ThermyxPreviewHarness.state == .circleSharing { showingCircleSharing = true } }
+            .onAppear {
+                if ThermyxPreviewHarness.state == .circleSharing { showingCircleSharing = true }
+                if ThermyxPreviewHarness.state == .helpRequest { showingHelp = true }
+            }
             #endif
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { Task { await permissions.refresh() } }
@@ -104,10 +109,20 @@ struct SafetyView: View {
             .presentationDetents([.large])
             .thermyxSheetBackground()
         }
+        .sheet(isPresented: $showingHelp) {
+            HelpRequestSheet(alerts: alerts, settings: settings)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(item: $verifying) { contact in
             VerifyContactSheet(settings: settings, contact: contact)
                 .presentationDetents([.medium])
                 .thermyxSheetBackground()
+        }
+        .onReceive(ThermyxDeepLink.shared.$sosRequest.compactMap { $0 }) { at in
+            // The Safety widget's SOS: confirm here, never dial on its own.
+            if Date.now.timeIntervalSince(at) < 30 { showingSOSConfirmation = true }
+            ThermyxDeepLink.shared.sosRequest = nil
         }
         .confirmationDialog(
             "Call emergency services?",
@@ -243,6 +258,16 @@ struct SafetyView: View {
         showingCircleSharing = true
     }
 
+    /// Help without 911.
+    private var helpRow: some View {
+        Button { showingHelp = true } label: {
+            Label("Ask my circle for help", systemImage: "hand.raised.fill")
+        }
+        .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.amberBorder))
+        .padding(.top, Thermyx.Space.s)
+        .accessibilityHint("Texts your trusted circle what you need, without calling 911.")
+    }
+
     private func placeEmergencyCall() {
         alerts.notifyTrustedCircle(
             level: .critical,
@@ -337,13 +362,13 @@ struct SafetyView: View {
                 if settings.canAddContact {
                     Button("Add") { explainFirst { showingAddContact = true } }
                         .font(.custom(ThermyxFont.Family.medium, size: 15, relativeTo: .subheadline))
-                        .foregroundStyle(Thermyx.Ink.ice)
+                        .foregroundStyle(Thermyx.Ink.link)
                         .frame(minWidth: 44, minHeight: 44, alignment: .trailing)
                         .accessibilityLabel("Add a trusted contact")
                 }
             }
             if settings.contacts.isEmpty {
-                Text("Add someone who should hear about a High-risk escalation. Nothing is shared until you add them.")
+                Text("Nothing is shared until you add someone.")
                     .font(ThermyxFont.bodySmall)
                     .foregroundStyle(Thermyx.Ink.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -359,7 +384,7 @@ struct SafetyView: View {
                     if settings.relayContactVerification, settings.relayRole == "wearer", contact.verifiedAt == nil {
                         Button("Confirm \(contact.name)'s number") { verifying = contact }
                             .font(ThermyxFont.controlLabel)
-                            .foregroundStyle(Thermyx.Ink.ice)
+                            .foregroundStyle(Thermyx.Ink.link)
                             .frame(minHeight: Thermyx.minimumTapTarget)
                     }
                 }
@@ -373,6 +398,8 @@ struct SafetyView: View {
                     showingCircleSharing = true
                 }
                 .padding(.top, Thermyx.Space.xs)
+                CircleTestButton(alerts: alerts, settings: settings)
+                    .padding(.top, Thermyx.Space.s)
             }
         }
     }
@@ -650,7 +677,7 @@ struct AddContactSheet: View {
                         .keyboardType(.phonePad)
                         .textContentType(.telephoneNumber)
                 }
-                Text("Choosing from Contacts copies only the name and the number you pick. This contact is stored on your phone. Nothing is sent to them until an escalation you configured actually fires.")
+                Text("Only the name and number you pick are copied. Stored on this phone.")
                     .font(ThermyxFont.captionSmall)
                     .foregroundStyle(Thermyx.Ink.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -706,6 +733,9 @@ struct CriticalAlertView: View {
     @EnvironmentObject private var viewModel: ThermyxViewModel
     @ObservedObject var alerts: ThermyxAlertCoordinator
     @ObservedObject var settings: ThermyxSettingsStore
+    /// A Demo studio test: shown as Critical whatever the live level, and its
+    /// SOS goes to the studio's test recipients, never the real circle.
+    var isTest = false
     let onDismiss: () -> Void
 
     static let countdownSeconds = 60
@@ -728,7 +758,7 @@ struct CriticalAlertView: View {
                 .font(.system(size: 56, weight: .bold))
                 .foregroundStyle(.white)
 
-            Text(assessment.level == .critical ? "Stop and get help now" : "Risk has dropped to \(assessment.level.rawValue)")
+            Text(isTest || assessment.level == .critical ? "Stop and get help now" : "Risk has dropped to \(assessment.level.rawValue)")
                 .font(ThermyxFont.onboardingHeadline)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
@@ -804,6 +834,12 @@ struct CriticalAlertView: View {
     }
 
     private func notifyCircle(_ trigger: ThermyxAlertCoordinator.SOSTrigger) {
+        if isTest {
+            guard !circleNotified else { return }
+            circleNotified = true
+            alerts.sendStudioTest(.sos, level: .critical, reading: viewModel.reading, settings: settings) { $0.sos = trigger.rawValue }
+            return
+        }
         guard !circleNotified else { return }
         circleNotified = true
         // Always tell the relay, so approved watchers see it; contacts are

@@ -42,6 +42,15 @@ struct ThermyxCircleDetail: Codable, Equatable {
     var minutes: Int?
     /// An SOS: "pressed" (Call 911) or "noResponse" (the Critical countdown).
     var sos: String?
+    /// A help request's preset ("water", "walk", "pickup", "unwell").
+    var help: String?
+    /// The wearer's own words with a help request, plain SMS characters.
+    var note: String?
+    /// What had been happening before an SOS or help request.
+    var episodeLevel: String?
+    var episodeMinutes: Int?
+    /// When the wearer last tapped I'm OK, on their clock.
+    var lastCheckIn: String?
 
     var riskCauses: [ThermyxRiskCause] { (causes ?? []).compactMap(ThermyxRiskCause.init(rawValue:)) }
     var affectedFoot: Foot? { foot.flatMap(Foot.init(rawValue:)) }
@@ -203,7 +212,41 @@ enum ThermyxCircleMessage {
         }
         d.footC = d.footC.flatMap { $0 > 0 && $0 < 60 ? ($0 * 10).rounded() / 10 : nil }
         if d.unit != "C" { d.unit = "F" }
+        if let help = d.help, helpPhrases[help] == nil { d.help = nil }
+        d.note = d.note.flatMap(plainNote)
+        if let level = d.episodeLevel, ThermyxRiskLevel(rawValue: level) == nil || level == ThermyxRiskLevel.normal.rawValue { d.episodeLevel = nil }
+        if let m = d.episodeMinutes, !(1..<1440).contains(m) { d.episodeMinutes = nil }
         return d
+    }
+
+    /// "Ask for help" presets, and how a text says them.
+    static let helpPhrases: [String: String] = [
+        "water": "they need water",
+        "walk": "they can't walk well",
+        "pickup": "they want someone to come and get them",
+        "unwell": "they're feeling unwell",
+    ]
+
+    /// A short note in plain SMS characters only, so one emoji can't turn the
+    /// whole text into Unicode.
+    static func plainNote(_ raw: String) -> String? {
+        let quotes = raw.replacingOccurrences(of: "\u{2018}", with: "'").replacingOccurrences(of: "\u{2019}", with: "'")
+            .replacingOccurrences(of: "\u{201C}", with: "\"").replacingOccurrences(of: "\u{201D}", with: "\"")
+        let allowed = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,!?'\"():;/-")
+        let kept = String(quotes.map { allowed.contains($0) ? $0 : " " })
+        let collapsed = kept.split(separator: " ", omittingEmptySubsequences: true).joined(separator: " ")
+        let note = String(collapsed.prefix(80))
+        return note.isEmpty ? nil : note
+    }
+
+    /// What had been happening, and the last check-in.
+    static func context(_ d: ThermyxCircleDetail) -> String? {
+        var parts: [String] = []
+        if let level = d.episodeLevel {
+            parts.append("Before this: \(level)\(d.episodeMinutes.map { " for \($0) minute\($0 == 1 ? "" : "s")" } ?? "").")
+        }
+        if let checkIn = d.lastCheckIn { parts.append("Last check-in: \(checkIn).") }
+        return parts.isEmpty ? nil : parts.joined(separator: " ")
     }
 
     static func temperature(_ c: Double, unit: String) -> String {
@@ -240,6 +283,7 @@ enum ThermyxCircleMessage {
         case "hotAir": sentence = "The air around them is very hot."
         case "warmerFoot": sentence = "\(oneFoot.map { "\(cap($0)) foot" } ?? "One foot") is running much warmer than the other."
         case "unevenLoad": sentence = "They're putting much more weight on \(oneFoot.map { "their \($0) foot" } ?? "one foot")."
+        case "limp": sentence = "Their steps have been uneven for a while\(oneFoot.map { ", with more weight on their \($0) foot" } ?? "")."
         default:
             let trend = d.trend == "rising" ? " and is rising" : d.trend == "falling" ? " and is falling" : ""
             sentence = t.map { "\(place(d)) reads \($0) at the insole\(trend)." }
@@ -247,7 +291,7 @@ enum ThermyxCircleMessage {
         let alsoPhrases: [String: String] = [
             "heatLimit": "the insole hit its heat limit", "hot": "foot temperature is high", "cold": "a foot is cold",
             "unsteady": "their steps are less steady", "hotAir": "the air is very hot",
-            "warmerFoot": "one foot is much warmer", "unevenLoad": "their weight is uneven",
+            "warmerFoot": "one foot is much warmer", "unevenLoad": "their weight is uneven", "limp": "their steps are uneven",
         ]
         let also = causes.dropFirst().compactMap { alsoPhrases[$0] }
         if let s = sentence, !also.isEmpty { sentence = s + " Also: \(also.joined(separator: " and "))." }
@@ -315,15 +359,36 @@ enum ThermyxCircleMessage {
     static func text(level: String, kind: String, detail raw: ThermyxCircleDetail?, locationConsent: Bool, location: Location?) -> String {
         let d = cleaned(raw)
         let name = d.name ?? "your contact"
-        let severe = kind == "sos" || level == ThermyxRiskLevel.high.rawValue || level == ThermyxRiskLevel.critical.rawValue
+        let severe = kind == "sos" || kind == "help" || level == ThermyxRiskLevel.high.rawValue || level == ThermyxRiskLevel.critical.rawValue
         var lines: [String] = []
         switch kind {
         case "sos": lines.append("Thermyx SOS - \(name)")
+        case "help": lines.append("Thermyx Help Request - \(name)")
+        case "test": lines.append("Thermyx TEST - \(name)")
         case "alert": lines.append("Thermyx \(level == ThermyxRiskLevel.high.rawValue ? "High-Risk" : level) Alert - \(name)")
         default: lines.append("Thermyx update - \(name)")
         }
         func push(_ line: String?) { if let line { lines.append(line) } }
         let elevated = level == ThermyxRiskLevel.high.rawValue || level == ThermyxRiskLevel.critical.rawValue
+
+        if kind == "test" {
+            push("This is a test of Thermyx alerts. \(d.name ?? "They") set you up as a trusted contact. No action needed.")
+            return lines.joined(separator: "\n")
+        }
+        if kind == "help" {
+            let who = d.name ?? "They"
+            let at = d.time.map { " at \($0)" } ?? ""
+            push(d.help.flatMap { helpPhrases[$0] }.map { "\(who) asked for help\(at): \($0)." } ?? "\(who) asked for help\(at).")
+            if let note = d.note { push("They wrote: \"\(note)\"") }
+            push(context(d))
+            push(condition(d))
+            push(equipment(d))
+            let loc = locationLine(consent: locationConsent, location: location, severe: true)
+            push(loc)
+            push("Call them now, and go to them if you can.\((loc?.hasPrefix("Location:") ?? false) ? "" : " If you can't reach them, call 911.")")
+            push(followUp)
+            return lines.joined(separator: "\n")
+        }
 
         if kind == "ok" {
             push("\(d.name ?? "They") checked in\(d.checkedIn.map { " at \($0)" } ?? "") and \(d.name != nil ? "says they're" : "say they're") OK.")
@@ -353,6 +418,7 @@ enum ThermyxCircleMessage {
             push(d.sos == "noResponse"
                  ? "\(d.name ?? "They") didn't respond to a Critical alert for 60 seconds\(d.time.map { " (\($0))" } ?? "")."
                  : "\(d.name ?? "They") pressed Call 911\(d.time.map { " at \($0)" } ?? "").")
+            push(context(d))
             push(condition(d))
         } else {
             push(condition(d))

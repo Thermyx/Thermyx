@@ -19,8 +19,13 @@ enum Thermyx {
 
         /// Cooling, active toggles, the Auto target fill.
         static let signal = Color(hex: 0x2C9CF0)
-        /// Normal, live data, links, accents.
+        /// Normal, live data, accents.
         static let ice = Color(hex: 0x5BD2FF)
+        /// Anything you can tap that is only words: iOS's own blue, so it
+        /// reads as a button without a box around it.
+        static let link = Color(hex: 0x0A84FF)
+        /// The same blue on a light surface (the tutorial card).
+        static let linkOnLight = Color(hex: 0x0060DF)
         /// Heat, High risk and Critical, hot-zone fills.
         static let ember = Color(hex: 0xFF6A13)
         /// Caution, warm values.

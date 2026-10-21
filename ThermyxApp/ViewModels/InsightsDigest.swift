@@ -218,15 +218,6 @@ struct InsightsDigest {
         }, window: range.chartWindow)
     }
 
-    /// Forefoot / arch / heel share of load. Derived from the single balance
-    /// channel the current hardware reports, so only forefoot and heel are
-    /// measured; the arch share is the remainder, and the UI says so.
-    var pressureSplit: (forefoot: Double, arch: Double, heel: Double)? {
-        guard let balance = balanceLatest else { return nil }
-        let forefoot = min(max(balance, 0), 1)
-        let heel = 1 - forefoot
-        return (forefoot: forefoot * 0.82, arch: 0.18, heel: heel * 0.82)
-    }
 
     // MARK: - Zones
 

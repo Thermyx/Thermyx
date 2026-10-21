@@ -75,8 +75,6 @@ struct FootMap: View {
         case zones(FootZoneTemperatures)
         /// The arch sensor's level, 0...1; the rest of the sole is unsensed.
         case archLoad(Double?)
-        /// The forefoot's share of three sensors' load, 0...1.
-        case forefootShare(Double?)
         /// Just the outline (a foot with no insole).
         case outline(dimmed: Bool)
         /// Walking steadiness, 0…1, from the motion sensor: one value for
@@ -139,12 +137,6 @@ struct FootMap: View {
                 ctx.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r * 1.3, width: r * 2, height: r * 2.6)),
                          with: .radialGradient(Gradient(colors: [color, color.opacity(0.55), color.opacity(0)]),
                                                center: c, startRadius: 0, endRadius: r * 1.3))
-            }
-        case .forefootShare(let share):
-            ctx.fill(all, with: .color(FootScale.unsensed))
-            if let share {
-                blob(&ctx, m: 0.52, v: 0.24, level: share, box: box, rect: rect)
-                blob(&ctx, m: 0.5, v: 0.86, level: 1 - share, box: box, rect: rect)
             }
         case .outline:
             ctx.fill(all, with: .color(FootScale.unsensed.opacity(0.6)))

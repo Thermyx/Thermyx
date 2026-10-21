@@ -39,6 +39,8 @@ final class ThermyxViewModel: ObservableObject {
     /// Thermal Recovery Test recoveries, and the test itself.
     let recovery = ThermyxRecoveryStore()
     let coach = RecoveryCoach()
+    /// The Demo studio's timeline player (admin).
+    let player = DemoPlayer()
     /// Widgets, the Live Activity and the Dynamic Island.
     let widgets = ThermyxWidgetBridge()
     /// The single-sensor test board's live table. Fed only by
@@ -54,8 +56,9 @@ final class ThermyxViewModel: ObservableObject {
     private var heatExposureSeconds: [Foot: TimeInterval] = [:]
     private var lastRecordedAt: [Foot: Date] = [:]
     /// When each left/right gap started, so only sustained gaps count.
-    private var temperatureGapSince: Date?
-    private var loadGapSince: Date?
+    /// What the left/right monitor reports (heavy leaning, a limp, one foot
+    /// running warmer), refreshed with every reading.
+    @Published private(set) var asymmetry = AsymmetryStatus.none
     /// True once both insoles have been on together this session, so losing
     /// one lowers confidence instead of passing as single-insole use.
     @Published private(set) var pairExpected = false
@@ -69,6 +72,11 @@ final class ThermyxViewModel: ObservableObject {
         // leave a mode request; apply it as it arrives.
         ThermyxModeInbox.onRequest = { [weak self] in Task { @MainActor in self?.applyWidgetRequest() } }
         ThermyxModeInbox.startListening()
+        // Population priors (from opted-in wearers) give a new wearer's usual
+        // a starting point until their own data takes over.
+        ThermyxCloudService.shared.$priors
+            .sink { [weak self] in self?.baseline.priors = $0 }
+            .store(in: &cancellables)
         // Demo Mode writes no history, board values included.
         let ble = self.ble
         board.recordsHistory = { !ble.isDemoMode }
@@ -100,7 +108,13 @@ final class ThermyxViewModel: ObservableObject {
                     self.battery.estimate(r.foot).map { (r.foot, $0) }
                 })
                 self.updateTrend()
-                self.trackAsymmetry(next)
+                // Left vs right, over minutes. Simulated readings are watched
+                // but never teach the wearer's norms. The newest packet's own
+                // time is "now", so the Demo studio's story clock works.
+                self.baseline.observeAsymmetry(next, learn: !self.ble.isDemoMode)
+                self.asymmetry = next.hasBoth
+                    ? self.baseline.asymmetryStatus(now: next.present.map(\.timestamp).max() ?? .now)
+                    : .none
                 // Simulated readings never teach the baseline.
                 if !self.ble.isDemoMode {
                     self.baseline.observe(next, fixedLevel: self.fixedAssessment.level)
@@ -111,6 +125,7 @@ final class ThermyxViewModel: ObservableObject {
                 self.widgets.update(reading: next, isDemo: self.ble.isDemoMode,
                                     setting: self.thermalSetting, assessment: self.assessment)
                 self.coach.observe(next, level: self.assessment.level)
+                self.refreshReadiness()
             }
             .store(in: &cancellables)
 
@@ -144,11 +159,7 @@ final class ThermyxViewModel: ObservableObject {
 
     /// The fixed rules alone: thresholds, burn limit, sustained gaps.
     var fixedAssessment: ThermyxRiskAssessment {
-        ThermyxRiskEngine.assess(
-            reading,
-            sustainedTemperatureGap: isSustained(temperatureGapSince),
-            sustainedLoadGap: isSustained(loadGapSince)
-        )
+        ThermyxRiskEngine.assess(reading, asymmetry: asymmetry)
     }
 
     /// The pair's risk: the fixed rules, plus the personal baseline and
@@ -176,7 +187,8 @@ final class ThermyxViewModel: ObservableObject {
             trend: baseline.isEnabled ? trend : TemperatureTrend(),
             unit: unit,
             model: baseline.isEnabled ? baseline.model : nil,
-            activity: baseline.activity
+            activity: baseline.activity,
+            priors: baseline.priors
         )
     }
 
@@ -186,24 +198,40 @@ final class ThermyxViewModel: ObservableObject {
         return RiskExplanation.build(
             assessment: layered.assessment,
             reading: reading,
-            sustainedTemperatureGap: isSustained(temperatureGapSince),
-            sustainedLoadGap: isSustained(loadGapSince),
+            sustainedTemperatureGap: false,
+            sustainedLoadGap: false,
             rssi: ble.rssi,
             bothExpected: pairExpected,
             unit: unit,
+            asymmetry: asymmetry,
             extras: layered.signals,
             now: now
         )
     }
 
-    private func isSustained(_ since: Date?) -> Bool {
-        guard let since else { return false }
-        return Date.now.timeIntervalSince(since) >= ThermyxRiskEngine.sustainedAsymmetrySeconds
+    private var readinessAt = Date.distantPast
+
+    /// The Readiness widget's figures, about once a minute.
+    private func refreshReadiness(now: Date = .now) {
+        guard now.timeIntervalSince(readinessAt) >= 60 else { return }
+        readinessAt = now
+        let p = ReadinessProfile.build(reading: reading, activity: baseline.activity,
+                                       model: baseline.isEnabled ? baseline.model : nil, hours: history.hourSamples,
+                                       recoveries: recovery.records, comfortTargetC: Self.savedTargetC, now: now)
+        let status: String = switch p.status {
+        case .learning: "learning"
+        case .typical: "typical"
+        case .warmer: "warmer"
+        case .cooler: "cooler"
+        }
+        widgets.readiness = .init(status: status, activity: p.activity?.label, lowC: p.range?.lowC, highC: p.range?.highC, nowC: p.nowC)
     }
 
-    private func trackAsymmetry(_ pair: BilateralReading) {
-        if pair.hotterFoot == nil { temperatureGapSince = nil } else if temperatureGapSince == nil { temperatureGapSince = .now }
-        if pair.favouredFoot == nil { loadGapSince = nil } else if loadGapSince == nil { loadGapSince = .now }
+    /// The timeline jumped, so what was "sustained" before the jump isn't.
+    private func resetSignalHistory() {
+        // Keeps what was learned about the wearer; drops the evidence.
+        baseline.resetAsymmetryEvidence()
+        asymmetry = .none
     }
 
     func assessment(for foot: Foot) -> ThermyxRiskAssessment {
@@ -349,7 +377,7 @@ final class ThermyxViewModel: ObservableObject {
     /// Starts following a command, and re-checks once the timeout has passed
     /// in case the insole has gone quiet and no packet arrives to do it.
     private func track(_ setting: ThermalSetting) {
-        command.begin(setting, feet: Set(connectedFeet))
+        command.begin(setting, feet: Set(connectedFeet), since: ble.readingClock)
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(ThermalCommandTracker.timeout + 0.5))
             self?.updateCommand()
@@ -425,12 +453,21 @@ final class ThermyxViewModel: ObservableObject {
         simulator.seed(from: demo.last)
         options.configure?(simulator)
         simulator.connect(feet: feet)
+        player.attach(simulator)
+        // At the timeline's pace each report is many seconds of story apart,
+        // so the left/right monitor watches every physics second instead.
+        simulator.onPhysicsSecond = { [weak self] pair in
+            guard let self, pair.hasBoth else { return }
+            self.baseline.observeAsymmetry(pair, learn: false)
+        }
+        player.onJump = { [weak self] in self?.resetSignalHistory() }
     }
 
     /// Leaves the demo: real Bluetooth, the real history as it was, and the
     /// demo calibration gone.
     func exitDemo() {
         UserDefaults.standard.set(false, forKey: Self.demoActiveKey)
+        player.detach()
         ble.stopDemoMode()
         history.exitDemo()
         recovery.exitDemo()

@@ -136,9 +136,7 @@ struct FeetTimelapse: View {
             if let zones = frame.zones[foot] { return .zones(zones) }
             return frame.temperatureC[foot].map { .temperature($0) } ?? .outline(dimmed: true)
         case .pressure:
-            // Three-zone boards report the forefoot's share; today's insoles
-            // report the one arch sensor.
-            return frame.zones[foot] != nil ? .forefootShare(frame.load[foot]) : .archLoad(frame.load[foot])
+            return .archLoad(frame.load[foot])
         case .gait:
             return .steadiness(frame.steadiness[foot])
         }
@@ -178,7 +176,7 @@ struct FeetTimelapse: View {
                 Image(systemName: playing ? "pause.fill" : (index >= frames.count - 1 ? "arrow.counterclockwise" : "play.fill"))
                     .font(.system(size: 15, weight: .bold))
                     .foregroundStyle(Thermyx.Ink.onPrimary)
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .background(Thermyx.Ink.textPrimary, in: Circle())
                     .contentTransition(.symbolEffect(.replace))
             }

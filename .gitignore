@@ -1,0 +1,35 @@
+# Secrets: never commit these. The relay reads ThermyxBackend/.env.
+.env
+.env.*
+!.env.example
+*.p8
+Config/Local.xcconfig
+
+# Relay data and logs (database, wearer codes, tunnel and relay logs)
+ThermyxBackend/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.log
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Xcode and Swift Package Manager (per-user state and build output)
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+.build/
+*.xccheckout
+*.xcscmblueprint
+
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Scratch and local tooling
+.claude/

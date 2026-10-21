@@ -286,7 +286,7 @@ struct RecoverySheet: View {
                 tile("Weight", result.loadEvened.map { $0 ? "Evener" : "Less even" } ?? "No change",
                      tint: result.loadEvened == false ? Thermyx.Ink.amber : Thermyx.Ink.textPrimary)
             }
-            Text("Cooling by \(TemperatureFormat.delta(RecoveryEvaluator.improvesAtC, in: unit)) or more over the hold counts as improving. Less than that is within what the sensor wanders by.")
+            Text("Cooling by \(TemperatureFormat.delta(RecoveryEvaluator.improvesAtC, in: unit)) or more over the hold counts as improving. Anything less is within the sensor's normal wobble.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)

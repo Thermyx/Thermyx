@@ -186,9 +186,14 @@ final class ThermyxHealthService: ObservableObject {
     }
 
     private func fetchTodaySteps() async -> Int? {
-        guard let type = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return nil }
-        let start = Calendar.current.startOfDay(for: .now)
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: .now)
+        await steps(from: Calendar.current.startOfDay(for: .now), to: .now)
+    }
+
+    /// Steps Apple Health counted between two times (phone and watch,
+    /// de-duplicated by Health). Nil without permission or data.
+    func steps(from start: Date, to end: Date) async -> Int? {
+        guard isAvailable, let type = HKQuantityType.quantityType(forIdentifier: .stepCount) else { return nil }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
         return await withCheckedContinuation { continuation in
             let query = HKStatisticsQuery(
                 quantityType: type,

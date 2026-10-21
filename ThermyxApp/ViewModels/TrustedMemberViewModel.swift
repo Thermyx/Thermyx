@@ -176,7 +176,7 @@ final class TrustedMemberViewModel: ObservableObject {
         let before = previous.flatMap { ThermyxRiskLevel(rawValue: $0.level) } ?? .normal
         var kind = event.kind?.rawValue ?? "alert"
         switch event.kind {
-        case .sos, .ok, .update: break
+        case .sos, .ok, .update, .help, .test: break
         default:
             // A heartbeat that shows a rise reads as an alert.
             guard level.severity > before.severity, level.severity >= ThermyxRiskLevel.caution.severity else { return }
@@ -192,7 +192,10 @@ final class TrustedMemberViewModel: ObservableObject {
         content.title = lines.isEmpty ? "Thermyx" : lines.removeFirst()
         // The watcher has the map on screen; the link isn't needed here.
         content.body = lines.filter { !$0.hasPrefix("Location") && $0 != ThermyxCircleMessage.followUp }.joined(separator: " ")
+        let urgent = level.severity >= ThermyxRiskLevel.high.severity || event.kind == .sos || event.kind == .help
         content.sound = level == .critical || event.kind == .sos ? .defaultCritical : .default
+        content.interruptionLevel = urgent ? .timeSensitive : .active
+        content.threadIdentifier = "thermyx.watch"
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "thermyx.watch.\(event.timestamp.timeIntervalSince1970)", content: content, trigger: nil))
     }
 

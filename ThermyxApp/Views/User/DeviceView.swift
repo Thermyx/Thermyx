@@ -97,7 +97,7 @@ struct DeviceView: View {
             ForEach(Foot.allCases) { foot in
                 insoleRow(foot)
             }
-            Text("Thermyx warns you at \(ThermyxBattery.low)% and again at \(ThermyxBattery.critical)%, on the phone, the Lock Screen and the Dynamic Island.")
+            Text("Warns at \(ThermyxBattery.low)% and \(ThermyxBattery.critical)%.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -159,8 +159,7 @@ struct DeviceView: View {
     private func detail(_ foot: Foot) -> String {
         guard viewModel.isConnected(foot) else { return "Not connected" }
         var parts = ["Connected"]
-        if let rssi = viewModel.ble.rssi[foot] { parts.append("signal \(DeviceHealthStrip.signalWord(rssi)) (\(rssi) dBm)") }
-        if let hz = viewModel.ble.packetRateHz(foot) { parts.append(String(format: "%.0f Hz", hz)) }
+        if let rssi = viewModel.ble.rssi[foot] { parts.append("\(DeviceHealthStrip.signalWord(rssi)) signal") }
         return parts.joined(separator: " · ")
     }
 
@@ -207,7 +206,6 @@ struct DeviceView: View {
             HStack {
                 Text(TemperatureFormat.degrees(range.lowerBound, in: unit, decimals: 0))
                 Spacer()
-                Text(targetSource)
                 Spacer()
                 Text(TemperatureFormat.degrees(range.upperBound, in: unit, decimals: 0))
             }
@@ -220,7 +218,7 @@ struct DeviceView: View {
                     Label("Back to your calibrated \(TemperatureFormat.degrees(learned, in: unit, decimals: unit == .celsius ? 1 : 0))",
                           systemImage: "arrow.uturn.backward")
                         .font(ThermyxFont.controlLabel)
-                        .foregroundStyle(Thermyx.Ink.ice)
+                        .foregroundStyle(Thermyx.Ink.link)
                         .frame(minHeight: Thermyx.minimumTapTarget)
                 }
                 .buttonStyle(.plain)
@@ -260,7 +258,9 @@ struct DeviceView: View {
                     Text(calibrationStatus)
                         .foregroundStyle(Thermyx.Ink.textMuted)
                     Button(viewModel.baseline.model == nil ? "Start" : "Redo") { calibrating = true }
-                        .foregroundStyle(viewModel.anyConnected ? Thermyx.Ink.ice : Thermyx.Ink.textFaint)
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .tint(Thermyx.Ink.link)
                         .disabled(!viewModel.anyConnected)
                 }
             }
@@ -284,9 +284,9 @@ struct DeviceView: View {
             }
             .buttonStyle(.plain)
             row("Sensors", last: true) {
-                Text("1 temperature · 1 arch · motion")
+                Text("Temperature, pressure, motion")
                     .foregroundStyle(Thermyx.Ink.textMuted)
-                    .font(ThermyxFont.monoCaption)
+                    .font(ThermyxFont.captionSmall)
             }
         }
     }
@@ -327,12 +327,12 @@ struct DeviceView: View {
     private var more: some View {
         VStack(spacing: 0) {
             NavigationLink(value: SafetyDestination.advanced) {
-                ThermyxNavigationRow(title: "Advanced", detail: "Relay, Apple Health, calibration, your data",
+                ThermyxNavigationRow(title: "Advanced", detail: "Relay, Health, your data",
                                      systemImage: "slider.horizontal.3", iconTint: Thermyx.Ink.textMuted)
             }
             .buttonStyle(.plain)
             Button { legalDocument = .privacy } label: {
-                ThermyxNavigationRow(title: "Privacy & terms", detail: "How Thermyx handles your data", systemImage: "doc.text",
+                ThermyxNavigationRow(title: "Privacy & terms", systemImage: "doc.text",
                                      iconTint: Thermyx.Ink.textMuted)
             }
             .buttonStyle(.plain)

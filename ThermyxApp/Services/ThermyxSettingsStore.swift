@@ -34,6 +34,10 @@ final class ThermyxSettingsStore: ObservableObject {
     @Published var temperatureUnit: TemperatureUnit { didSet { save() } }
     /// Selected range on the Insights hub, remembered between launches.
     @Published var insightsRange: InsightsRange { didSet { save() } }
+    /// The date Insights is looking at: today (live) or a past day, whose
+    /// day, week or month is then shown whole. Not kept between launches.
+    @Published var insightsDate: Date = .now
+
     /// Whether ranges snap to calendar boundaries or roll continuously.
     @Published var periodStyle: InsightsPeriodStyle { didSet { save() } }
 
@@ -375,6 +379,41 @@ enum HealthCondition: String, Codable, CaseIterable, Identifiable {
         case .neuropathy: return "Neuropathy (reduced feeling)"
         case .heatSensitivity: return "Heat sensitivity"
         case .other: return "Other"
+        }
+    }
+}
+
+
+// MARK: - The Insights window
+
+extension ThermyxSettingsStore {
+    var insightsIsToday: Bool { Calendar.current.isDateInToday(insightsDate) }
+
+    /// Today follows the chosen style; a past date shows its whole period.
+    var insightsStyle: InsightsPeriodStyle { insightsIsToday ? periodStyle : .standard }
+
+    /// The end of the window: now, or the end of the past period.
+    var insightsNow: Date {
+        guard !insightsIsToday else { return .now }
+        let calendar = Calendar.current
+        let component: Calendar.Component = switch insightsRange {
+        case .day: .day
+        case .week: .weekOfYear
+        case .month: .month
+        }
+        let end = calendar.dateInterval(of: component, for: insightsDate)?.end.addingTimeInterval(-1) ?? insightsDate
+        return min(end, .now)
+    }
+
+    /// "Today", "Tue 14 Oct", "Week of 12 Oct", "September".
+    var insightsCaption: String {
+        if insightsIsToday { return insightsRange.caption(style: periodStyle) }
+        switch insightsRange {
+        case .day: return insightsDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        case .week:
+            let start = Calendar.current.dateInterval(of: .weekOfYear, for: insightsDate)?.start ?? insightsDate
+            return "Week of \(start.formatted(.dateTime.day().month(.abbreviated)))"
+        case .month: return insightsDate.formatted(.dateTime.month(.wide).year())
         }
     }
 }

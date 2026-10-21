@@ -6,9 +6,25 @@
 const LEVELS = ["Normal", "Caution", "High risk", "Critical"];
 const FEET = ["left", "right", "both"];
 const ZONES = ["forefoot", "arch", "heel"];
-const CAUSES = ["heatLimit", "hot", "cold", "unsteady", "hotAir", "warmerFoot", "unevenLoad"];
+const CAUSES = ["heatLimit", "hot", "cold", "unsteady", "hotAir", "warmerFoot", "unevenLoad", "limp"];
 const TRENDS = ["rising", "falling", "steady"];
 const UPDATES = ["still", "recovering", "resolved"];
+/// "Ask for help" presets, and how a text says them.
+const HELP = {
+  water: "they need water",
+  walk: "they can't walk well",
+  pickup: "they want someone to come and get them",
+  unwell: "they're feeling unwell"
+};
+
+/// A short note in plain SMS characters only, so one emoji can't turn the
+/// whole text into Unicode (and twice the segments).
+function plainNote(raw) {
+  if (typeof raw !== "string") return null;
+  const note = raw.replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"')
+    .replace(/[^A-Za-z0-9 .,!?'"():;\/-]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
+  return note || null;
+}
 
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -56,6 +72,13 @@ function cleanDetail(raw) {
   // An SOS is either the wearer pressing Call 911, or no answer to a
   // Critical alert's countdown.
   if (raw.sos === "pressed" || raw.sos === "noResponse") d.sos = raw.sos;
+  // Help requests, and what led up to an SOS or help request.
+  if (Object.prototype.hasOwnProperty.call(HELP, raw.help)) d.help = raw.help;
+  const note = plainNote(raw.note);
+  if (note) d.note = note;
+  if (LEVELS.includes(raw.episodeLevel) && raw.episodeLevel !== "Normal") d.episodeLevel = raw.episodeLevel;
+  if (Number.isInteger(raw.episodeMinutes) && raw.episodeMinutes > 0 && raw.episodeMinutes < 1440) d.episodeMinutes = raw.episodeMinutes;
+  if (time(raw.lastCheckIn)) d.lastCheckIn = time(raw.lastCheckIn);
   return d;
 }
 
@@ -101,6 +124,7 @@ function condition(d) {
     case "hotAir": sentence = "The air around them is very hot."; break;
     case "warmerFoot": sentence = `${d.foot && d.foot !== "both" ? `${cap(d.foot)} foot` : "One foot"} is running much warmer than the other.`; break;
     case "unevenLoad": sentence = `They're putting much more weight on ${d.foot && d.foot !== "both" ? `their ${d.foot} foot` : "one foot"}.`; break;
+    case "limp": sentence = `Their steps have been uneven for a while${d.foot && d.foot !== "both" ? `, with more weight on their ${d.foot} foot` : ""}.`; break;
     default: {
       // Nothing flagged now (often while recovering): the reading and its direction.
       const trend = d.trend === "rising" ? " and is rising" : d.trend === "falling" ? " and is falling" : "";
@@ -110,7 +134,7 @@ function condition(d) {
   const also = causes.slice(1).map(c => ({
     heatLimit: "the insole hit its heat limit", hot: "foot temperature is high", cold: "a foot is cold",
     unsteady: "their steps are less steady", hotAir: "the air is very hot",
-    warmerFoot: "one foot is much warmer", unevenLoad: "their weight is uneven"
+    warmerFoot: "one foot is much warmer", unevenLoad: "their weight is uneven", limp: "their steps are uneven"
   })[c]);
   if (sentence && also.length) sentence += ` Also: ${also.join(" and ")}.`;
   return sentence;
@@ -162,9 +186,21 @@ function wearerWasAsked(level) {
 
 const FOLLOW_UP = "Thermyx will text again when they check in or readings recover.";
 
+/// For an SOS or help request: what had been happening, and the last check-in.
+function context(d) {
+  const parts = [];
+  if (d.episodeLevel) {
+    parts.push(`Before this: ${d.episodeLevel}${d.episodeMinutes ? ` for ${d.episodeMinutes} minute${d.episodeMinutes === 1 ? "" : "s"}` : ""}.`);
+  }
+  if (d.lastCheckIn) parts.push(`Last check-in: ${d.lastCheckIn}.`);
+  return parts.length ? parts.join(" ") : null;
+}
+
 function header(event, name) {
   const kind = event.kind || "alert";
   if (kind === "sos") return `Thermyx SOS - ${name}`;
+  if (kind === "help") return `Thermyx Help Request - ${name}`;
+  if (kind === "test") return `Thermyx TEST - ${name}`;
   if (kind === "alert") return `Thermyx ${event.level === "High risk" ? "High-Risk" : event.level} Alert - ${name}`;
   return `Thermyx update - ${name}`;
 }
@@ -175,9 +211,30 @@ function composeMessage(event, detail) {
   const kind = event.kind || "alert";
   const level = event.level;
   const name = d.name || "your contact";
-  const severe = kind === "sos" || level === "High risk" || level === "Critical";
+  const severe = kind === "sos" || kind === "help" || level === "High risk" || level === "Critical";
   const lines = [header(event, name)];
   const push = line => { if (line) lines.push(line); };
+
+  if (kind === "test") {
+    push(`This is a test of Thermyx alerts. ${d.name || "They"} set you up as a trusted contact. No action needed.`);
+    return lines.join("\n");
+  }
+
+  if (kind === "help") {
+    const who = d.name || "They";
+    push(d.help
+      ? `${who} asked for help${d.time ? ` at ${d.time}` : ""}: ${HELP[d.help]}.`
+      : `${who} asked for help${d.time ? ` at ${d.time}` : ""}.`);
+    if (d.note) push(`They wrote: "${d.note}"`);
+    push(context(d));
+    push(condition(d));
+    push(equipment(d));
+    const loc = locationLine(event, true);
+    push(loc);
+    push(`Call them now, and go to them if you can.${loc && loc.startsWith("Location:") ? "" : " If you can't reach them, call 911."}`);
+    push(FOLLOW_UP);
+    return lines.join("\n");
+  }
 
   if (kind === "ok") {
     push(`${d.name || "They"} checked in${d.checkedIn ? ` at ${d.checkedIn}` : ""} and ${d.name ? "says they're" : "say they're"} OK.`);
@@ -210,6 +267,7 @@ function composeMessage(event, detail) {
     push(d.sos === "noResponse"
       ? `${d.name || "They"} didn't respond to a Critical alert for 60 seconds${d.time ? ` (${d.time})` : ""}.`
       : `${d.name || "They"} pressed Call 911${d.time ? ` at ${d.time}` : ""}.`);
+    push(context(d));
     push(condition(d));
   } else {
     push(condition(d));
@@ -271,8 +329,8 @@ function pushFromText(text, urgent) {
 
 function composePush(event, detail) {
   const kind = event.kind || "alert";
-  const urgent = kind === "sos" || event.level === "High risk" || event.level === "Critical";
+  const urgent = kind === "sos" || kind === "help" || event.level === "High risk" || event.level === "Critical";
   return pushFromText(composeMessage(event, detail), urgent);
 }
 
-module.exports = { cleanDetail, composeMessage, composeSilence, composeReconnected, composePush, pushFromText, LEVELS, CAUSES };
+module.exports = { HELP, plainNote, cleanDetail, composeMessage, composeSilence, composeReconnected, composePush, pushFromText, LEVELS, CAUSES };

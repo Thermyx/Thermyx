@@ -9,8 +9,8 @@ struct MovementDetailView: View {
     private var bilateral: BilateralDigest {
         BilateralDigest(
             range: settings.insightsRange,
-            style: settings.periodStyle,
-            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.periodStyle)
+            style: settings.insightsStyle,
+            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.insightsStyle, now: settings.insightsNow)
         )
     }
     private var pairs: [(Foot, InsightsDigest)] { bilateral.digests(for: footFilter) }
@@ -18,7 +18,7 @@ struct MovementDetailView: View {
     var body: some View {
         ThermyxDetailScreen(
             title: "Movement",
-            caption: settings.insightsRange.caption(style: settings.periodStyle)
+            caption: settings.insightsCaption
         ) {
             if pairs.contains(where: { $0.1.hasGait || $0.1.hasBalance }) {
                 ForEach(pairs, id: \.0) { foot, footDigest in
@@ -27,14 +27,13 @@ struct MovementDetailView: View {
                             .padding(.top, Thermyx.Space.xs)
                     }
                     if footDigest.hasGait { gaitCard(footDigest, foot: foot) }
-                    if footDigest.hasBalance { pressureCard(footDigest, foot: foot) }
                     tileRow(footDigest)
                 }
                 if bilateral.hasBoth { balanceLink }
             } else {
                 ThermyxEmptyState(
                     title: "No movement history yet",
-                    message: "Gait stability and pressure balance come from the insole's IMU and pressure channels. Connect it and this fills in as readings arrive.",
+                    message: "Steadiness and pressure come from the insoles. Wear them a while and this fills in.",
                     systemImage: "figure.walk"
                 )
             }
@@ -49,10 +48,10 @@ struct MovementDetailView: View {
         ThermyxCard {
             VStack(alignment: .leading, spacing: Thermyx.Space.xs) {
                 HStack(alignment: .firstTextBaseline) {
-                    SectionLabel(pairs.count > 1 ? "\(foot.label) gait stability" : "Gait stability")
+                    SectionLabel(pairs.count > 1 ? "\(foot.label) foot steadiness" : "Steadiness")
                     Spacer(minLength: Thermyx.Space.xs)
                     if let delta = digest.gaitDelta {
-                        Text("\(delta >= 0 ? "+" : "−")\(String(format: "%.0f", abs(delta)))% vs baseline")
+                        Text(abs(delta) < 0.5 ? "As usual" : "\(String(format: "%.0f", abs(delta)))% \(delta >= 0 ? "steadier" : "less steady") than usual")
                             .font(ThermyxFont.bodySmall)
                             .monospacedDigit()
                             .foregroundStyle(delta >= 0 ? Thermyx.Ink.ice : Thermyx.Ink.amber)
@@ -71,7 +70,7 @@ struct MovementDetailView: View {
                     range: settings.insightsRange,
                     height: 150,
                     format: { "\(Int($0.rounded()))%" },
-                    averageLabel: "Baseline",
+                    averageLabel: "Usual",
                     highTint: Thermyx.Ink.ice,
                     lowTint: Thermyx.Ink.amber
                 )
@@ -79,47 +78,12 @@ struct MovementDetailView: View {
         }
     }
 
-    // MARK: - Pressure
-
-    @ViewBuilder
-    private func pressureCard(_ digest: InsightsDigest, foot: Foot) -> some View {
-        if let split = digest.pressureSplit {
-            ThermyxCard {
-                VStack(alignment: .leading, spacing: Thermyx.Space.m) {
-                    SectionLabel(pairs.count > 1 ? "\(foot.label) pressure" : "Pressure distribution")
-
-                    VStack(spacing: Thermyx.Space.s) {
-                        LabeledProgressBar(label: "Forefoot", value: split.forefoot, tint: Thermyx.Ink.amber, scale: .load)
-                        LabeledProgressBar(label: "Arch", value: split.arch, tint: Thermyx.Ink.textSupporting, scale: .load)
-                        LabeledProgressBar(label: "Heel", value: split.heel, tint: Thermyx.Ink.ice, scale: .load)
-                    }
-
-                    Text(interpretation(split))
-                        .font(ThermyxFont.caption)
-                        .foregroundStyle(Thermyx.Ink.textSupporting)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text("Forefoot and heel are measured. The arch share is inferred from the balance channel, not sensed directly.")
-                        .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Ink.textFaint)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-    }
-
-    private func interpretation(_ split: (forefoot: Double, arch: Double, heel: Double)) -> String {
-        if split.forefoot > 0.5 { return "Load is sitting forward on the foot — a common pattern late in a shift." }
-        if split.heel > 0.5 { return "Load is sitting back on the heel." }
-        return "Load is spread fairly evenly between forefoot and heel."
-    }
-
     // MARK: - Cadence, standing, advanced
 
     private func tileRow(_ digest: InsightsDigest) -> some View {
         HStack(spacing: Thermyx.Space.s) {
             MetricTile(
-                label: "Cadence",
+                label: "Steps a minute",
                 value: digest.cadenceAverage.map { "\(Int($0.rounded()))" },
                 tint: Thermyx.Ink.ice,
                 numeralFont: ThermyxFont.metricNumeral,
@@ -134,21 +98,21 @@ struct MovementDetailView: View {
             NavigationLink(value: InsightsDestination.movementAdvanced) {
                 ThermyxCard(padding: Thermyx.Space.m, radius: Thermyx.Radius.control) {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Advanced")
+                        Text("More detail")
                             .narrowLabel(ThermyxFont.zoneLabel, tracking: 1.4, color: Thermyx.Ink.textSupporting)
                         HStack(spacing: 4) {
-                            Text("Data")
+                            Text("Charts")
                                 .font(ThermyxFont.metricNumeral)
-                                .foregroundStyle(Thermyx.Ink.ice)
+                                .foregroundStyle(Thermyx.Ink.link)
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(Thermyx.Ink.ice)
+                                .foregroundStyle(Thermyx.Ink.link)
                         }
                     }
                 }
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Advanced data")
+            .accessibilityLabel("More detail, charts")
             .accessibilityHint("Opens every movement channel over time")
         }
     }

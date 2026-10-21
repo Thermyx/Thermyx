@@ -27,9 +27,9 @@ struct CalibrationPromptCard: View {
                         Text(finishing ? "Finish calibration" : (retrain ? "Calibrate with your insoles" : "Calibrate Thermyx"))
                             .font(ThermyxFont.rowTitle)
                             .foregroundStyle(Thermyx.Ink.textPrimary)
-                        Text(finishing ? "90 seconds outside to complete your profile."
-                             : retrain ? "Your saved norms came from test data, not your feet."
-                             : "3 minutes. Learns your normal and sets Auto for you.")
+                        Text(finishing ? "90 seconds outside."
+                             : retrain ? "Your saved norms were test data."
+                             : "3 minutes.")
                             .font(ThermyxFont.captionSmall)
                             .foregroundStyle(Thermyx.Ink.textSupporting)
                     }
@@ -88,7 +88,7 @@ struct CalibrationSettingsSection: View {
                             .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.amber, border: Thermyx.Tint.emberBorder))
                         }
                     }
-                    Text("Calibration learns your usual foot temperature inside and out, how fast it changes, your load, cadence and walking steadiness, and sets Auto's target, all on this phone. It can only add caution.")
+                    Text("Calibration learns your usual foot temperature, how you stand, how you walk and how steady your steps are, then picks a comfortable target for Auto. It all stays on this phone, and it can only make alerts more careful.")
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
@@ -102,8 +102,8 @@ struct CalibrationSettingsSection: View {
     }
 }
 
-/// The learned norms: Auto's target, usual temperatures inside and out, how
-/// the temperature moves, walking steadiness, and the activity model.
+/// The learned norms: Auto's target, usual temperatures inside and out,
+/// walking steadiness, pressure, and how well activity is recognised.
 struct CalibrationNorms: View {
     let model: PersonalThermalModel
     let unit: TemperatureUnit
@@ -120,14 +120,6 @@ struct CalibrationNorms: View {
                         TemperatureFormat.degrees(inside.mean, in: unit) + " in" + (outside.map { " · " + TemperatureFormat.degrees($0.mean, in: unit) + " out" } ?? ""))
                 }
             }
-            if let fastest = model.phases?.filter({ $0.ratePerMinute != nil }).max(by: { abs($0.ratePerMinute!) < abs($1.ratePerMinute!) }),
-               let rate = fastest.ratePerMinute {
-                row("Fastest change", notation: "dT/dt", "\(Self.rate(rate, in: unit)) · \(fastest.activity.label.lowercased()) \(fastest.outdoor ? "out" : "in")")
-            }
-            let outside = model.phases?.filter(\.outdoor).compactMap(\.accumulatedC) ?? []
-            if !outside.isEmpty {
-                row("Change outside", notation: "∫ dT/dt dt", Self.signedDelta(outside.reduce(0, +), in: unit, decimals: 2))
-            }
             if let air = model.outdoorAirC {
                 row("Outside air · local weather", TemperatureFormat.degrees(air, in: unit))
             }
@@ -135,10 +127,10 @@ struct CalibrationNorms: View {
                 row("Walking steadiness", "\(Int((stability.mean * 100).rounded()))% · steady above \(Int((stability.steadyFloor * 100).rounded()))%")
             }
             if let load = model.loadByActivity?[.standing] {
-                row("Load standing", "\(Int((load.mean * 100).rounded()))%")
+                row("Pressure standing", "\(Int((load.mean * 100).rounded()))%")
             }
             if let accuracy = model.classifierAccuracy {
-                row("Activity model accuracy", "\(Int((accuracy * 100).rounded()))%")
+                row("Knows when you sit, stand or walk", "\(Int((accuracy * 100).rounded()))% of the time")
             } else {
                 Text("Activity detection needs the pressure and motion sensors, so it will switch on once they report.")
                     .font(ThermyxFont.captionSmall)
@@ -148,22 +140,15 @@ struct CalibrationNorms: View {
         }
     }
 
-    /// "+0.21°/min". A rate is a difference, so Fahrenheit scales it without
-    /// the offset.
-    static func rate(_ perMinute: Double, in unit: TemperatureUnit) -> String {
-        signedDelta(perMinute, in: unit, decimals: 2) + "/min"
-    }
-
     static func signedDelta(_ celsius: Double, in unit: TemperatureUnit, decimals: Int = 1) -> String {
         let value = unit.convertDelta(celsius)
         let text = String(format: "%.\(decimals)f", abs(value))
         return (Double(text) == 0 ? "" : (value > 0 ? "+" : "−")) + text + "°"
     }
 
-    private func row(_ label: String, notation: String? = nil, _ value: String) -> some View {
+    private func row(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label).font(ThermyxFont.caption).foregroundStyle(Thermyx.Ink.textSupporting)
-            if let notation { Text(notation).mathNotation(size: 12) }
             Spacer(minLength: Thermyx.Space.s)
             Text(verbatim: value)
                 .font(ThermyxFont.rowTitle)

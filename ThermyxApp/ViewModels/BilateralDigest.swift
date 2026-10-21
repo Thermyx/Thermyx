@@ -131,6 +131,7 @@ struct BilateralDigest {
 
     var temperatureAsymmetry: [SeriesPoint] { asymmetrySeries(\.footMeanC) }
     var loadAsymmetry: [SeriesPoint] { asymmetrySeries { $0.balanceMean.map { $0 * 100 } } }
+    var steadinessAsymmetry: [SeriesPoint] { asymmetrySeries { $0.gaitMean.map { $0 * 100 } } }
 
     /// Mean absolute temperature gap across the window.
     var meanTemperatureGapC: Double? {
@@ -163,14 +164,25 @@ struct BilateralDigest {
         if Double(negative) / total > 0.7 { return .right }
         return nil
     }
+
+    /// Which foot stepped less steadily, on the same rule (a 6-point gap).
+    var consistentlyUnsteadyFoot: Foot? {
+        let points = steadinessAsymmetry
+        guard points.count >= 5 else { return nil }
+        let leftLower = points.filter { $0.value < -6 }.count
+        let rightLower = points.filter { $0.value > 6 }.count
+        let total = Double(points.count)
+        if Double(leftLower) / total > 0.7 { return .left }
+        if Double(rightLower) / total > 0.7 { return .right }
+        return nil
+    }
 }
 
 extension Foot {
-    /// Left is drawn solid, right dashed.
-    ///
-    /// Colour already carries temperature in this app, so it cannot also carry
-    /// which foot — the two meanings would fight. Line style is free.
-    var isDashedInCharts: Bool { self == .right }
+    /// With both feet on one chart, each gets its own solid colour, chosen
+    /// from outside the temperature scale (white and lavender), so which foot
+    /// never reads as how hot. A single foot keeps the temperature colours.
+    var chartColor: Color { self == .left ? Color(hex: 0xF2F4F7) : Color(hex: 0xB59CFF) }
 
     /// A neutral tint for charts where the value is not a temperature.
     var chartTint: Color { self == .left ? Thermyx.Ink.ice : Thermyx.Ink.signal }

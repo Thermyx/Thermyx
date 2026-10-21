@@ -8,7 +8,18 @@ final class FormattingAndModelTests: XCTestCase {
         XCTAssertEqual(GapFormat.degrees(2.14), "Left +2.1°")
         XCTAssertEqual(GapFormat.degrees(-2.14), "Right +2.1°")
         XCTAssertEqual(GapFormat.degrees(0.01), "Even")
-        XCTAssertEqual(GapFormat.points(-8), "Right +8 pts")
+        XCTAssertEqual(GapFormat.points(-8), "Right +8%")
+    }
+
+    func testReadTimeComesFromTheWords() throws {
+        let words = Array(repeating: "word", count: 401).joined(separator: " ")
+        let json = """
+        {"id":"x","section":"heat","title":"T","dek":"D","image":{"asset":"a","alt":"a","caption":"c"},
+         "triggers":[],"blocks":[{"type":"p","text":"\(words)"}],"references":[]}
+        """
+        let article = try JSONDecoder().decode(LearningArticle.self, from: Data(json.utf8))
+        XCTAssertEqual(article.readMinutes, 3)
+        XCTAssertEqual(article.meta, "3 min read")
     }
 
     func testDurationsUseOneFormat() {

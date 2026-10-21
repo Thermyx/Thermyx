@@ -374,6 +374,30 @@ struct ThermyxSecondaryButtonStyle: ButtonStyle {
     }
 }
 
+/// A button that is only words. iOS blue, 44 pt to hit, dimmed while pressed,
+/// grey when it can't be pressed, so it can't be mistaken for a label.
+struct ThermyxLinkButtonStyle: ButtonStyle {
+    var tint: Color = Thermyx.Ink.link
+    var font: Font = ThermyxFont.controlLabel
+    var fillsWidth = false
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(font)
+            .foregroundStyle(isEnabled ? tint : Thermyx.Ink.textFaint)
+            .frame(maxWidth: fillsWidth ? .infinity : nil, minHeight: Thermyx.minimumTapTarget, alignment: fillsWidth ? .leading : .center)
+            .opacity(configuration.isPressed ? 0.5 : 1)
+            .animation(SiteMotion.press, value: configuration.isPressed)
+            .contentShape(Rectangle())
+    }
+}
+
+extension ButtonStyle where Self == ThermyxLinkButtonStyle {
+    static var thermyxLink: ThermyxLinkButtonStyle { ThermyxLinkButtonStyle() }
+}
+
 // MARK: - Screen scaffold
 
 /// A tab-level screen: a 30 pt title with an optional accessory, then the

@@ -19,15 +19,15 @@ struct BalanceDetailView: View {
     private var digest: BilateralDigest {
         BilateralDigest(
             range: settings.insightsRange,
-            style: settings.periodStyle,
-            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.periodStyle)
+            style: settings.insightsStyle,
+            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.insightsStyle, now: settings.insightsNow)
         )
     }
 
     var body: some View {
         ThermyxDetailScreen(
             title: "Left vs right",
-            caption: settings.insightsRange.caption(style: settings.periodStyle)
+            caption: settings.insightsCaption
         ) {
             let digest = digest
 
@@ -35,6 +35,7 @@ struct BalanceDetailView: View {
                 summary(digest)
                 temperatureCard(digest)
                 loadCard(digest)
+                steadinessCard(digest)
                 zoneComparison(digest)
                 note
             } else {
@@ -59,25 +60,35 @@ struct BalanceDetailView: View {
                     .foregroundStyle(Thermyx.Ink.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                HStack(spacing: Thermyx.Space.xs) {
-                    MetricTile(
-                        label: "Mean gap",
-                        value: digest.meanTemperatureGapC.map { TemperatureFormat.delta($0, in: unit) },
-                        tint: (digest.meanTemperatureGapC ?? 0) > 1.5 ? Thermyx.Ink.amber : Thermyx.Ink.ice,
-                        numeralFont: ThermyxFont.metricNumeral
-                    )
-                    MetricTile(
-                        label: "Warmer",
-                        value: digest.consistentlyHotterFoot?.label ?? "Neither",
-                        tint: digest.consistentlyHotterFoot == nil ? Thermyx.Ink.ice : Thermyx.Ink.amber,
-                        numeralFont: ThermyxFont.metricNumeral
-                    )
-                    MetricTile(
-                        label: "Loaded",
-                        value: digest.consistentlyLoadedFoot?.label ?? "Even",
-                        tint: digest.consistentlyLoadedFoot == nil ? Thermyx.Ink.ice : Thermyx.Ink.amber,
-                        numeralFont: ThermyxFont.metricNumeral
-                    )
+                Grid(horizontalSpacing: Thermyx.Space.xs, verticalSpacing: Thermyx.Space.m) {
+                    GridRow {
+                        MetricTile(
+                            label: "Average gap",
+                            value: digest.meanTemperatureGapC.map { TemperatureFormat.delta($0, in: unit) },
+                            tint: (digest.meanTemperatureGapC ?? 0) > 1.5 ? Thermyx.Ink.amber : Thermyx.Ink.textPrimary,
+                            numeralFont: ThermyxFont.metricNumeral
+                        )
+                        MetricTile(
+                            label: "Warmer",
+                            value: digest.consistentlyHotterFoot?.label ?? "Neither",
+                            tint: digest.consistentlyHotterFoot == nil ? Thermyx.Ink.textPrimary : Thermyx.Ink.amber,
+                            numeralFont: ThermyxFont.metricNumeral
+                        )
+                    }
+                    GridRow {
+                        MetricTile(
+                            label: "Leaning on",
+                            value: digest.consistentlyLoadedFoot?.label ?? "Even",
+                            tint: digest.consistentlyLoadedFoot == nil ? Thermyx.Ink.textPrimary : Thermyx.Ink.amber,
+                            numeralFont: ThermyxFont.metricNumeral
+                        )
+                        MetricTile(
+                            label: "Less steady",
+                            value: digest.consistentlyUnsteadyFoot?.label ?? "Neither",
+                            tint: digest.consistentlyUnsteadyFoot == nil ? Thermyx.Ink.textPrimary : Thermyx.Ink.amber,
+                            numeralFont: ThermyxFont.metricNumeral
+                        )
+                    }
                 }
             }
         }
@@ -90,11 +101,11 @@ struct BalanceDetailView: View {
         case (let hot?, nil):
             return "Your \(hot.label.lowercased()) foot has run consistently warmer. Check the fit and that the vent on that side is clear."
         case (nil, let loaded?):
-            return "You have been carrying more weight on your \(loaded.label.lowercased()) foot. Worth noticing if it persists across shifts."
+            return "You've been putting more weight on your \(loaded.label.lowercased()) foot. Worth noticing if it keeps happening across shifts."
         case (let hot?, let loaded?) where hot == loaded:
-            return "Your \(hot.label.lowercased()) foot is both warmer and carrying more load. Those usually travel together — check the fit on that side."
+            return "Your \(hot.label.lowercased()) foot is both warmer and taking more of your weight. Those often go together, so check the fit on that side."
         case (let hot?, let loaded?):
-            return "Your \(hot.label.lowercased()) foot is warmer while your \(loaded.label.lowercased()) carries more load. Worth watching across a few shifts."
+            return "Your \(hot.label.lowercased()) foot is warmer, while your \(loaded.label.lowercased()) foot takes more of your weight. Worth watching over a few shifts."
         }
     }
 
@@ -103,15 +114,12 @@ struct BalanceDetailView: View {
     private func temperatureCard(_ digest: BilateralDigest) -> some View {
         ThermyxCard {
             VStack(alignment: .leading, spacing: Thermyx.Space.header) {
-                SectionLabel("Temperature gap") {
-                    Text("Left minus right")
-                        .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
-                }
+                SectionLabel("Temperature difference")
 
                 ThermyxTimeSeriesChart(
                     series: [
                         ChartSeries(
-                            id: "tempGap", name: "Temperature gap",
+                            id: "tempGap", name: "Temperature difference",
                             points: digest.temperatureAsymmetry.map {
                                 SeriesPoint(date: $0.date, value: unit.convertDelta($0.value))
                             },
@@ -137,15 +145,12 @@ struct BalanceDetailView: View {
     private func loadCard(_ digest: BilateralDigest) -> some View {
         ThermyxCard {
             VStack(alignment: .leading, spacing: Thermyx.Space.header) {
-                SectionLabel("Load gap") {
-                    Text("Left minus right")
-                        .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
-                }
+                SectionLabel("Pressure difference")
 
                 ThermyxTimeSeriesChart(
                     series: [
                         ChartSeries(
-                            id: "loadGap", name: "Load gap",
+                            id: "loadGap", name: "Pressure difference",
                             points: digest.loadAsymmetry,
                             color: Thermyx.Ink.signal, isFilled: true,
                             scale: .loadGap
@@ -156,10 +161,42 @@ struct BalanceDetailView: View {
                     format: GapFormat.points,
                     averageLabel: "Average",
                     highTint: Thermyx.Ink.signal,
-                    lowTint: Thermyx.Ink.signal
+                    lowTint: Thermyx.Ink.signal,
+                    minimumSpan: 10
                 )
 
-                Text("Percentage points of forefoot load. Above the line, the left foot carries more.")
+                Text("Above the line, you're pressing harder on your left foot. Below it, your right.")
+                    .font(ThermyxFont.captionSmall)
+                    .foregroundStyle(Thermyx.Ink.textFaint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func steadinessCard(_ digest: BilateralDigest) -> some View {
+        ThermyxCard {
+            VStack(alignment: .leading, spacing: Thermyx.Space.header) {
+                SectionLabel("Steadiness difference")
+
+                ThermyxTimeSeriesChart(
+                    series: [
+                        ChartSeries(
+                            id: "steadyGap", name: "Steadiness difference",
+                            points: digest.steadinessAsymmetry,
+                            color: Thermyx.Ink.ice, isFilled: true,
+                            scale: .loadGap
+                        )
+                    ],
+                    range: settings.insightsRange,
+                    height: 150,
+                    format: GapFormat.points,
+                    averageLabel: "Average",
+                    highTint: Thermyx.Ink.ice,
+                    lowTint: Thermyx.Ink.ice,
+                    minimumSpan: 10
+                )
+
+                Text("Above the line, your left foot steps more steadily. Below it, your right. A limp shows up here as a gap that holds for minutes.")
                     .font(ThermyxFont.captionSmall)
                     .foregroundStyle(Thermyx.Ink.textFaint)
                     .fixedSize(horizontal: false, vertical: true)
@@ -221,7 +258,7 @@ struct BalanceDetailView: View {
     }
 
     private var note: some View {
-        Text("A small, steady difference between feet is normal. What is worth acting on is a gap that grows across a shift, or one that appears alongside a change in how you are walking. Thermyx does not diagnose the cause of an asymmetry.")
+        Text("Almost everyone favours one side a little, and that's normal. What's worth a look is a difference that grows over a shift, or one that shows up with a change in how you walk. Thermyx can point it out, but it can't tell you why it's happening.")
             .font(ThermyxFont.captionSmall)
             .foregroundStyle(Thermyx.Ink.textFaint)
             .fixedSize(horizontal: false, vertical: true)

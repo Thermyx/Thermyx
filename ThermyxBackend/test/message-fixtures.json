@@ -147,6 +147,112 @@
     "expected": "Thermyx SOS - Miheer\nMiheer didn't respond to a Critical alert for 60 seconds (4:21 PM CDT).\nRight heel reached the insole's heat limit (104.5F). Heating has switched off. Also: their steps are less steady.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now. If you can't reach them, call 911 and give their location.\nThermyx will text again when they check in or readings recover."
   },
   {
+    "name": "sos with what led up to it",
+    "event": {
+      "level": "Critical",
+      "kind": "sos",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "right",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.9,
+      "trend": "rising",
+      "confidence": "confirmed",
+      "time": "4:40 PM CDT",
+      "unit": "F",
+      "sos": "pressed",
+      "episodeLevel": "High risk",
+      "episodeMinutes": 14,
+      "lastCheckIn": "4:31 PM CDT"
+    },
+    "expected": "Thermyx SOS - Miheer\nMiheer pressed Call 911 at 4:40 PM CDT.\nBefore this: High risk for 14 minutes. Last check-in: 4:31 PM CDT.\nRight foot temperature is elevated and still rising: 102.0F at the insole.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now. If you can't reach them, call 911 and give their location.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "help request with a preset and a note",
+    "event": {
+      "level": "High risk",
+      "kind": "help",
+      "locationConsent": true,
+      "location": {
+        "latitude": 29.76043,
+        "longitude": -95.36981
+      }
+    },
+    "detail": {
+      "name": "Miheer",
+      "foot": "left",
+      "causes": [
+        "hot"
+      ],
+      "footC": 38.4,
+      "trend": "steady",
+      "time": "2:12 PM CDT",
+      "unit": "F",
+      "help": "water",
+      "note": "By the north gate 🔥",
+      "episodeLevel": "High risk",
+      "episodeMinutes": 6
+    },
+    "expected": "Thermyx Help Request - Miheer\nMiheer asked for help at 2:12 PM CDT: they need water.\nThey wrote: \"By the north gate\"\nBefore this: High risk for 6 minutes.\nLeft foot temperature is elevated: 101.1F at the insole.\nLocation: https://maps.google.com/?q=29.76043,-95.36981\nCall them now, and go to them if you can.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "help request, nothing else known, location off",
+    "event": {
+      "level": "Normal",
+      "kind": "help",
+      "locationConsent": false
+    },
+    "detail": {
+      "name": "Ana",
+      "time": "9:05 AM",
+      "unit": "F",
+      "help": "pickup"
+    },
+    "expected": "Thermyx Help Request - Ana\nAna asked for help at 9:05 AM: they want someone to come and get them.\nLocation not shared.\nCall them now, and go to them if you can. If you can't reach them, call 911.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "a limp, wearer-only at Caution but texted when it comes with heat",
+    "event": {
+      "level": "High risk",
+      "kind": "alert",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Sam",
+      "foot": "left",
+      "causes": [
+        "limp",
+        "hot"
+      ],
+      "footC": 38.3,
+      "confidence": "confirmed",
+      "time": "3:10 PM",
+      "unit": "F"
+    },
+    "expected": "Thermyx High-Risk Alert - Sam\nTheir steps have been uneven for a while, with more weight on their left foot. Also: foot temperature is high.\nData confirmed at 3:10 PM.\nLocation unavailable.\nThermyx told them to stop, drink water and cool down.\nCall them now.\nThermyx will text again when they check in or readings recover."
+  },
+  {
+    "name": "circle test",
+    "event": {
+      "level": "Normal",
+      "kind": "test",
+      "locationConsent": true
+    },
+    "detail": {
+      "name": "Jordan",
+      "unit": "F"
+    },
+    "expected": "Thermyx TEST - Jordan\nThis is a test of Thermyx alerts. Jordan set you up as a trusted contact. No action needed."
+  },
+  {
     "name": "sos, no name, location off",
     "event": {
       "level": "Critical",

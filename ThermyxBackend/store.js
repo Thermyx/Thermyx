@@ -199,7 +199,7 @@ function openStore(file, now = () => Date.now()) {
      * timeline; a new event (rising from Normal, or an SOS) starts a fresh one.
      */
     updateStatus(deviceID, { level, kind, location, locationConsent, detail = null }) {
-      const activeEvent = kind === "sos" || level === "High risk" || level === "Critical";
+      const activeEvent = kind === "sos" || kind === "help" || level === "High risk" || level === "Critical";
       const consented = Boolean(locationConsent);
       const previous = db.prepare("SELECT * FROM status WHERE device_id = ?").get(deviceID);
 
@@ -216,8 +216,8 @@ function openStore(file, now = () => Date.now()) {
       }
       // Anything else (event over, consent withdrawn) clears the location.
 
-      const elevated = level !== "Normal" || kind === "sos";
-      const wasElevated = previous ? previous.level !== "Normal" || previous.kind === "sos" : false;
+      const elevated = level !== "Normal" || kind === "sos" || kind === "help";
+      const wasElevated = previous ? previous.level !== "Normal" || previous.kind === "sos" || previous.kind === "help" : false;
       let since = previous ? previous.since : null;
       let timeline = previous && previous.timeline ? JSON.parse(previous.timeline) : [];
       if (elevated && !wasElevated) { since = now(); timeline = []; }
@@ -273,9 +273,14 @@ function openStore(file, now = () => Date.now()) {
       return db.prepare("SELECT severity, at FROM sms_log WHERE device_id = ? AND delivered > 0 AND kind = 'alert' ORDER BY at DESC LIMIT 1").get(deviceID);
     },
 
+    /** An admin's test send, for the audit trail: real-looking, but on record as a test. */
+    noteTest(deviceID, kind) {
+      audit(`wearer:${deviceID}`, "test_event", kind);
+    },
+
     /** Whether an alert or SOS reached anyone in the current event. */
     eventTexted(deviceID) {
-      return Boolean(db.prepare("SELECT 1 FROM sms_log WHERE device_id = ? AND delivered > 0 AND kind IN ('alert', 'sos') LIMIT 1").get(deviceID));
+      return Boolean(db.prepare("SELECT 1 FROM sms_log WHERE device_id = ? AND delivered > 0 AND kind IN ('alert', 'sos', 'help') LIMIT 1").get(deviceID));
     },
 
     lastTextOfKind(deviceID, kind) {
@@ -283,7 +288,7 @@ function openStore(file, now = () => Date.now()) {
     },
 
     clearLastText(deviceID) {
-      db.prepare("DELETE FROM sms_log WHERE device_id = ? AND kind IN ('alert', 'update', 'sos')").run(deviceID);
+      db.prepare("DELETE FROM sms_log WHERE device_id = ? AND kind IN ('alert', 'update', 'sos', 'help')").run(deviceID);
     },
 
     recordText(deviceID, kind, severity, delivered, failed) {

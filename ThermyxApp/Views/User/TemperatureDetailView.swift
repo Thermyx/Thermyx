@@ -10,8 +10,8 @@ struct TemperatureDetailView: View {
     private var digest: BilateralDigest {
         BilateralDigest(
             range: settings.insightsRange,
-            style: settings.periodStyle,
-            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.periodStyle)
+            style: settings.insightsStyle,
+            samples: viewModel.history.samples(for: settings.insightsRange, style: settings.insightsStyle, now: settings.insightsNow)
         )
     }
     private var pairs: [(Foot, InsightsDigest)] { digest.digests(for: footFilter) }
@@ -19,7 +19,7 @@ struct TemperatureDetailView: View {
     var body: some View {
         ThermyxDetailScreen(
             title: "Temperature",
-            caption: settings.insightsRange.caption(style: settings.periodStyle)
+            caption: settings.insightsCaption
         ) {
             let digest = digest
 
@@ -93,7 +93,7 @@ struct TemperatureDetailView: View {
         ThermyxCard {
             VStack(alignment: .leading, spacing: Thermyx.Space.header) {
                 SectionLabel("\(foot.label) foot temperature") {
-                    Text("Hold to scrub")
+                    Text("Touch and hold to read")
                         .narrowLabel(ThermyxFont.axisLabel, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textFaint)
                 }
 
@@ -143,7 +143,7 @@ struct TemperatureDetailView: View {
 
     @ViewBuilder
     private var events: some View {
-        let recorded = viewModel.history.events(for: settings.insightsRange, style: settings.periodStyle, foot: footFilter.foot)
+        let recorded = viewModel.history.events(for: settings.insightsRange, style: settings.insightsStyle, foot: footFilter.foot, now: settings.insightsNow)
         VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Events")
             if recorded.isEmpty {

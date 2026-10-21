@@ -345,7 +345,7 @@ struct NextStepCard: View {
     let name: String
     let phone: String?
 
-    private var hadSOS: Bool { level.severity >= 1 && (card?.timeline ?? []).contains { $0.kind == "sos" } }
+    private var hadSOS: Bool { (card?.timeline ?? []).contains { $0.kind == "sos" || $0.kind == "help" } && card?.timeline?.last?.kind != "ok" }
     private var urgent: Bool { hadSOS || level.severity >= ThermyxRiskLevel.high.severity }
     /// Easing after an alert: the last word was "recovering".
     private var recovering: Bool { !urgent && card?.timeline?.last?.update == "recovering" }
@@ -488,6 +488,7 @@ struct EventTimeline: View {
         switch e.kind {
         case "alert": return "\(e.level) alert"
         case "sos": return "SOS sent"
+        case "help": return "Asked for help"
         case "ok": return "Checked in: says they're OK"
         case "silence": return "No update from their phone\(e.minutes.map { " for \($0) min" } ?? "")"
         case "update":
@@ -504,6 +505,7 @@ struct EventTimeline: View {
         switch e.kind {
         case "ok": return Thermyx.Ink.ice
         case "sos": return Thermyx.Ink.ember
+        case "help": return Thermyx.Ink.amber
         case "silence": return Thermyx.Ink.amber
         default:
             if e.update == "resolved" { return Thermyx.Ink.ice }

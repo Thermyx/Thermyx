@@ -128,7 +128,6 @@ struct TrustedSettingsView: View {
         Button { legalDocument = .privacy } label: {
             ThermyxNavigationRow(
                 title: "Privacy & terms",
-                detail: "How Thermyx handles data",
                 systemImage: "doc.text.fill",
                 iconTint: Thermyx.Ink.textSupporting,
                 iconFill: Thermyx.Tint.neutralFill

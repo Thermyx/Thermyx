@@ -42,6 +42,10 @@ enum ThermyxPreviewHarness {
         /// Insights, scrolled to the readiness profile and the safety plan.
         case readiness
         case safetyPlan
+        /// Safety with "Ask for help" open.
+        case helpRequest
+        /// The Demo studio playing "Hot shift" at ×30 (admin).
+        case studioPlaying
         /// The watcher's status card mid-event, from sample data.
         case trustedHandoff
         /// The same card after the wearer checked in and it eased.
@@ -50,14 +54,14 @@ enum ThermyxPreviewHarness {
         case circleSharing
         case learning
         case article
+        /// Learn → AI Insights, on the pick-a-day step.
+        case aiInsights
         case safety
         case advanced
         case trusted
         case trustedSample
         case trustedSampleInsights
         case legal
-        /// The Simulator tab (the educational thermal simulator).
-        case thermalSimulator
         /// Safety → Device.
         case device
         /// Simulated insole pair, already paired, with a day of history.
@@ -120,7 +124,7 @@ enum ThermyxPreviewHarness {
         @Published var tab: UserTab = .home
         private var timer: Timer?
         private let steps: [(UserTab, TimeInterval)] = [
-            (.home, 7), (.insights, 7), (.learn, 4), (.simulator, 5), (.safety, 5)
+            (.home, 7), (.insights, 7), (.learn, 4), (.safety, 5)
         ]
         private var index = 0
 
@@ -198,9 +202,8 @@ enum ThermyxPreviewHarness {
     static var initialUserTab: UserTab {
         switch state {
         case .insights, .health, .temperature, .movement, .movementAdvanced, .balance, .weekly, .readiness, .safetyPlan: return .insights
-        case .learning, .article: return .learn
-        case .safety, .advanced, .legal, .device, .circleSharing: return .safety
-        case .thermalSimulator: return .simulator
+        case .learning, .article, .aiInsights: return .learn
+        case .safety, .advanced, .legal, .device, .circleSharing, .helpRequest: return .safety
         default: return .home
         }
     }
@@ -250,7 +253,11 @@ enum ThermyxPreviewHarness {
 
     /// The Learn tab opens on an article for the `article` state.
     static var initialLearnPath: [InsightsDestination] {
-        state == .article ? [.article("overheating")] : []
+        switch state {
+        case .article: return [.article("overheating")]
+        case .aiInsights: return [.aiInsights(nil)]
+        default: return []
+        }
     }
 
     static var initialSafetyPath: [SafetyDestination] {

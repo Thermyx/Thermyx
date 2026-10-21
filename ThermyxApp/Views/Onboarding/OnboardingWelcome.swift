@@ -86,7 +86,7 @@ struct WelcomeScreen: View {
                         .tracking(-0.4)
                         .foregroundStyle(Thermyx.Ink.textPrimary)
                 }
-                Text("Smart insoles that heat and cool your feet, and track temperature, load and steps under both of them, live.")
+                Text("Smart insoles that heat and cool your feet, and keep track of temperature, pressure and steps under both of them as you go.")
                     .font(ThermyxFont.body)
                     .lineSpacing(2)
                     .foregroundStyle(Thermyx.Ink.textMuted)
@@ -97,7 +97,7 @@ struct WelcomeScreen: View {
                     } label: {
                         Label("Watch the walkthrough", systemImage: "play.circle")
                             .font(ThermyxFont.controlLabel)
-                            .foregroundStyle(Thermyx.Ink.ice)
+                            .foregroundStyle(Thermyx.Ink.link)
                             .frame(minHeight: 44)
                     }
                     .buttonStyle(.plain)
@@ -190,7 +190,7 @@ private struct PartCallout: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Thermyx.Ink.textMuted)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

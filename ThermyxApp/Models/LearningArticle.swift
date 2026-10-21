@@ -9,7 +9,6 @@ struct LearningArticle: Codable, Identifiable, Equatable {
     let title: String
     /// The standfirst under the headline.
     let dek: String
-    let readMinutes: Int
     let image: Photo
     /// Live situations this article is the lesson for (see `LearningSuggestion`).
     let triggers: [String]
@@ -68,6 +67,15 @@ struct LearningArticle: Codable, Identifiable, Equatable {
     }
 
     var kicker: String { section.label }
+    /// Worked out from the words, at an easy 200 a minute, so the label
+    /// matches the article rather than a number typed by hand.
+    var readMinutes: Int {
+        let words = blocks.reduce(0) { total, block in
+            total + ([block.text, block.title, block.figure].compactMap { $0 } + (block.items ?? []))
+                .reduce(0) { $0 + $1.split(whereSeparator: \.isWhitespace).count }
+        }
+        return max(1, Int((Double(words) / 200).rounded(.up)))
+    }
     var meta: String { "\(readMinutes) min read" }
 }
 
@@ -174,6 +182,8 @@ struct LearningSuggestion: Equatable {
         /// Days of history on this phone.
         var daysOfHistory: Int
         var unit: TemperatureUnit
+        /// A lean or limp held for minutes, from `AsymmetryMonitor`.
+        var asymmetry: AsymmetryStatus = .none
     }
 
     static func current(_ c: Context) -> LearningSuggestion? {
@@ -205,8 +215,11 @@ struct LearningSuggestion: Equatable {
             let rising = (c.trend10 ?? 0) >= 1 ? " and rising" : ""
             return make("overheating", "Your warmer foot is at \(degrees(peak))\(rising).")
         }
-        if c.reading.favouredFoot != nil, let gap = c.reading.loadAsymmetry {
-            return make("fit-pressure", "You're putting \(Int(abs(gap) * 100)) points more load on your \(c.reading.favouredFoot!.label.lowercased()) foot.")
+        if let limp = c.asymmetry.findings.first(where: { $0.kind == .limp }) {
+            return make("fit-pressure", "You've been favouring your \(limp.foot.label.lowercased()) foot as you walk.")
+        }
+        if let lean = c.asymmetry.findings.first(where: { $0.kind == .lean }) {
+            return make("fit-pressure", "You've been leaning on your \(lean.foot.label.lowercased()) foot for a while.")
         }
         if let recent = c.recentPeak, recent.severity >= ThermyxRiskLevel.caution.severity, level == .normal {
             return make("recovery", "You reached \(recent.rawValue) in the last two hours.")

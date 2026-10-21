@@ -2,7 +2,7 @@
 
 **Effective date:** 2026
 
-**Last updated:** October 15, 2026
+**Last updated:** October 19, 2026
 
 Thermyx Technologies ("Thermyx", "we", "us") makes the Thermyx smart insole
 and the Thermyx iPhone application (together, the "Service"). This policy
@@ -15,16 +15,19 @@ of what the Service can do.
 
 ## 1. The short version
 
-- **Your readings stay on your phone by default.** Foot temperature, pressure,
+- **Your readings stay on your phone, always.** Foot temperature, pressure,
   movement, and battery data are stored locally. We do not operate a cloud
-  service that collects them.
+  service that collects them, and no setting sends them anywhere.
 - **Nothing leaves your phone unless you turn it on.** The outbound data flows
   are all optional: the trusted circle, which sends escalated risk events to a
   relay you connect; **AI Insights**, which sends one day's totals and averages
-  to Anthropic's Claude API through that relay (section 2.8); and local
+  to Anthropic's Claude API through that relay (section 2.8); local
   weather, which sends a rounded location to Open-Meteo during calibration
-  (section 2.5). Signing in with Google creates an account, covered in section
-  2.9.
+  (section 2.5); **Back up to my account**, which copies your profile and
+  calibration to your own private space in your account (section 2.10); and
+  **Help new wearers start smarter**, which sends a few rounded, anonymous
+  numbers once a month (section 2.11). Signing in with Google creates an
+  account, covered in section 2.9.
 - **We do not sell your data, and we do not use it for advertising.** We do not
   use it to build profiles for any purpose other than operating the Service for
   you.
@@ -172,10 +175,74 @@ all further requests.
 
 Signing in with Google gives Thermyx your Google account's name, email address
 and a user identifier, through Google's Firebase Authentication. They are used
-only to sign you in and to recognise team accounts. Deleting your account
-removes it from Firebase.
+only to sign you in, to recognise team accounts, and to give your backup (section
+2.10) a private path. Deleting your account deletes the backup first, then
+removes the account from Firebase. Anonymous numbers you sent (section 2.11)
+have no account attached and expire on their own.
 
-### 2.10 What the Service does not collect
+### 2.10 Back up to my account (optional, off by default)
+
+If you turn on **Back up to my account** (Device → Your account data) while
+signed in, the app copies these to Cloud Firestore, a Google Cloud database
+used through Firebase, under your account's own private path, so a new phone can
+restore them:
+
+- your profile: name, age, height, weight, sex, health conditions you ticked,
+  Insights preference, shoe size;
+- preferences: temperature unit, Insights range, target temperature, which
+  risk levels alert your circle, what you mostly use Thermyx for, the name
+  your circle sees, and the on-device suggestions switch;
+- your personal baseline (your usual foot temperature and steadiness) and
+  your calibration model;
+- your recoveries: the start and end temperature at the insole, how long, how
+  still you were, and the steps you ticked.
+
+**Not included:** your readings and history (minute and hour buckets, risk
+events), your trusted contacts' names and numbers, the relay address and key,
+location, Apple Health data, and the Apple Health, location-sharing and AI
+Insights switches (you are asked again on each phone).
+
+Only your account can read or change this copy; the database's security rules
+refuse every other request. People with administrator access to the Thermyx
+Firebase project could technically open it in the Firebase console; we do not,
+and it is not used for anything but restoring your phone. It is kept until you turn
+backup off and choose to delete it, use **Delete my data** or **Delete my cloud
+backup**, or delete your account, all of which remove it and wait for the server
+to confirm. It is stored in the Google Cloud region chosen for the Thermyx
+project. Backup never runs in Demo Mode. If a phone and the cloud disagree the
+later change wins, and a phone that has not synced with your account before
+asks you which copy to keep before changing anything.
+
+### 2.11 Help new wearers start smarter (optional, off by default)
+
+If you turn on **Help new wearers start smarter**, two things happen, and only
+while you are signed in:
+
+- **You get starting points.** About once a week the app asks the database for
+  totals (a count, a mean and a spread) of other wearers' numbers for people
+  like you, and uses them to give your personal models a better starting point
+  before your own data builds up. Your cohort (below) is part of that request.
+  The app uses these only when at least 20 wearers back them, and the personal
+  layer can only ever add caution, never lower an alert.
+- **You add your numbers.** At most once a month the app sends a few averages
+  from your own calm minutes (no heating, risk Normal): your usual foot
+  temperature while sitting, standing and walking, how even your steps are,
+  and how your weight and steadiness differ between your left and right foot. They are
+  rounded (to 0.1 °C, or to 2 percentage points) on your phone and need a
+  calibrated baseline and at least 20 calm minutes behind each number. Each
+  number goes in its own record with a random ID, **with no name, email,
+  account ID, device ID, location or time of day**, labelled only with a coarse
+  group: what you mostly use Thermyx for ("Outdoor work", "Sports and
+  training", "Cold weather", "Everyday comfort" or none) and an age band
+  (under 30, 30 to 59, 60 and over). The records cannot be traced back to you,
+  which also means they cannot be found and deleted afterwards: they expire on
+  their own about five weeks after they are written, and turning the switch off
+  stops any further ones. Never sent in Demo Mode.
+
+Anyone who is signed in to Thermyx can read these anonymous records, in the
+same way you read the totals.
+
+### 2.12 What the Service does not collect
 
 We do not collect your contacts list, your photos, your microphone or camera,
 your browsing activity, your advertising identifier, or your precise location
@@ -193,9 +260,14 @@ outside the emergency flow described above.
 | Emergency escalation | Location, contacts | Your explicit opt-in |
 | Write your daily AI Insights summary | One day's totals and averages | Your consent (AI Insights, off by default) |
 | Air temperature during calibration | Location rounded to about 1 km | Your consent (location permission) |
+| Restore your profile and calibration on a new phone | Profile, preferences, baseline, calibration model, recoveries | Your consent (Back up to my account, off by default) |
+| Start new wearers from what is typical | Rounded anonymous averages and a coarse cohort | Your consent (Help new wearers start smarter, off by default) |
 
-We do not use your data for advertising, for automated decisions producing legal
-or similarly significant effects, or for training machine-learning models.
+We do not use your data for advertising or for automated decisions producing
+legal or similarly significant effects. The only models we train are the small
+ones that run on your own phone, from your own data, and (if you opt in to
+section 2.11) their starting points come from rounded anonymous averages. Your
+readings are never used to train anything off your phone.
 
 ## 4. Where information is stored and who can see it
 
@@ -215,6 +287,11 @@ permissions.
 **Anthropic.** If you turn on AI Insights, each day's totals and averages are
 processed by Anthropic to write the summary, as described in section 2.8.
 
+**Google (Firebase).** Signing in uses Firebase Authentication. If you turn on
+Back up to my account or Help new wearers start smarter, the data in sections
+2.10 and 2.11 is stored in Cloud Firestore, operated by Google, under the
+Thermyx Firebase project.
+
 We do not maintain a central database of user readings.
 
 ## 5. Sharing
@@ -225,6 +302,8 @@ behavioural advertising. We share information only:
 - with the backend you configured, as described above;
 - with Anthropic, only if you turn on AI Insights, and only the day's totals
   and averages described in section 2.8;
+- with Google (Firebase), for sign-in, and for the backup and the anonymous
+  numbers in sections 2.10 and 2.11 only if you turn those on;
 - with Open-Meteo, a rounded location, only when calibration looks up the
   outside air temperature;
 - with your trusted contacts, in the form of the alerts you configured;
@@ -242,15 +321,20 @@ behavioural advertising. We share information only:
 | Risk events | 30 days |
 | Personal baseline | Until reset or deleted; discarded after 90 days unused |
 | Profile, preferences, contacts | Until you change or delete them |
+| Account backup (section 2.10), only if you turn it on | Until you turn backup off and delete it, use Delete my data, or delete your account. Overwritten each time it changes |
+| Anonymous population numbers (section 2.11), only if you turn it on | About 5 weeks, then deleted automatically. Can't be recalled sooner: nothing links them to you |
+| Starting points cached on your phone | Refreshed weekly; removed when you turn the switch off |
 | Relay: latest status card and the current event's timeline | 7 days after the last update |
 | Relay: a watcher's push notification token | Until they stop watching or are removed |
 | Relay: contacts' numbers during an active event | In memory only, until the event ends (1 hour at most) |
 | Relay: location (only during a consented High, Critical, or SOS event) | 1 hour, and cleared when the event ends |
 
 **Delete my data** is in Safety → Advanced. It removes your history, personal
-baseline, and trusted contacts from the device immediately and irreversibly,
-disconnects the relay, and deletes what the relay holds about you, which also
-ends every watcher's access. **What leaves your phone?** on the same screen
+baseline, recoveries and trusted contacts from the device immediately and irreversibly,
+disconnects the relay, deletes what the relay holds about you, which also
+ends every watcher's access, and deletes your account backup and turns both cloud
+switches off. If the backup can't be reached, the app says so and you can delete
+it from Device → Your account data when you are online. **What leaves your phone?** on the same screen
 lists exactly what is shared and when. Deleting the app
 removes everything the app stored. Removing Health permissions stops all access;
 samples already written to Health are managed in the Health app.
@@ -297,7 +381,10 @@ consenting on their behalf.
 ## 10. Security
 
 Readings are stored in the app's protected container on your device. Bluetooth
-telemetry is exchanged over a local link with the insole. If you configure a
+telemetry is exchanged over a local link with the insole. Backup and anonymous
+numbers travel over TLS to Google's servers and are protected by Firestore
+security rules: only you can read your backup, and the anonymous records carry
+no identifier. If you configure a
 backend, use an HTTPS endpoint; the app will send an authorisation token if you
 provide one.
 
@@ -306,8 +393,9 @@ to date, and do not configure a backend you do not control or trust.
 
 ## 11. International transfers
 
-The Service does not transfer your data internationally, because it does not
-send it to us. If you configure a backend, transfers depend on where that
+Your readings are not transferred, because they do not leave your phone. If you
+turn on backup or anonymous numbers, that data is stored in the Google Cloud
+region of the Thermyx project. If you configure a backend, transfers depend on where that
 backend is hosted, which is your choice. If you turn on AI Insights, the day's
 totals and averages are processed by Anthropic, which operates in the United
 States.

@@ -150,7 +150,7 @@ private struct OnboardingTopBar: View {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(Thermyx.Ink.textPrimary)
-                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -230,8 +230,15 @@ struct OnboardingPage<Content: View, Actions: View>: View {
                 .padding(.top, Thermyx.Space.m)
                 .padding(.bottom, Thermyx.Space.xs)
                 .background {
-                    LinearGradient(colors: [.black.opacity(0), .black.opacity(0.92), .black], startPoint: .top, endPoint: .init(x: 0.5, y: 0.35))
-                        .ignoresSafeArea()
+                    // Solid under the buttons and hint, so nothing from the page
+                    // shows through; a short fade above hides the cut edge.
+                    Color.black.ignoresSafeArea()
+                        .overlay(alignment: .top) {
+                            LinearGradient(colors: [.black.opacity(0), .black], startPoint: .top, endPoint: .bottom)
+                                .frame(height: 28)
+                                .offset(y: -28)
+                                .allowsHitTesting(false)
+                        }
                 }
         }
     }
@@ -323,7 +330,7 @@ private struct ProfileStep: View {
             Spacer()
             Button("Change", action: onChangeAccount)
                 .font(.custom(ThermyxFont.Family.medium, size: 14, relativeTo: .subheadline))
-                .foregroundStyle(Thermyx.Ink.ice)
+                .foregroundStyle(Thermyx.Ink.link)
                 .frame(minHeight: 44)
                 .accessibilityLabel("Use a different account")
         }
@@ -387,7 +394,7 @@ struct UsageChips: View {
                 .font(.custom(ThermyxFont.Family.medium, size: 14, relativeTo: .subheadline))
                 .foregroundStyle(on ? Thermyx.Ink.onPrimary : Thermyx.Ink.textPrimary)
                 .padding(.horizontal, 16)
-                .frame(height: 40)
+                .frame(height: 44)
                 .background(on ? Thermyx.Ink.textPrimary : .clear, in: Capsule())
                 .overlay { Capsule().strokeBorder(on ? .clear : Color(hex: 0x2A2D33), lineWidth: 1) }
                 .contentShape(Capsule())

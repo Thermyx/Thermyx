@@ -38,21 +38,21 @@ struct GuidanceSection: View {
                 .frame(minHeight: Thermyx.minimumTapTarget)
             }
 
-            Text("Guidance is a set of simple rules that run on this phone, not AI, and nothing is sent anywhere. Learning your normal takes \(PersonalBaseline.calibrationMinutes) calm minutes of wear. After that, a foot temperature well above your usual, steadiness well below it, or a fast rise can add a Caution. It never lowers a level the fixed rules set. A session label is just a note; there is one baseline.")
+            Text("Your alerts are worked out on this phone, and none of this is sent anywhere. Thermyx needs about \(PersonalBaseline.calibrationMinutes) calm minutes of wear to learn what's normal for you. After that, a foot running well above your usual, steps much less steady than usual, or a fast rise can add a Caution. It can only make things more careful, never less. A session name is just a note for you.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
 
             if store.baseline.minutesLearned > 0 {
-                Button("Reset my baseline") { confirmingReset = true }
+                Button("Forget what's usual for me") { confirmingReset = true }
                     .buttonStyle(ThermyxSecondaryButtonStyle())
             }
         }
-        .confirmationDialog("Reset your baseline?", isPresented: $confirmingReset, titleVisibility: .visible) {
+        .confirmationDialog("Start learning again?", isPresented: $confirmingReset, titleVisibility: .visible) {
             Button("Reset", role: .destructive) { store.reset() }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Thermyx forgets your usual readings and calibrates again over the next \(PersonalBaseline.calibrationMinutes) calm minutes.")
+            Text("Thermyx forgets what's usual for you and learns it again over your next \(PersonalBaseline.calibrationMinutes) calm minutes of wear.")
         }
     }
 
@@ -85,6 +85,7 @@ struct GuidanceSection: View {
 /// A plain account of where each kind of data goes and how long it is kept.
 struct DataFlowView: View {
     @ObservedObject var settings: ThermyxSettingsStore
+    @ObservedObject private var cloud = ThermyxCloudService.shared
 
     private struct Item: Identifiable {
         let title: String
@@ -96,7 +97,7 @@ struct DataFlowView: View {
         [
             Item(title: "Live readings", detail: "Shown live and folded into minute summaries. Raw packets are not kept."),
             Item(title: "History", detail: "Minute summaries for 7 days, hourly summaries for 180 days, risk events for 30 days. Older data is deleted automatically."),
-            Item(title: "Personal baseline", detail: "Your usual foot temperature and steadiness. Deleted if unused for 90 days."),
+            Item(title: "What's usual for you", detail: "Your usual foot temperature and steadiness. Deleted if unused for 90 days. Copied to your account only if you turn on Back up to my account."),
             Item(title: "Trusted contacts", detail: "Names and numbers stay on this phone unless texting is turned on."),
             Item(title: "Relay key", detail: "Kept in the iPhone Keychain.")
         ]
@@ -121,8 +122,22 @@ struct DataFlowView: View {
         return items
     }
 
+    private var account: [Item] {
+        [
+            Item(title: "Back up to my account — \(cloud.backupEnabled ? "on" : "off")",
+                 detail: cloud.backupEnabled
+                    ? "Your profile, settings, what Thermyx has learned about you, and your recovery checks are copied to a private space in your account, so a new phone can pick up where you left off. Only you can read it. Your history, contacts and location stay on this phone."
+                    : "Nothing is copied. Turn it on in Device to keep your profile, calibration and recoveries with your account."),
+            Item(title: "Anonymous numbers for new wearers — \(cloud.populationEnabled ? "on" : "off")",
+                 detail: cloud.populationEnabled
+                    ? "Once a month, a few rounded averages from your own calm minutes go out with no name, email or account ID, grouped only by what you mostly use Thermyx for and an age band. They can't be traced back to you, and expire within about five weeks."
+                    : "Nothing is sent. Turn it on in Device to start from what's typical for people like you, and to add your numbers to that.")
+        ]
+    }
+
     private let never = [
-        "Raw sensor readings, history, or your baseline",
+        "Raw sensor readings or history",
+        "Your trusted contacts' names or numbers, to your account",
         "Your Apple Health data, to anyone",
         "Analytics, ads, or tracking of any kind",
         "Anything to emergency services — Call 911 opens your phone's dialer"
@@ -148,6 +163,7 @@ struct DataFlowView: View {
                                 : "Nothing is sent. Turn AI Insights on in Device to get a daily summary written by Claude.")
                     ])
                 }
+                group("Your Thermyx account — only if you turn it on", items: account)
                 group("Local weather — only with location allowed", items: [
                     Item(title: "Your location, rounded to about 1 km", detail: "Sent to Open-Meteo during calibration's outdoor half, for the air temperature.")
                 ])
@@ -203,10 +219,11 @@ struct DataFlowView: View {
 // MARK: - Delete my data
 
 /// Removes what Thermyx stored on this phone and, when connected, what the
-/// relay holds about this wearer.
+/// relay and the wearer's account backup hold about them.
 enum DataDeletion {
     @MainActor
-    static func deleteEverything(viewModel: ThermyxViewModel, settings: ThermyxSettingsStore) async -> String? {
+    static func deleteEverything(viewModel: ThermyxViewModel, settings: ThermyxSettingsStore,
+                                 cloud: ThermyxCloudService = .shared) async -> String? {
         var relayError: String?
         if settings.isPairedWithRelay {
             do {
@@ -221,6 +238,11 @@ enum DataDeletion {
                 relayError = "This phone's data was deleted, but the relay couldn't be reached. Its copy expires within 7 days, or ask the team to remove this device."
             }
         }
+        // The account's backup too, and both cloud switches go back to off.
+        // First, so wiping this phone below isn't backed up as an empty
+        // phone. Numbers already sent anonymously can't be traced to this
+        // wearer, so they can't be pulled back; they expire on their own.
+        let cloudError = await cloud.deleteEverything()
         settings.disconnectRelay()
         settings.contacts = []
         settings.shareLocationDuringEvents = false
@@ -228,8 +250,12 @@ enum DataDeletion {
         viewModel.recovery.deleteAll()
         await viewModel.history.save()
         viewModel.baseline.deleteAll()
-        return relayError
+        return [relayError, cloudError].compactMap { $0 }.joined(separator: " ").nilIfEmpty
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 // MARK: - Demo Mode banner

@@ -131,3 +131,51 @@ enum ThermyxModeInbox {
         }, notification as CFString, nil, .deliverImmediately)
     }
 }
+
+
+// MARK: - Safety widget
+
+/// "I'm OK" from the Safety widget: tells the trusted circle, from the app's
+/// process (it has the relay connection and what to say).
+struct CheckInIntent: LiveActivityIntent {
+    static let title: LocalizedStringResource = "Tell my circle I'm OK"
+    static let description = IntentDescription("Lets your Thermyx trusted circle know you're OK.")
+
+    init() {}
+
+    func perform() async throws -> some IntentResult {
+        ThermyxCheckInInbox.submit()
+        return .result()
+    }
+}
+
+/// A check-in waiting for the app, in the App Group.
+enum ThermyxCheckInInbox {
+    private static let atKey = "thermyx.widget.checkInAt"
+    private static let notification = "com.thermyx.app.a.checkIn"
+    /// A check-in older than this is dropped rather than sent late.
+    static let expiry: TimeInterval = 120
+
+    static var onRequest: (() -> Void)?
+
+    static func submit(now: Date = .now) {
+        ThermyxShared.defaults?.set(now.timeIntervalSince1970, forKey: atKey)
+        CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+                                             CFNotificationName(notification as CFString), nil, nil, true)
+        onRequest?()
+    }
+
+    /// The pending check-in's time, once; nil if none or too old.
+    static func take(now: Date = .now) -> Date? {
+        guard let raw = ThermyxShared.defaults?.double(forKey: atKey), raw > 0 else { return nil }
+        ThermyxShared.defaults?.removeObject(forKey: atKey)
+        let at = Date(timeIntervalSince1970: raw)
+        return now.timeIntervalSince(at) <= expiry ? at : nil
+    }
+
+    static func startListening() {
+        CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), nil, { _, _, _, _, _ in
+            ThermyxCheckInInbox.onRequest?()
+        }, notification as CFString, nil, .deliverImmediately)
+    }
+}

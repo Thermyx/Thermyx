@@ -47,8 +47,6 @@ struct SpotlightTutorial: View {
                  text: "Today, this week and your streak. Every card opens into the detail behind it."),
             Step(tab: .learn, target: .learnLead, title: "Learn",
                  text: "Short, sourced reads on heat, cold and your feet, with one picked for what's happening now."),
-            Step(tab: .simulator, target: .simulatorControls, title: "Simulator",
-                 text: "Try a hot job site or a winter patrol safely, and watch Thermyx's real decisions play out."),
             Step(tab: .safety, target: .holdToCall, title: "Safety",
                  text: "Hold for two seconds to call 911. Your trusted circle and your device settings live here too."),
         ]
@@ -169,8 +167,8 @@ struct SpotlightTutorial: View {
                 Spacer()
                 Button("Skip") { center.finish() }
                     .font(.custom(ThermyxFont.Family.medium, size: 14, relativeTo: .subheadline))
-                    .foregroundStyle(Color(hex: 0x4A5059))
-                    .frame(minWidth: 44, minHeight: 36)
+                    .foregroundStyle(Thermyx.Ink.linkOnLight)
+                    .frame(minWidth: 44, minHeight: 44)
             }
             progress
             Text(current.text)
@@ -182,7 +180,7 @@ struct SpotlightTutorial: View {
                 if step > 0 {
                     Button("Back") { back() }
                         .font(.custom(ThermyxFont.Family.semibold, size: 15, relativeTo: .subheadline))
-                        .foregroundStyle(Color(hex: 0x3A4048))
+                        .foregroundStyle(Thermyx.Ink.linkOnLight)
                         .frame(minWidth: 44, minHeight: 44)
                 }
                 Spacer()

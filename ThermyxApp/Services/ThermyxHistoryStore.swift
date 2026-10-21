@@ -218,7 +218,8 @@ final class ThermyxHistoryStore: ObservableObject {
         now: Date = .now
     ) -> [ThermyxHistorySample] {
         let window = range.window(style: style, now: now)
-        let source = range.usesHourlyTier ? hourSamples : minuteSamples
+        // Minute buckets are kept a week; older windows read the hourly tier.
+        let source = range.usesHourlyTier || window.start < Date.now.addingTimeInterval(-6.5 * 86_400) ? hourSamples : minuteSamples
         return source.filter { sample in
             sample.start >= window.start && sample.start <= window.end
                 && (foot == nil || sample.foot == foot)

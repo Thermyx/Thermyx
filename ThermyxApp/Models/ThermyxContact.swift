@@ -24,7 +24,7 @@ struct ThermyxAlertEvent: Codable {
     /// in; `update` follows an alert ("still High risk", "recovering", "back
     /// to Normal"). Optional so events from older builds still decode.
     enum Kind: String, Codable {
-        case status, alert, sos, ok, update
+        case status, alert, sos, ok, update, help, test
     }
 
     let deviceID: String

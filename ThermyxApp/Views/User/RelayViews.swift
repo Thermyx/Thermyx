@@ -22,7 +22,6 @@ struct RelayConnectionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.header) {
-            SectionLabel("Relay")
             if settings.isPairedWithRelay {
                 connected
             } else {

@@ -111,6 +111,34 @@ struct ThermyxWidgetSnapshot: Codable, Hashable {
     var temps: [Float]
     var batteryLeft: Int?
     var batteryRight: Int?
+    /// "Is today different for me?", for the Readiness widget.
+    var readiness: Readiness? = nil
+    /// When the wearer last tapped I'm OK, and how many people their alerts
+    /// reach, for the Safety widget.
+    var lastCheckIn: Date? = nil
+    var circleSize: Int? = nil
+
+    /// The readiness profile as a widget needs it (built in the app from
+    /// `ReadinessProfile`).
+    struct Readiness: Codable, Equatable, Hashable {
+        /// "learning", "typical", "warmer" or "cooler".
+        var status: String
+        /// "Sitting", "Standing", "Walking".
+        var activity: String?
+        /// The usual range for that activity, and the foot now, °C.
+        var lowC: Double?
+        var highC: Double?
+        var nowC: Double?
+
+        var title: String {
+            switch status {
+            case "typical": return "Typical for you"
+            case "warmer": return "Warmer than usual"
+            case "cooler": return "Cooler than usual"
+            default: return "Still learning you"
+            }
+        }
+    }
 
     /// How far back the curve reaches.
     static let windowMinutes = 30
@@ -160,7 +188,7 @@ struct ThermyxWidgetSnapshot: Codable, Hashable {
             ("Foot contact has reached", "Heating off at the limit"),
             ("Foot-contact temperature is elevated", "Foot temperature elevated"),
             ("Foot-contact temperature is low", "Foot temperature low"),
-            ("Movement stability is below", "Steadiness below baseline"),
+            ("Movement stability is below", "Steps less steady than usual"),
             ("Ambient temperature is elevated", "Air temperature elevated"),
             ("Foot temperature is rising", "Foot warming quickly"),
         ]
@@ -176,7 +204,7 @@ struct ThermyxWidgetSnapshot: Codable, Hashable {
         case "Heating off at the limit": return "Heat limit"
         case "Foot temperature elevated": return "Foot too warm"
         case "Foot temperature low": return "Foot cold"
-        case "Steadiness below baseline": return "Unsteady steps"
+        case "Steps less steady than usual": return "Unsteady steps"
         case "Air temperature elevated": return "Hot air"
         case "Foot warming quickly": return "Warming fast"
         case "One foot running warmer": return "Feet differ"

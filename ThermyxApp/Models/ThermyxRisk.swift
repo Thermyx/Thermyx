@@ -91,8 +91,13 @@ enum ThermyxRiskLevel: String, CaseIterable {
 /// Why the engine raised a level, in the same order as `reasons`. The
 /// trusted circle's messages and status card are built from these, not by
 /// reading the sentences back.
+///
+/// `warmerFoot`, `unevenLoad` and `limp` come from `AsymmetryMonitor` and are
+/// only ever raised after the pattern has held for minutes. `unevenLoad` means
+/// heavy one-sided leaning (standing or walking); `limp` means uneven stepping
+/// while walking.
 enum ThermyxRiskCause: String, Codable, Equatable, CaseIterable {
-    case heatLimit, hot, cold, unsteady, hotAir, warmerFoot, unevenLoad
+    case heatLimit, hot, cold, unsteady, hotAir, warmerFoot, unevenLoad, limp
 }
 
 struct ThermyxRiskAssessment: Equatable {
@@ -102,12 +107,17 @@ struct ThermyxRiskAssessment: Equatable {
     /// when neither foot is individually responsible.
     var foot: Foot?
     var causes: [ThermyxRiskCause]
+    /// For a sustained left/right finding: the foot carrying more weight
+    /// (leaning, limping) or running warmer. Kept apart from `foot` because
+    /// the worse foot for heat and the favoured foot are different questions.
+    var asymmetryFoot: Foot?
 
-    init(level: ThermyxRiskLevel, reasons: [String], foot: Foot? = nil, causes: [ThermyxRiskCause] = []) {
+    init(level: ThermyxRiskLevel, reasons: [String], foot: Foot? = nil, causes: [ThermyxRiskCause] = [], asymmetryFoot: Foot? = nil) {
         self.level = level
         self.reasons = reasons
         self.foot = foot
         self.causes = causes
+        self.asymmetryFoot = asymmetryFoot
     }
 
     static let unavailable = ThermyxRiskAssessment(level: .unavailable, reasons: [])
@@ -125,8 +135,9 @@ enum ThermyxRiskEngine {
     /// heating, which is exactly what a cold foot needs.
     static let coldFootC = 25.0
 
-    /// How long a left/right gap must hold before it raises Caution on its own.
-    /// Shorter gaps are ordinary walking noise.
+    /// How long a left/right gap had to hold under the old per-packet rule.
+    /// Superseded by `AsymmetryMonitor`, which judges whole minutes of both
+    /// feet; kept so older call sites still compile.
     static let sustainedAsymmetrySeconds: TimeInterval = 120
 
     /// Assesses one foot on its own signals.
@@ -165,22 +176,56 @@ enum ThermyxRiskEngine {
         return ThermyxRiskAssessment(level: level, reasons: reasons, foot: reading.foot, causes: causes)
     }
 
-    /// Assesses the pair.
+    /// Assesses the pair, folding in what `AsymmetryMonitor` has found.
     ///
     /// The result is the worse of the two feet, plus signals that only exist
-    /// because there are two: a *sustained* temperature gap or a lopsided load
-    /// raises caution on its own, because favouring one foot is both a fit
-    /// problem and a fatigue signal, and it is invisible to a single insole.
-    /// The caller says whether each gap has held for
-    /// `sustainedAsymmetrySeconds`; momentary gaps are ignored.
+    /// because there are two: heavy one-sided leaning, uneven stepping while
+    /// walking, or a foot that has run warmer than the other for minutes.
+    /// These are favouring-one-foot signals, both a fit problem and a fatigue
+    /// signal, and invisible to a single insole. The monitor only reports them
+    /// after the pattern has held for minutes, against the wearer's own usual
+    /// left/right balance, so the weight swinging from foot to foot with every
+    /// step never trips them.
     ///
     /// Asymmetry never escalates past caution by itself. It says "look at
     /// this", not "stop" — a difference between feet is not the same kind of
-    /// evidence as a foot that is simply too hot.
+    /// evidence as a foot that is simply too hot. It also never lowers a level.
+    static func assess(_ bilateral: BilateralReading, asymmetry: AsymmetryStatus) -> ThermyxRiskAssessment {
+        let perFoot = bilateral.present.map(assess).filter { $0.level != .unavailable }
+        guard let worst = perFoot.max(by: { $0.level.severity < $1.level.severity }) else {
+            return .unavailable
+        }
+
+        var reasons = worst.reasons
+        var causes = worst.causes
+        var level = worst.level
+        var foot = worst.foot
+        var asymmetryFoot: Foot?
+
+        // A limp is the more specific description of the same uneven loading,
+        // so it replaces a lean rather than adding to it.
+        let ordered = [asymmetry.finding(.limp) ?? asymmetry.finding(.lean), asymmetry.finding(.warmerFoot)].compactMap { $0 }
+        for finding in ordered {
+            reasons.append(AsymmetryWording.reason(finding))
+            causes.append(finding.kind.cause)
+            asymmetryFoot = asymmetryFoot ?? finding.foot
+            if level == .normal { level = .caution }
+        }
+        // When nothing else is wrong the asymmetry is the whole story, and
+        // the foot it names is the one to talk about.
+        if worst.level == .normal, let asymmetryFoot { foot = asymmetryFoot }
+
+        return ThermyxRiskAssessment(level: level, reasons: reasons, foot: foot, causes: causes, asymmetryFoot: asymmetryFoot)
+    }
+
+    /// The older instantaneous form: the caller says whether each gap has
+    /// held. Nothing is reported unless the caller asks for it, so a call with
+    /// no arguments is just the worse of the two feet. Prefer
+    /// `assess(_:asymmetry:)`.
     static func assess(
         _ bilateral: BilateralReading,
-        sustainedTemperatureGap: Bool = true,
-        sustainedLoadGap: Bool = true
+        sustainedTemperatureGap: Bool = false,
+        sustainedLoadGap: Bool = false
     ) -> ThermyxRiskAssessment {
         let perFoot = bilateral.present.map(assess).filter { $0.level != .unavailable }
         guard let worst = perFoot.max(by: { $0.level.severity < $1.level.severity }) else {
@@ -190,19 +235,57 @@ enum ThermyxRiskEngine {
         var reasons = worst.reasons
         var causes = worst.causes
         var level = worst.level
+        var asymmetryFoot: Foot?
 
         if sustainedTemperatureGap, let hotter = bilateral.hotterFoot, let delta = bilateral.temperatureAsymmetryC {
             reasons.append("\(hotter.label) foot is running \(String(format: "%.1f", abs(delta))) °C warmer than the other.")
             causes.append(.warmerFoot)
+            asymmetryFoot = hotter
             if level == .normal { level = .caution }
         }
         if sustainedLoadGap, let favoured = bilateral.favouredFoot, let load = bilateral.loadAsymmetry {
             reasons.append("Load is \(Int(abs(load) * 100)) points heavier on the \(favoured.label.lowercased()) foot.")
             causes.append(.unevenLoad)
+            asymmetryFoot = asymmetryFoot ?? favoured
             if level == .normal { level = .caution }
         }
 
-        return ThermyxRiskAssessment(level: level, reasons: reasons, foot: worst.foot, causes: causes)
+        return ThermyxRiskAssessment(level: level, reasons: reasons, foot: worst.foot, causes: causes, asymmetryFoot: asymmetryFoot)
+    }
+}
+
+extension AsymmetryStatus.Kind {
+    var cause: ThermyxRiskCause {
+        switch self {
+        case .lean: return .unevenLoad
+        case .limp: return .limp
+        case .warmerFoot: return .warmerFoot
+        }
+    }
+}
+
+/// Plain, non-diagnostic sentences for what the monitor found.
+enum AsymmetryWording {
+    /// "about 4 minutes", never less than a minute.
+    static func duration(_ seconds: TimeInterval) -> String {
+        let minutes = max(1, Int((seconds / 60).rounded()))
+        return minutes == 1 ? "about a minute" : "about \(minutes) minutes"
+    }
+
+    static func reason(_ finding: AsymmetryStatus.Finding) -> String {
+        let foot = finding.foot.label.lowercased()
+        let held = duration(finding.heldSeconds)
+        switch finding.kind {
+        case .lean:
+            return finding.whileWalking
+                ? "You've been favouring your \(foot) foot while walking for \(held)."
+                : "You've been leaning on your \(foot) foot for \(held)."
+        case .limp:
+            return "Your steps have been uneven for \(held), with more weight on your \(foot) foot."
+        case .warmerFoot:
+            let gap = finding.contributions.first.map { String(format: "%.1f", abs($0.observed)) }
+            return "Your \(foot) foot has been running \(gap.map { "about \($0) °C " } ?? "")warmer than the other for \(held)."
+        }
     }
 }
 
@@ -233,10 +316,13 @@ enum ThermyxSuggestion {
         if let ambient, ambient >= 35 {
             return "It's hot. Take regular shade and water breaks, and keep the insoles on Cool or Auto."
         }
-        if let favoured = reading.favouredFoot, assessment.reasons.contains(where: { $0.hasPrefix("Load is") }) {
+        if assessment.causes.contains(.limp) {
+            return "Your steps have been uneven for a while. Slow down, check your shoes fit, and rest if something hurts."
+        }
+        if assessment.causes.contains(.unevenLoad), let favoured = assessment.asymmetryFoot ?? reading.favouredFoot {
             return "You're favouring your \(favoured.label.lowercased()) foot. If something hurts, rest and check your shoe fit."
         }
-        if let hotter = reading.hotterFoot, assessment.reasons.contains(where: { $0.contains("warmer than the other") }) {
+        if assessment.causes.contains(.warmerFoot), let hotter = assessment.asymmetryFoot ?? reading.hotterFoot {
             return "Your \(hotter.label.lowercased()) foot is running warmer. Check both insoles are seated flat and your shoes fit the same."
         }
         if let hottest, let ambient, hottest < 28, ambient < 18 {

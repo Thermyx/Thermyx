@@ -7,7 +7,7 @@ import Foundation
 struct RiskExplanation: Equatable {
     struct Signal: Equatable, Identifiable {
         enum Kind: String {
-            case footTemperature, ambient, steadiness, temperatureGap, loadGap, burnLimit, personalBaseline, trend
+            case footTemperature, ambient, steadiness, temperatureGap, loadGap, limp, burnLimit, personalBaseline, trend
         }
         let kind: Kind
         let title: String
@@ -41,6 +41,9 @@ struct RiskExplanation: Equatable {
     /// Builds the explanation for the pair as it stands.
     ///
     /// - Parameters:
+    ///   - asymmetry: What `AsymmetryMonitor` currently reports. When given, the
+    ///     left–right rows describe it (windowed, against the wearer's usual)
+    ///     and `sustainedTemperatureGap` / `sustainedLoadGap` are ignored.
     ///   - extras: Signals from layers outside the fixed risk engine (personal
     ///     baseline, trends), which may add caution but never lower a level.
     static func build(
@@ -51,6 +54,7 @@ struct RiskExplanation: Equatable {
         rssi: [Foot: Int],
         bothExpected: Bool,
         unit: TemperatureUnit,
+        asymmetry: AsymmetryStatus? = nil,
         extras: [Signal] = [],
         now: Date = .now
     ) -> RiskExplanation {
@@ -93,7 +97,9 @@ struct RiskExplanation: Equatable {
             )
         ]
 
-        if reading.hasBoth {
+        if reading.hasBoth, let asymmetry {
+            signals.append(contentsOf: Self.asymmetrySignals(asymmetry, reading: reading, unit: unit))
+        } else if reading.hasBoth {
             let gap = reading.temperatureAsymmetryC
             signals.append(Signal(
                 kind: .temperatureGap,
@@ -131,6 +137,46 @@ struct RiskExplanation: Equatable {
             confidenceReasons: reasons,
             nextStep: next
         )
+    }
+
+    /// The left–right rows when `AsymmetryMonitor` is in use: windowed values
+    /// against the wearer's own usual, and a plain statement of the rule.
+    static func asymmetrySignals(_ status: AsymmetryStatus, reading: BilateralReading, unit: TemperatureUnit) -> [Signal] {
+        let minutes = Int(AsymmetryConfig.enterSeconds / 60)
+        let metrics = status.metrics
+        func degrees(_ celsius: Double) -> String {
+            GapFormat.degrees(unit == .fahrenheit ? celsius * 9 / 5 : celsius)
+        }
+        let tempBar = unit == .fahrenheit ? (metrics?.tempBar ?? 1) * 9 / 5 : (metrics?.tempBar ?? 1)
+        let leanBar = Int(((metrics?.leanBar ?? AsymmetryConfig.leanEnter) * 100).rounded())
+
+        var leanRule = "Caution when you lean \(leanBar) points or more past your usual for \(minutes) of the last 5 minutes, standing or walking. Weight swinging from foot to foot as you walk doesn't count."
+        if let usual = metrics?.usualLean, abs(usual) >= 0.01 {
+            leanRule += " Your usual is \(GapFormat.points(usual * 100).lowercased())."
+        }
+        return [
+            Signal(
+                kind: .temperatureGap,
+                title: "Left–right temperature gap",
+                value: metrics?.tempGap.map { degrees($0) } ?? reading.temperatureAsymmetryC.map { degrees($0) },
+                rule: "Caution when one foot runs \(String(format: "%.1f", tempBar))° or more past your usual gap for \(minutes) of the last 5 minutes",
+                contributes: status.finding(.warmerFoot) != nil
+            ),
+            Signal(
+                kind: .loadGap,
+                title: "Left–right weight lean",
+                value: metrics?.lean.map { GapFormat.points($0 * 100) },
+                rule: leanRule,
+                contributes: status.finding(.lean) != nil
+            ),
+            Signal(
+                kind: .limp,
+                title: "Even stepping",
+                value: status.finding(.limp) != nil ? "Uneven" : "Even",
+                rule: "Caution when uneven loading plus uneven steadiness or a slower pace hold for \(minutes) of the last 5 minutes while walking",
+                contributes: status.finding(.limp) != nil
+            )
+        ]
     }
 
     /// How far to trust the current picture: fresh data, all channels

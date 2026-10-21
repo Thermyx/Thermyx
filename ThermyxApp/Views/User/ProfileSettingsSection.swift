@@ -8,6 +8,14 @@ struct ProfileSettingsSection: View {
     @State private var editing = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.section) {
+            profile
+            CloudBackupSection()
+        }
+        .sheet(isPresented: $editing) { editSheet }
+    }
+
+    private var profile: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.header) {
             SectionLabel("Your profile")
             ThermyxCard {
@@ -24,7 +32,7 @@ struct ProfileSettingsSection: View {
                         Spacer()
                         Button("Edit") { editing = true }
                             .font(ThermyxFont.rowTitle)
-                            .foregroundStyle(Thermyx.Ink.ice)
+                            .foregroundStyle(Thermyx.Ink.link)
                             .frame(minWidth: Thermyx.minimumTapTarget, minHeight: Thermyx.minimumTapTarget)
                     }
 
@@ -51,30 +59,31 @@ struct ProfileSettingsSection: View {
                         .foregroundStyle(Thermyx.Ink.textFaint)
                         .fixedSize(horizontal: false, vertical: true)
 
-                    Text("Your profile stays on this phone.")
+                    Text("Your profile stays on this phone unless you turn on Back up to my account, below.")
                         .font(ThermyxFont.captionSmall)
                         .foregroundStyle(Thermyx.Ink.textFaint)
                 }
             }
         }
-        .sheet(isPresented: $editing) {
-            NavigationStack {
-                ScrollView {
-                    AboutYouForm(name: $roles.profileName, settings: settings, health: health)
-                        .padding(.horizontal, Thermyx.Space.screen)
-                        .padding(.vertical, Thermyx.Space.m)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .background(Thermyx.Site.bg.ignoresSafeArea())
-                .navigationTitle("About you")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } }
-                }
+    }
+
+    private var editSheet: some View {
+        NavigationStack {
+            ScrollView {
+                AboutYouForm(name: $roles.profileName, settings: settings, health: health)
+                    .padding(.horizontal, Thermyx.Space.screen)
+                    .padding(.vertical, Thermyx.Space.m)
             }
-            .presentationDetents([.large])
-            .presentationBackground(Thermyx.Site.bg)
+            .scrollDismissesKeyboard(.interactively)
+            .background(Thermyx.Site.bg.ignoresSafeArea())
+            .navigationTitle("About you")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { editing = false } }
+            }
         }
+        .presentationDetents([.large])
+        .presentationBackground(Thermyx.Site.bg)
     }
 
     private var details: String {
@@ -120,7 +129,7 @@ struct AccountSection: View {
                 ThermyxDivider()
                 Button("Sign out") { account.signOut() }
                     .font(ThermyxFont.body)
-                    .foregroundStyle(Thermyx.Ink.ice)
+                    .foregroundStyle(Thermyx.Ink.link)
                     .frame(maxWidth: .infinity, minHeight: Thermyx.minimumTapTarget, alignment: .leading)
                     .padding(.horizontal, Thermyx.Space.xl)
                 ThermyxDivider()
@@ -142,7 +151,7 @@ struct AccountSection: View {
             Button("Delete account and data", role: .destructive) { Task { await delete() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Google will ask you to confirm. Your account, history, calibration and profile on this phone are deleted. This can't be undone.")
+            Text("Google will ask you to confirm. Your account, its cloud backup if you had one, and the history, calibration and profile on this phone are deleted. This can't be undone.")
         }
     }
 

@@ -62,7 +62,8 @@ final class RiskEngineTests: XCTestCase {
 
     func testAsymmetryNeverEscalatesPastCaution() {
         let pair = BilateralReading(left: reading(.left, footC: 30, balance: 0.3), right: reading(.right, footC: 36, balance: 0.7))
-        XCTAssertEqual(ThermyxRiskEngine.assess(pair).level, .caution)
+        XCTAssertEqual(ThermyxRiskEngine.assess(pair, sustainedTemperatureGap: true, sustainedLoadGap: true).level, .caution)
+        XCTAssertEqual(ThermyxRiskEngine.assess(pair).level, .normal, "A bare call reports nothing: sustained gaps come from AsymmetryMonitor")
     }
 
     func testPairTakesTheWorseFoot() {

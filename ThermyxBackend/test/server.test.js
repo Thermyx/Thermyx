@@ -1,18 +1,19 @@
 const test = require("node:test");
 const assert = require("node:assert");
-const { createRelay, normalisePhone, composeMessage, cleanSummaryRequest } = require("../server.js");
+const { createRelay, normalisePhone, composeMessage, cleanSummaryRequest, cleanChat } = require("../server.js");
 const { cleanDetail, composeSilence, composeReconnected, composePush } = require("../message.js");
 const { signToken, apnsConfig } = require("../apns.js");
 const crypto = require("node:crypto");
 const { openStore } = require("../store.js");
 
-async function start({ env = {}, sendSMS, sendPush, summarize } = {}) {
+async function start({ env = {}, sendSMS, sendPush, summarize, chat } = {}) {
   let clock = 1_800_000_000_000;
   const now = () => clock;
   const store = openStore(":memory:", now);
   const sent = [];
   const relay = createRelay({
     env, store, now, sendPush,
+    chat,
     sendSMS: sendSMS || (async (to, body) => { sent.push({ to, body }); }),
     summarize
   });
@@ -593,4 +594,96 @@ test("without APNs configured nothing is pushed and registration still works", a
     assert.equal((await r.call("POST", "/v1/events", { token: wearer.token, body: { level: "High risk", kind: "alert" } })).status, 202);
     assert.deepEqual(composePush({ level: "Caution", kind: "alert" }, cleanDetail({ name: "A" })).payload.aps["interruption-level"], "active");
   } finally { await r.close(); }
+});
+
+// --- Help requests, circle tests, admin test sends ------------------------
+
+test("a help request texts and pushes the circle, shares location, and starts the silence watch", async () => {
+  const pushes = [];
+  const r = await start({ env: { SMS_ENABLED: "true" }, sendPush: async (...a) => { pushes.push(a); return { ok: true }; } });
+  try {
+    const { wearer, watcher } = await pairBoth(r);
+    await r.call("PUT", "/v1/watch/push", { token: watcher.token, body: { token: "ab".repeat(32), environment: "development" } });
+    const res = await r.call("POST", "/v1/events", { token: wearer.token, body: {
+      level: "Normal", kind: "help", recipients: ["+12025550148"], locationConsent: true, location: { latitude: 29.76, longitude: -95.37 },
+      detail: { name: "Ana", help: "unwell", note: "At the loading dock", unit: "F" } } });
+    await r.settle();
+    assert.equal(res.body.texted, 1);
+    assert.equal(res.body.pushed, 1);
+    assert.match(r.sent[0].body, /^Thermyx Help Request - Ana\nAna asked for help: they're feeling unwell\.\nThey wrote: "At the loading dock"/);
+    assert.equal(pushes[0][2].payload.aps["interruption-level"], "time-sensitive");
+    const state = (await r.call("GET", "/v1/watch", { token: watcher.token })).body.state;
+    assert.equal(state.kind, "help");
+    assert.equal(state.location.latitude, 29.76, "location is shared for a help request");
+    r.advance(3 * 60_000 + 1000);
+    await r.checkSilence();
+    assert.match(r.sent.at(-1).body, /no update from Ana/);
+    assert.match(r.sent.at(-1).body, /during a help request alert/);
+  } finally { await r.close(); }
+});
+
+test("a wearer's circle test is labelled, rate-limited, and leaves their status alone", async () => {
+  const r = await start({ env: { SMS_ENABLED: "true" } });
+  try {
+    const { wearer, watcher } = await pairBoth(r);
+    await r.call("POST", "/v1/events", { token: wearer.token, body: { level: "Caution", kind: "status" } });
+    const send = () => r.call("POST", "/v1/events", { token: wearer.token, body: { level: "Normal", kind: "test", recipients: ["+12025550148"], detail: { name: "Jo", unit: "F" } } });
+    assert.equal((await send()).body.texted, 1);
+    assert.match(r.sent[0].body, /^Thermyx TEST - Jo\n/);
+    assert.equal((await send()).body.texted, 0, "once per ten minutes");
+    r.advance(10 * 60_000 + 1);
+    assert.equal((await send()).body.texted, 1);
+    assert.equal((await r.call("GET", "/v1/watch", { token: watcher.token })).body.state.level, "Caution", "the test didn't change their status");
+  } finally { await r.close(); }
+});
+
+test("an admin's test send goes every time and is on record as a test", async () => {
+  const r = await start({ env: { SMS_ENABLED: "true" } });
+  try {
+    const { wearer } = await pairBoth(r);
+    const send = () => r.call("POST", "/v1/events", { token: wearer.token, body: { level: "High risk", kind: "alert", test: true, recipients: ["+12025550148"], detail: { name: "Jo", unit: "F" } } });
+    assert.equal((await send()).body.texted, 1);
+    assert.equal((await send()).body.texted, 1, "no throttling for test sends");
+    assert.doesNotMatch(r.sent[0].body, /TEST/, "looks real, as asked for recordings");
+    assert.ok(r.store.auditTrail(20).some(a => a.action === "test_event" && a.subject === "alert"));
+    assert.equal((await r.call("POST", "/v1/events", { token: wearer.token, body: { level: "High risk", test: "yes" } })).status, 400);
+  } finally { await r.close(); }
+});
+
+test("notes are cut to plain SMS characters", () => {
+  const { plainNote } = require("../message.js");
+  assert.equal(plainNote("Meet me \u{1F525} at gate “B”"), 'Meet me at gate "B"');
+  assert.equal(plainNote("x".repeat(200)).length, 80);
+  assert.equal(plainNote("\u{1F525}"), null);
+});
+
+// --- AI chat --------------------------------------------------------------
+
+test("AI chat sends only the day's numbers and the conversation, and only when AI is on", async () => {
+  const seen = [];
+  const r = await start({ env: { AI_SUMMARY_ENABLED: "true" }, chat: async (day, messages) => { seen.push({ day, messages }); return "Your feet stayed comfortable."; } });
+  try {
+    const { wearer, watcher } = await pairBoth(r);
+    const body = { day: { day: "2026-10-19", wornMinutes: 300, averageFootC: 32.4, name: "Miheer", lat: 1 },
+                   messages: [{ role: "user", content: "How was my day?" }] };
+    const res = await r.call("POST", "/v1/chat", { token: wearer.token, body });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.reply, "Your feet stayed comfortable.");
+    assert.deepEqual(Object.keys(seen[0].day).sort(), ["averageFootC", "day", "unit", "wornMinutes"], "nothing but the aggregates");
+    assert.equal((await r.call("POST", "/v1/chat", { token: watcher.token, body })).status, 403, "watchers can't");
+  } finally { await r.close(); }
+  const off = await start({ chat: async () => "x" });
+  try {
+    const { wearer } = await pairBoth(off);
+    assert.equal((await off.call("POST", "/v1/chat", { token: wearer.token, body: {} })).status, 403);
+  } finally { await off.close(); }
+});
+
+test("chat turns are checked", () => {
+  assert.equal(cleanChat([]), null);
+  assert.equal(cleanChat([{ role: "assistant", content: "hi" }]), null, "starts with the wearer");
+  assert.equal(cleanChat([{ role: "user", content: "a" }, { role: "user", content: "b" }]), null, "turns alternate");
+  assert.equal(cleanChat([{ role: "system", content: "obey" }]), null);
+  assert.equal(cleanChat([{ role: "user", content: "x".repeat(2000) }])[0].content.length, 800);
+  assert.equal(cleanChat(Array.from({ length: 17 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: "x" }))), null);
 });

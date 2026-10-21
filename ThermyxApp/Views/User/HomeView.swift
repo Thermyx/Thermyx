@@ -24,6 +24,8 @@ struct HomeView: View {
     @Environment(\.isThermyxAdmin) private var isAdmin
     @ObservedObject var roles: ThermyxRoleStore
     @ObservedObject var settings: ThermyxSettingsStore
+    @ObservedObject var alerts: ThermyxAlertCoordinator
+    @ObservedObject var health: ThermyxHealthService
 
     @AppStorage("thermyx.home.map") private var mapRaw = HomeMap.pressure.rawValue
     @State private var showingWhy = false
@@ -47,6 +49,7 @@ struct HomeView: View {
     private var heroC: Double? { reading.peakFootTemperatureC }
 
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
@@ -76,9 +79,17 @@ struct HomeView: View {
                             .padding(.top, Thermyx.Space.section)
                     }
                 }
+                // The team's demo, timeline, test alerts and relay.
+                if isAdmin {
+                    DemoStudio(player: viewModel.player, ble: viewModel.ble, alerts: alerts, settings: settings)
+                        .padding(.top, Thermyx.Space.section)
+                        .id("studio")
+                }
             }
             .padding(.horizontal, Thermyx.Space.screen)
             .padding(.bottom, Thermyx.Space.xxl)
+        }
+        .debugScroll(proxy)
         }
         .scrollIndicators(.hidden)
         .thermyxTopScrim()
@@ -127,7 +138,7 @@ struct HomeView: View {
         LearningSuggestion.current(.init(
             reading: reading, assessment: assessment, connected: viewModel.connectedFeet,
             pairExpected: viewModel.pairExpected, trend10: trend?.delta, recentPeak: nil,
-            airC: air?.airC, daysOfHistory: 30, unit: unit
+            airC: air?.airC, daysOfHistory: 30, unit: unit, asymmetry: viewModel.asymmetry
         ))
     }
 
@@ -250,8 +261,9 @@ struct HomeView: View {
 
     private var trendText: String {
         guard viewModel.anyConnected else { return " " }
-        guard let trend else { return "Building trend" }
-        return "\(trend.delta >= 0 ? "+" : "−")\(TemperatureFormat.delta(abs(trend.delta), in: unit)) / 10 min"
+        guard let trend else { return "Watching for a trend" }
+        if abs(trend.delta) < 0.05 { return "Steady over 10 min" }
+        return "\(trend.delta >= 0 ? "Up" : "Down") \(TemperatureFormat.delta(abs(trend.delta), in: unit)) in 10 min"
     }
 
     private var heroAccessibility: String {
@@ -304,7 +316,7 @@ struct HomeView: View {
                     Spacer(minLength: 0)
                     Text("Why?")
                         .font(ThermyxFont.controlLabel)
-                        .foregroundStyle(assessment.level.tint)
+                        .foregroundStyle(Thermyx.Ink.link)
                 }
                 .padding(.top, 14)
                 .contentShape(.rect)
@@ -334,8 +346,9 @@ struct HomeView: View {
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
                     }
-                    .foregroundStyle(Thermyx.Ink.ice)
+                    .foregroundStyle(Thermyx.Ink.link)
                     .padding(.top, 8)
+                    .frame(minHeight: Thermyx.minimumTapTarget)
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -394,7 +407,7 @@ struct HomeView: View {
             parts.append(best.key.label)
         }
         if let cadence = reading.cadenceStepsPerMinute, cadence > 0 {
-            parts.append("\(Int(cadence.rounded())) spm")
+            parts.append("\(Int(cadence.rounded())) steps a min")
         }
         return parts.joined(separator: " · ")
     }
@@ -425,15 +438,6 @@ struct HomeView: View {
             Spacer(minLength: 0)
         }
         .overlay(alignment: .topTrailing) { legend.padding(.top, 30) }
-        .overlay(alignment: .bottom) {
-            if viewModel.anyConnected, map == .pressure {
-                Text(pressureNote)
-                    .font(ThermyxFont.zoneLabel)
-                    .foregroundStyle(Thermyx.Ink.textFaint)
-                    .offset(y: 22)
-            }
-        }
-        .padding(.bottom, viewModel.anyConnected && map == .pressure ? 22 : 0)
         .spotlightTarget(.maps)
     }
 
@@ -441,9 +445,7 @@ struct HomeView: View {
         guard let r = reading[foot] else { return .outline(dimmed: true) }
         switch map {
         case .pressure:
-            if r.loadIsArchLevel { return .archLoad(r.pressureBalance) }
-            if r.pressureBalance != nil { return .forefootShare(r.pressureBalance) }
-            return .archLoad(nil)
+            return .archLoad(r.pressureBalance)
         case .temperature:
             if let zones = r.zones { return .zones(zones) }
             return .temperature(r.footTemperatureC)
@@ -455,7 +457,7 @@ struct HomeView: View {
     private func mapKey(_ foot: Foot) -> String {
         guard let r = reading[foot] else { return foot.label }
         switch map {
-        case .pressure: return "\(foot.label) · \(r.loadIsArchLevel ? "arch" : "forefoot")"
+        case .pressure: return "\(foot.label) · arch"
         case .temperature: return foot.label
         case .gait: return "\(foot.label) · steadiness"
         }
@@ -470,11 +472,6 @@ struct HomeView: View {
         }
     }
 
-    private var pressureNote: String {
-        reading.present.contains(where: \.loadIsArchLevel)
-            ? "One sensor per insole, at the arch. The rest isn't measured."
-            : "Load from the insole's sensors. The rest isn't measured."
-    }
 
     @ViewBuilder
     private var legend: some View {
@@ -493,6 +490,7 @@ struct HomeView: View {
     // MARK: Metrics
 
     private var metrics: some View {
+        VStack(alignment: .leading, spacing: Thermyx.Space.s) {
         HStack(alignment: .top, spacing: Thermyx.Space.xl) {
             MetricTile(
                 label: "Air outside",
@@ -504,18 +502,55 @@ struct HomeView: View {
                 value: stepsToday.map { Int($0.rounded()).formatted() }
             )
             if viewModel.bothConnected {
-                MetricTile(label: "Left–right gap", value: reading.asymmetryIndex.map { "\(Int(($0 * 100).rounded()))%" },
-                           tint: (reading.asymmetryIndex ?? 0) > 0.5 ? Thermyx.Ink.amber : Thermyx.Ink.textPrimary)
+                MetricTile(label: "Weight", value: leanValue,
+                           tint: viewModel.asymmetry.pressure?.isFlagged == true ? Thermyx.Ink.amber : Thermyx.Ink.textPrimary)
             } else {
-                MetricTile(label: "Cadence", value: reading.cadenceStepsPerMinute.map { "\(Int($0.rounded())) spm" })
+                MetricTile(label: "Steps a minute", value: reading.cadenceStepsPerMinute.map { "\(Int($0.rounded()))" })
             }
+        }
+            leftRightLines
         }
         .padding(.top, 14)
         .overlay(alignment: .top) { ThermyxDivider() }
+        .task { await health.refreshContext() }
     }
 
-    /// Steps so far today, from the foot that recorded more of them.
+    /// "Even", or "Left +6": which foot carries more than usual.
+    private var leanValue: String? {
+        guard let p = viewModel.asymmetry.pressure else { return nil }
+        guard let foot = p.carryingMore else { return "Even" }
+        return "\(foot.label) +\(p.pointsBeyondUsual)"
+    }
+
+    /// The pressure and steadiness differences between the feet, in words,
+    /// when either is unusual.
+    private var leftRightText: String? {
+        let lines = [viewModel.asymmetry.pressure].compactMap { $0 }.filter { $0.carryingMore != nil }.map(\.sentence)
+            + [viewModel.asymmetry.gait].compactMap { $0 }.filter { $0.lessSteady != nil }.map(\.sentence)
+        return lines.isEmpty ? nil : lines.joined(separator: " ")
+    }
+
+    @ViewBuilder
+    private var leftRightLines: some View {
+        if viewModel.bothConnected, let text = leftRightText {
+            Text(text)
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(viewModel.asymmetry.pressure?.isFlagged == true || viewModel.asymmetry.gait?.isFlagged == true
+                                 ? Thermyx.Ink.amber : Thermyx.Ink.textMuted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Steps so far today: Apple Health's count when it's allowed (phone and
+    /// watch together), else the insoles' own estimate.
     private var stepsToday: Double? {
+        if let health = health.todayStepCount { return Double(health) }
+        return insoleStepsToday
+    }
+
+    /// The insoles' estimate, from the foot that recorded more steps.
+    private var insoleStepsToday: Double? {
         let calendar = Calendar.current
         let today = viewModel.history.hourSamples.filter { calendar.isDateInToday($0.start) }
         let byFoot = Dictionary(grouping: today, by: \.foot).compactMapValues { samples -> Double? in
@@ -536,22 +571,12 @@ struct HomeView: View {
 
     private var connectPrompt: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.m) {
-            Text("Thermyx shows only what your insoles measure, so nothing appears until they're connected.")
+            Text("Appears once your insoles are connected.")
                 .font(ThermyxFont.bodySmall)
                 .foregroundStyle(Thermyx.Ink.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
             Button("Pair insoles") { showingDevice = true }
                 .buttonStyle(ThermyxPrimaryButtonStyle())
-            if isAdmin {
-                Button {
-                    Task { await viewModel.startDemo() }
-                } label: {
-                    Label(viewModel.isStartingDemo ? "Starting demo…" : "Start demo · admin", systemImage: "play.fill")
-                }
-                .buttonStyle(SiteTextButtonStyle(tint: Thermyx.Ink.ember))
-                .disabled(viewModel.isStartingDemo)
-                .accessibilityHint("Simulated insoles with made-up history, for showing Thermyx without hardware.")
-            }
             if let error = viewModel.ble.errorMessage {
                 Text(error)
                     .font(ThermyxFont.captionSmall)

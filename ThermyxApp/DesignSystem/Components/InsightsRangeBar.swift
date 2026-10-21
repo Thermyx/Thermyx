@@ -31,40 +31,33 @@ struct InsightsRangeTabs: View {
     }
 }
 
-/// Under the title: whether periods follow the calendar or roll, which foot
-/// to show, and a line saying what the window actually is.
-///
-/// The calendar switch sits with the range because together they answer one
-/// question, which stretch of time am I looking at.
+/// Under the title: which day (or week, or month) to look at, picked with
+/// the system date picker, and which foot.
 struct InsightsRangeBar: View {
     @Binding var range: InsightsRange
-    @Binding var style: InsightsPeriodStyle
+    @Binding var date: Date
     /// Nil hides the foot selector — used when only one insole has history,
     /// where offering a choice between one option would be noise.
     var footFilter: Binding<FootFilter>?
     var availableFeet: [Foot] = []
 
-    private var isStandard: Bool { style == .standard }
+    private var isToday: Bool { Calendar.current.isDateInToday(date) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.s) {
-            HStack(spacing: Thermyx.Space.m) {
-                Text(explanation)
-                    .font(ThermyxFont.captionSmall)
-                    .foregroundStyle(Thermyx.Ink.textMuted)
-                Spacer(minLength: 0)
-                Toggle(isOn: Binding(get: { isStandard }, set: { style = $0 ? .standard : .rolling })) {
-                    Text("Calendar")
-                        .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Ink.textMuted)
+            HStack(spacing: Thermyx.Space.s) {
+                DatePicker("Date", selection: $date, in: ...Date.now, displayedComponents: .date)
+                    .datePickerStyle(.compact)
+                    .labelsHidden()
+                    .tint(Thermyx.Ink.ice)
+                    .accessibilityLabel("Show a \(range.label.lowercased()) around this date")
+                if !isToday {
+                    Button("Today") { withAnimation(SiteMotion.settle) { date = .now } }
+                        .font(ThermyxFont.controlLabel)
+                        .foregroundStyle(Thermyx.Ink.link)
+                        .frame(minHeight: Thermyx.minimumTapTarget)
                 }
-                .toggleStyle(.switch)
-                .tint(Thermyx.Ink.signal)
-                .fixedSize()
-                .accessibilityLabel("Calendar periods")
-                .accessibilityHint(isStandard
-                    ? "Aligned to the calendar. Turn off for a rolling window."
-                    : "A rolling window. Turn on to align to the calendar.")
+                Spacer(minLength: 0)
             }
 
             if let footFilter, availableFeet.count > 1 {
@@ -76,18 +69,6 @@ struct InsightsRangeBar: View {
                 )
                 .fixedSize()
             }
-        }
-    }
-
-    /// Says what the current combination actually means.
-    private var explanation: String {
-        switch (range, style) {
-        case (.day, .standard): return "Since midnight today"
-        case (.week, .standard): return "Since the start of this week"
-        case (.month, .standard): return "Since the first of the month"
-        case (.day, .rolling): return "The last 24 hours"
-        case (.week, .rolling): return "The last 7 days"
-        case (.month, .rolling): return "The last 30 days"
         }
     }
 }

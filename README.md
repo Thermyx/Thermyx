@@ -29,15 +29,18 @@ A single insole can only compare a foot against its own past. Two can compare
 them against each other *now*, which is faster and far more specific. The
 `BilateralReading` and `BalanceDetailView` surface:
 
-- temperature gap between feet, over time;
-- load gap, in percentage points of forefoot share;
-- gait-stability gap;
+- temperature difference between feet, over time;
+- pressure difference at the arch (the one pressure sensor; there is no
+  forefoot reading);
+- steadiness difference (a limp shows here as a gap that holds for minutes);
 - an `asymmetryIndex` combining them, and which foot is consistently warmer or
   more loaded across a window.
 
-A gap that holds for **two minutes** raises **caution on its own** — favouring
-one foot is both a fit problem and a fatigue signal. Shorter gaps are ordinary
-walking noise and are ignored. It never escalates past caution by itself: a
+Only **heavy leaning** on one foot or a **limp** raises **caution on its own**
+(`Models/ML/AsymmetryMonitor.swift`): it needs 3 minutes of evidence in the
+last 5, judged against the wearer's own usual, so ordinary walking, where
+weight swaps feet every step, never trips it. A lean or limp only tells the
+wearer; it isn't texted to the circle. It never escalates past caution by itself: a
 difference between feet is not the same kind of evidence as a foot that is
 simply too hot.
 
@@ -89,6 +92,23 @@ simply too hot.
   "Simulated · paused" instead of "Not connected". A demo can't tick while iOS
   has the app suspended; real insoles keep reporting through Bluetooth's
   background mode.
+- **Help without 911.** Safety → "Ask my circle for help": a preset (Need
+  water, Can't walk well, Come get me, Feeling unwell) and an 80-character note
+  in plain SMS characters; it texts and pushes the circle (relay kind `help`),
+  with the location when shared, and starts the silence watch. SOS and help
+  texts now say what led up to them ("Before this: High risk for 14 minutes.
+  Last check-in: 4:31 PM.").
+- **Test my circle.** Safety → "Send a test alert to my circle": labelled TEST,
+  "No action needed", once per 10 minutes (relay kind `test`; it never changes
+  the wearer's status).
+- **Time Sensitive.** High risk, Critical, SOS and help notifications (the
+  wearer's and watchers', local and push) are Time Sensitive, so they break
+  through Focus on the paid build (entitlement in `ThermyxApp.Push.entitlements`).
+- **Widgets.** Besides the status widget: **Readiness** (small, medium, Lock
+  Screen rectangular: "Typical for you / Warmer than usual" with the usual
+  range and a dot for now) and **Safety** (I'm OK in one tap, through
+  `CheckInIntent` in the app's process; SOS opens `thermyx://sos`, Safety's
+  911 confirmation, and never calls or sends on its own).
 - **Trusted circle handoff.** Contacts are texted, and approved watchers see a
   status card, with the same facts: the wearer's chosen name, level, which
   foot (zone only from boards that sense it), its temperature at the insole
@@ -152,8 +172,7 @@ ThermyxApp/
     FootOutline.swift   The real left and right foot outlines (v2 design).
     Components/FootMap  Foot maps: only measured values on live screens.
   Models/             Readings, risk levels, roles, contacts, units, the
-                      Learn article model, and ThermalSimulation (the
-                      Simulator's model).
+                      Learn article model, recovery and readiness.
   Services/           BLE ingestion, settings, retained history, HealthKit,
                       weather, alert delivery, widgets and Live Activity.
   ViewModels/         ThermyxViewModel (live state), InsightsDigest (chart
@@ -161,7 +180,6 @@ ThermyxApp/
   Views/
     Onboarding/       The interactive insole and sign-in, profile, About you,
                       insoles, calibration.
-    Simulator/        The Thermal Safety Simulator tab.
     User/             Home, Insights, Learn and the article reader, Safety,
                       Device, Advanced, the spotlight tutorial.
     Trusted/          Watch, Insights, Settings.
@@ -179,7 +197,7 @@ Shared/               Types shared by the app and the widget extension:
                       outline and colour scales, and every widget view.
 ```
 
-**Navigation.** Five tabs: Home, Insights, Learn, Simulator, Safety (Device is
+**Navigation.** Four tabs: Home, Insights, Learn, Safety (Device is
 pushed from Safety's gear). The thermal control sits above the tab bar on every
 wearer screen: one button that steps Auto → Cool → Heat → Off (touch and hold
 for all four; taps reach the insoles only once the wearer stops tapping, so
@@ -227,8 +245,7 @@ Without the plist the app builds, but nobody can sign in.
   phone, as the privacy policy says.
 - **Admins** (`ThermyxAdmins` in the same file) are the only accounts that see
   test tools: the single-sensor board and the relay (Relay Mode), including
-  during onboarding. There is no fake data for any account; simulated
-  conditions are in the Simulator tab, labelled as such, for everyone.
+  during onboarding, and the **Demo studio** on Home (below).
 - Safety → Device → Account has Sign out and Delete account (which deletes the
   Firebase user and revokes Google access, as App Review requires).
 - In the simulator without a plist, skip sign-in with the preview harness
@@ -303,6 +320,8 @@ Use the `-ThermyxUIPreview` flag with one of these states:
   `-ThermyxRecoveryHold <seconds>` shortens the hold), `readiness`,
   `safetyPlan` (Insights, scrolled to them)
 - Trusted circle: `circleSharing` ("What your circle gets" on Safety)
+- Help and studio: `helpRequest` (Safety's Ask for help), `studioPlaying`
+  (with `-ThermyxAdmin`: Hot shift playing at ×30)
 
 The harness seeds only synthetic readings and fictional people. Its phone
 numbers are from NANPA's reserved `555-01xx` fictional range; they cannot
@@ -402,10 +421,9 @@ checked on the iOS Simulator. This is **debug builds only**: the entry points
 (`startDemoMode`, `startFakeInsoles`) are compiled out of Release, and nothing
 in the app lets an account turn them on.
 
-Admin Demo Mode, the fake insole, the watcher "sample shift" and the fake
-calibration recording were removed in October 2026. Simulated conditions now
-live in the **Simulator** tab, for everyone and clearly labelled; admins test
-with Relay Mode and real hardware.
+The Simulator tab was removed in October 2026; simulated conditions now live
+in the admin **Demo studio** on Home, and the onboarding ends on a screen
+recording of the app (`Resources/Media/onboarding-walkthrough.mp4`).
 
 ### Retiring the harness entirely
 
@@ -581,13 +599,9 @@ no EU scale.
   for temperature, pressure and gait play through the chosen day, week or
   month, worn time only (10-minute, hourly or daily frames), with play/pause
   and a scrubber. Trends only, from the same single values as Home.
-- **Demo mode for admins**: Advanced → Admin → Demo mode (or *Start demo* on
-  Home with no insoles connected). Works in every build, admin accounts only.
-  The real history is set aside in memory and never overwritten; Exit demo
-  restores it.
-- **Simulator**: conditions in one panel with Weather / Activity / Shoes / You
-  / Insoles tabs, recovery actions as chips under the readout, and "How the
-  simulator works" folded.
+- **Demo mode for admins**: the Demo studio on Home. Works in every build,
+  admin accounts only. The real history is set aside in memory and never
+  overwritten; Exit demo restores it.
 - **Insights**: heat exposure as bars (hourly on Day, daily on Week/Month,
   coloured by peak, dashed 38° line), an Activity card (steps, sitting,
   standing, walking), a weekly report with this week against last (`.week`),
@@ -639,15 +653,35 @@ no EU scale.
   declined, Open Settings goes to Thermyx's page; Apple Health opens the
   Health app; Bluetooth that is off gets Turn On. Safety → Device lists them
   all. They are read again whenever the app returns to the front.
-- **AI Insights** (`aiInsightsEnabled`, off by default) gates the daily AI
-  summary in Insights and the end-of-session summary notification. Requests
-  go to the relay, which calls Anthropic's Claude API with its own key
-  (`ThermyxBackend`, `POST /v1/summary`).
+- **AI Insights** (`aiInsightsEnabled`, off by default;
+  `Views/User/AIInsightsView.swift`) is the card at the top of Learn. You pick
+  a day, see exactly what will be sent, confirm, then read that day's summary
+  and ask follow-up questions in a chat. Requests go to the relay, which calls
+  Anthropic's Claude API with its own key (`POST /v1/summary`, `POST /v1/chat`,
+  60 chat turns an hour). On a day the insoles were worn, a notification at
+  **8:30 pm local** opens that day's insights.
+- **Insights date and range**: Day / Week / Month plus a date picker (and a
+  Today button); every detail screen follows the chosen date. Steps come from
+  Apple Health when it's allowed, otherwise from the insoles.
+- **Charts** (`ThermyxTimeSeriesChart`, Swift Charts): touch and hold to
+  read a value, pinch to zoom in (up to 12×) and scroll along, "Show all" to
+  zoom back out. With both feet on one chart, left is white and right is
+  lavender, solid lines, with a legend.
+- **Streak flame** (`Components/StreakFlame.swift`): grows from day 1 to day
+  7, then changes colour at 14, 30, 60 and 100 days; it flickers gently
+  (still with Reduce Motion).
 - **Charts are coloured by value** (`ChartValueScale` in
   `Components/ThermyxCharts.swift`): temperature on the foot maps' thermal
   ramp, load on the pressure maps' jet ramp, gaps and rates on diverging
   scales, steadiness from ember to ice. A line's gradient is stretched over
   its own range, so each point sits on its colour on the y axis.
+- **Buttons that are only words** are iOS blue (`Thermyx.Ink.link`), so they
+  read as tappable without a box: use `.buttonStyle(.thermyxLink)`
+  (`ThermyxLinkButtonStyle`) or `.foregroundStyle(Thermyx.Ink.link)`. The app's
+  tint is the same blue, so toolbar buttons and links match. Anything that is
+  a main action keeps a filled or outlined slab (`ThermyxPrimaryButtonStyle`,
+  `ThermyxSecondaryButtonStyle`). Plain data (numbers, status words) is never
+  blue. Every tappable thing is at least 44 pt.
 - **Spacing** follows one rhythm (`Thermyx.Space`): 10 above a tab title, 20
   under it, 12 from a section's title to its content, 32 between sections,
   24 between groups on a form.
@@ -672,38 +706,54 @@ tutorial on Home. A watcher goes from Profile to who they watch.
 - **Calibration** (`Views/Onboarding/Calibration.swift`, design O4): sit, stand
   and walk for 30 seconds each, indoors then outdoors, shown as a table. The
   live maps show only what the insoles measure. The readouts fill in live:
-  foot temperature, rate of change (dT/dt, a least-squares slope over 10 s),
-  accumulated change (∫ dT/dt dt, trapezoid rule), load, cadence and walking
-  stability. Heating and cooling pause while it records. The model learns
-  usual temperatures indoors and out, each step's dT/dt and ∫, load, cadence,
-  and a walking-steadiness profile (`Models/ThermalCalculus.swift`).
+  foot temperature, arch pressure and steadiness. Heating and cooling pause
+  while it records. The model learns usual temperatures indoors and out, how
+  you stand and walk, and a walking-steadiness profile (`Models/ML/`).
 - Calibration's **Before you start** checklist is folded to one row that
-  says how many checks pass, and a strip of live readings (each foot, dT/dt,
-  load or cadence) stays pinned above the buttons.
+  says how many checks pass, and a strip of live readings stays pinned above
+  the buttons.
 - **Tutorial** (`Views/User/SpotlightTutorial.swift`, design O5): dims Home
   except one control at a time, and for the Temperature map tab and the mode
   button waits for the wearer to try it. It runs once after onboarding;
   replay it from Safety → Device.
 
-## Simulator
+## Demo studio (admins)
 
-The **Simulator** tab (`Views/Simulator`, `Models/ThermalSimulation.swift`) is
-an educational sandbox: pick a scenario (job site, race pace, winter patrol,
-wet boots, ruck march, desk day) or set air temperature, humidity, sun,
-activity, footwear and fit, pack weight, acclimatization, favouring a foot,
-the simulated insoles' mode and target, connection, a sensor fault and the
-battery, and apply recovery actions. Each simulated minute, a simple
-illustrative model moves the feet; everything after that is the app's real
-logic: `ThermyxRiskEngine` and `PersonalLayer` decide the level, the heat
-lockout works as on Home, and Auto, Cool, Heat and the 40 °C burn cutoff
-behave as the firmware does. The simulated insoles report only what real ones
-measure (foot temperature, one arch load, motion). A passive twin runs
-alongside, so the chart compares the same feet with and without Thermyx.
-Every screen is labelled Simulated, and nothing is sent.
+On Home, below the maps, admin accounts get one panel for everything a demo or
+a video needs (`Views/User/DemoStudioView.swift`):
+
+- **Demo**: Start runs the simulated pair (a month of made-up history behind
+  Insights; real history is set aside and comes back on exit). Exit lives
+  only on the orange demo banner.
+- **Timeline** (`Services/DemoScript.swift`, `DemoPlayer.swift`): place events
+  on a 1–5 minute timeline, edited to the second. Each timeline second plays
+  20 seconds of the simulated pair (`DemoPlayer.pace`). Lasting events
+  (heat builds, cooling fails, cold exposure, limp, heavy lean, an insole
+  dropping out, the phone going quiet) set the simulated pair's conditions
+  while the playhead is over them; one-off events (battery 9% / 4%, SOS, help
+  request, I'm OK) fire as it passes. Presets: Hot shift, Limp, Battery dies,
+  SOS. Drag the track to scrub: the pair is replayed from the start with a
+  seeded generator, so a moment reached by scrubbing is the same as one
+  reached by playing, and one-off events passed while scrubbing don't fire.
+  Readings are stamped on the timeline's clock, so detectors that need minutes
+  of evidence see the story's minutes.
+- **Alerts**: pick test recipients (teammates in your trusted contacts), then
+  either route the timeline's alerts to them as it plays, or press a test:
+  this phone's High / Critical notification, the Critical takeover, the Lock
+  Screen at Critical, and to the circle a High-risk or Critical alert,
+  "still Critical after 2 min", recovering, back to Normal, SOS, help request,
+  check-in, or "go quiet" (holds posts so the relay's silence text fires).
+  These look **real** (chosen for recordings), so they only text the picked
+  recipients and ask first; the relay keeps them on record as tests
+  (`test: true`, audit "test_event") and doesn't throttle them. Every
+  approved watcher of the relay account gets the pushes.
+- **Relay**: the connection card.
 
 ## Learn
 
-Eight newspaper-style articles (`Resources/Content/learning-articles.json`):
+Eight newspaper-style articles (`Resources/Content/learning-articles.json`),
+written to be read by anyone, with the read time worked out from the words
+(200 a minute):
 what to do when a foot overheats, footwear fit and pressure, recovery after
 heat, unreliable sensor data, heat illness, cold feet and frostbite,
 hydration, and acclimatization. Each has a photograph, the disclaimer that

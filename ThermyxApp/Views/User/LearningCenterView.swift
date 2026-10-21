@@ -23,10 +23,17 @@ struct LearnTab: View {
                         }
                     case .photoCredits:
                         PhotoCreditsView()
+                    case .aiInsights(let day):
+                        AIInsightsView(settings: settings, day: day ?? .now)
                     default:
                         EmptyView()
                     }
                 }
+        }
+        // The evening notification: straight to that day's AI Insights.
+        .onReceive(ThermyxDeepLink.shared.$insightsDay.compactMap { $0 }) { day in
+            path = [.aiInsights(day)]
+            ThermyxDeepLink.shared.insightsDay = nil
         }
     }
 }
@@ -61,7 +68,8 @@ struct LearningCenterView: View {
             recentPeak: recentPeak,
             airC: air?.airC,
             daysOfHistory: days,
-            unit: unit
+            unit: unit,
+            asymmetry: viewModel.asymmetry
         ))
     }
 
@@ -80,6 +88,10 @@ struct LearningCenterView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 masthead
+                if isTab, let settings {
+                    AIInsightsEntry(settings: settings)
+                        .padding(.top, Thermyx.Space.titleGap)
+                }
                 if articles.isEmpty {
                     ThermyxEmptyState(title: "Articles unavailable", message: "Learn's articles didn't load. Reinstalling the app restores them.",
                                       systemImage: "newspaper")
@@ -131,7 +143,7 @@ struct LearningCenterView: View {
                 .tracking(ThermyxTracking.screenTitle)
                 .foregroundStyle(Thermyx.Ink.textPrimary)
                 .accessibilityAddTraits(.isHeader)
-            Text("Short, sourced reads on heat, cold and your feet. Educational, not medical advice.")
+            Text("Short, sourced reads on heat, cold and your feet.")
                 .font(ThermyxFont.bodySmall)
                 .foregroundStyle(Thermyx.Ink.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -161,7 +173,7 @@ struct LearningCenterView: View {
                 .font(.custom(ThermyxFont.Family.medium, size: 14, relativeTo: .subheadline))
                 .foregroundStyle(selected ? Thermyx.Ink.onPrimary : Thermyx.Ink.textPrimary)
                 .padding(.horizontal, 16)
-                .frame(height: 38)
+                .frame(height: 44)
                 .background(selected ? Thermyx.Ink.textPrimary : .clear, in: Capsule())
                 .overlay { Capsule().strokeBorder(selected ? .clear : Thermyx.Site.hairlineStrong, lineWidth: 1) }
                 .contentShape(Capsule())
@@ -172,14 +184,14 @@ struct LearningCenterView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Every article cites its sources in APA style at the end. Thermyx Learn is educational and is not a medical diagnosis tool. In an emergency, call 911.")
+            Text("Educational, not a diagnosis tool. In an emergency, call 911.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
             NavigationLink(value: InsightsDestination.photoCredits) {
                 Text("Photo credits")
                     .font(ThermyxFont.controlLabel)
-                    .foregroundStyle(Thermyx.Ink.ice)
+                    .foregroundStyle(Thermyx.Ink.link)
                     .frame(minHeight: 44)
             }
             .buttonStyle(.plain)
@@ -318,7 +330,7 @@ struct Kicker: View {
 struct PhotoCreditsView: View {
     var body: some View {
         ThermyxDetailScreen(title: "Photo credits", backTitle: "Learn") {
-            Text("Photographs come from Wikimedia Commons. Public-domain images are U.S. government works. Images under Creative Commons licences are shown cropped and resized.")
+            Text("Photographs from Wikimedia Commons. Cropped where noted.")
                 .font(ThermyxFont.bodySmall)
                 .foregroundStyle(Thermyx.Ink.textMuted)
                 .fixedSize(horizontal: false, vertical: true)

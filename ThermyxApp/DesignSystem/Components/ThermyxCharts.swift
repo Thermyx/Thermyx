@@ -24,8 +24,9 @@ enum ThermyxChartStyle {
     static func domain(for values: [Double], minimumSpan: Double = 4) -> ClosedRange<Double> {
         guard let low = values.min(), let high = values.max() else { return 0...1 }
         let span = max(high - low, minimumSpan)
-        let padding = span * 0.18
-        return (low - padding)...(high + padding)
+        let mid = (low + high) / 2
+        let half = span / 2 + span * 0.18
+        return (mid - half)...(mid + half)
     }
 
     /// Axis labels in Archivo Narrow, tracked and faint.
@@ -431,48 +432,6 @@ struct FlowRow: Layout {
 
 // MARK: - Progress bar
 
-/// The labelled pressure-distribution bars. With a value scale, the bar
-/// fills along it, so a heavier share reads warmer, as on the pressure map.
-struct LabeledProgressBar: View {
-    let label: String
-    /// 0...1
-    let value: Double
-    let tint: Color
-    var scale: ChartValueScale?
-
-    private var fill: AnyShapeStyle {
-        guard let scale else { return AnyShapeStyle(tint) }
-        return AnyShapeStyle(scale.horizontal(from: 0, to: max(value, 0.001) * 100))
-    }
-
-    private var valueTint: Color { scale?.color(at: value * 100) ?? tint }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(label)
-                    .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.axisLabel, color: Thermyx.Ink.textSupporting)
-                Spacer()
-                Text("\(Int((value * 100).rounded()))%")
-                    .narrowLabel(ThermyxFont.statusPill, tracking: ThermyxTracking.axisLabel, color: valueTint)
-                    .monospacedDigit()
-            }
-            GeometryReader { proxy in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Thermyx.Tint.track)
-                    Capsule()
-                        .fill(fill)
-                        .frame(width: max(0, min(1, value)) * proxy.size.width)
-                }
-            }
-            .frame(height: 9)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityValue("\(Int((value * 100).rounded())) percent")
-    }
-}
-
 // MARK: - Formatting
 
 /// Left/right gaps are stored as left minus right. Readers should not have to
@@ -485,7 +444,7 @@ enum GapFormat {
 
     static func points(_ value: Double) -> String {
         if abs(value) < 0.5 { return "Even" }
-        return String(format: "%@ +%.0f pts", value > 0 ? "Left" : "Right", abs(value))
+        return String(format: "%@ +%.0f%%", value > 0 ? "Left" : "Right", abs(value))
     }
 }
 

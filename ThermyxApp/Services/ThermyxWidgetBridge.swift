@@ -14,6 +14,12 @@ import WidgetKit
 /// it stays live while the insoles are connected.
 @MainActor
 final class ThermyxWidgetBridge {
+    /// Set by the app: the readiness profile (refreshed about once a minute),
+    /// the last check-in, and how many contacts alerts reach.
+    var readiness: ThermyxWidgetSnapshot.Readiness?
+    var lastCheckIn: Date?
+    var circleSize: Int?
+
     var fahrenheit = false {
         didSet { if fahrenheit != oldValue { lastSaved = .distantPast } }
     }
@@ -50,8 +56,26 @@ final class ThermyxWidgetBridge {
         }
     }
 
+    /// A studio test on the Lock Screen holds until then, ahead of live data.
+    private var testUntil: Date?
+
+    /// Demo studio: the Live Activity and widgets at a level, for a minute,
+    /// as they'd look for real.
+    func showTest(level: ThermyxWidgetSnapshot.Level, concern: String?) {
+        guard var snapshot = lastSnapshot else { return }
+        snapshot.level = level
+        snapshot.concern = level.isConcern ? concern : nil
+        snapshot.updated = .now
+        snapshot.live = true
+        testUntil = Date.now.addingTimeInterval(60)
+        snapshot.save()
+        reloadWidgets(significant: true)
+        updateActivity(snapshot, significant: true)
+    }
+
     func update(reading: BilateralReading, isDemo: Bool, setting: ThermalSetting, assessment: ThermyxRiskAssessment) {
         let now = Date.now
+        if let testUntil, now < testUntil { return }
         let live = !reading.present.isEmpty
         if let c = reading.peakFootTemperatureC, samples.last.map({ now.timeIntervalSince($0.time) >= 1 }) ?? true {
             samples.append((now, c))
@@ -81,6 +105,9 @@ final class ThermyxWidgetBridge {
             batteryLeft: reading[.left]?.batteryPercent,
             batteryRight: reading[.right]?.batteryPercent
         )
+        snapshot.readiness = readiness
+        snapshot.lastCheckIn = lastCheckIn
+        snapshot.circleSize = circleSize
         if let start = samples.first?.time {
             snapshot.temps = Self.bucket(samples.map { ($0.time.timeIntervalSince(start), $0.c) })
         }
@@ -103,7 +130,7 @@ final class ThermyxWidgetBridge {
         let spacing: TimeInterval = active ? 30 : 10 * 60
         guard significant || Date.now.timeIntervalSince(lastReload) >= spacing else { return }
         lastReload = .now
-        WidgetCenter.shared.reloadTimelines(ofKind: ThermyxShared.widgetKind)
+        WidgetCenter.shared.reloadAllTimelines()
     }
 
     // MARK: Live Activity

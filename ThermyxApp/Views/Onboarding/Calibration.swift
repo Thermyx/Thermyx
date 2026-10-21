@@ -6,8 +6,7 @@ import SwiftUI
 // Three minutes: sit, stand and walk for 30 seconds each indoors, then the
 // same outside. Each second of readings is recorded, and the on-device model
 // in PersonalBaseline.swift is trained from the result: usual temperatures
-// indoors and out, how fast the foot warms (dT/dt) and how far it moves
-// (∫ dT/dt dt), load, cadence and walking steadiness.
+// indoors and out, arch pressure, cadence and walking steadiness.
 
 struct CalibrationStep: Equatable {
     let activity: CalibrationActivity
@@ -78,8 +77,6 @@ final class CalibrationEngine: ObservableObject {
     var step: CalibrationStep { CalibrationPlan.steps[min(index, CalibrationPlan.steps.count - 1)] }
     var remaining: Int { max(0, CalibrationPlan.secondsPerStep - elapsed) }
     var stepProgress: Double { Double(elapsed) / Double(CalibrationPlan.secondsPerStep) }
-    var liveRate: Double? { ThermalCalculus.rate(current) }
-    var liveAccumulated: Double? { ThermalCalculus.accumulatedChange(current) }
     var isFakeInsole: Bool { viewModel?.ble.isFakeInsole == true }
     var asksComfort: Bool { phase == .running && index == 0 && elapsed >= 8 && comfort == nil }
 
@@ -525,8 +522,7 @@ private struct CalibrationExperience: View {
     /// load, or the foot temperature when there's no load reading).
     private func liveContent(_ foot: Foot) -> FootMap.Content {
         guard let r = viewModel.reading[foot] else { return .outline(dimmed: true) }
-        if r.loadIsArchLevel { return .archLoad(r.pressureBalance) }
-        if r.pressureBalance != nil { return .forefootShare(r.pressureBalance) }
+        if r.pressureBalance != nil { return .archLoad(r.pressureBalance) }
         return .temperature(r.footTemperatureC)
     }
 
@@ -751,16 +747,11 @@ private struct LiveStrip: View {
                      tint: reading[foot]?.footTemperatureC.map(FootScale.thermalColor))
                 divider
             }
-            cell("dT/dt", value: engine.liveRate.map { rate in signed(unit.convertDelta(rate)) },
-                 tint: engine.liveRate.map { ChartValueScale.change(unitSize: 1).color(at: $0) }, math: true)
+            cell("Pressure", value: reading.pressureBalance.map { "\(Int(($0 * 100).rounded()))%" },
+                 tint: reading.pressureBalance.map(FootScale.loadColor))
             divider
-            if let load = reading.pressureBalance {
-                cell(reading.present.first?.loadIsArchLevel == true ? "Arch" : "Load", value: "\(Int((load * 100).rounded()))%",
-                     tint: FootScale.loadColor(load))
-            } else {
-                cell("Steps", value: reading.cadenceStepsPerMinute.map { "\(Int($0.rounded()))" },
-                     tint: reading.cadenceStepsPerMinute.map { ChartValueScale.cadence.color(at: $0) })
-            }
+            cell("Steadiness", value: reading.present.compactMap(\.gaitStability).min().map { "\(Int(($0 * 100).rounded()))%" },
+                 tint: nil)
         }
     }
 
@@ -768,16 +759,12 @@ private struct LiveStrip: View {
         Rectangle().fill(Thermyx.Site.hairline).frame(width: 1, height: 30)
     }
 
-    private func cell(_ label: String, value: String?, tint: Color?, math: Bool = false) -> some View {
+    private func cell(_ label: String, value: String?, tint: Color?) -> some View {
         VStack(spacing: 2) {
-            Group {
-                if math { Text(label).mathNotation(size: 12) } else {
-                    Text(label)
-                        .font(ThermyxFont.captionSmall)
-                        .foregroundStyle(Thermyx.Site.textMuted)
-                }
-            }
-            .lineLimit(1)
+            Text(label)
+                .font(ThermyxFont.captionSmall)
+                .foregroundStyle(Thermyx.Site.textMuted)
+                .lineLimit(1)
             Text(value ?? "—")
                 .font(.custom(ThermyxFont.Family.monoMedium, size: 16, relativeTo: .body))
                 .monospacedDigit()
@@ -790,10 +777,6 @@ private struct LiveStrip: View {
         .animation(SiteMotion.settle, value: value)
     }
 
-    private func signed(_ value: Double) -> String {
-        let text = String(format: "%.2f", abs(value))
-        return (Double(text) == 0 ? "" : (value > 0 ? "+" : "−")) + text
-    }
 }
 
 /// The readouts, on screen before calibration starts. Each shows a dash
@@ -802,7 +785,6 @@ private struct LiveInsights: View {
     @ObservedObject var engine: CalibrationEngine
     let reading: BilateralReading
     let unit: TemperatureUnit
-    @State private var showingMath = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.header) {
@@ -812,21 +794,7 @@ private struct LiveInsights: View {
                 InsightTile(title: "Foot temperature",
                             value: reading.peakFootTemperatureC.map { TemperatureFormat.degrees($0, in: unit) },
                             detail: perFoot)
-                Button { showingMath = true } label: {
-                    InsightTile(title: "Rate", notation: "dT/dt",
-                                value: engine.liveRate.map { signed(unit.convertDelta($0), decimals: 2) + "°/min" },
-                                detail: "Tap to see the math")
-                }
-                .buttonStyle(PressableStyle())
-                .accessibilityHint("Shows how the rate is calculated")
-                Button { showingMath = true } label: {
-                    InsightTile(title: "Change", notation: "∫ dT/dt dt",
-                                value: engine.liveAccumulated.map { signed(unit.convertDelta($0), decimals: 2) + "°" },
-                                detail: engine.phase == .running ? "Since this step began · tap for math" : "Builds up during each step")
-                }
-                .buttonStyle(PressableStyle())
-                .accessibilityHint("Shows how the change is calculated")
-                InsightTile(title: reading.present.first?.loadLabel ?? "Forefoot load",
+                InsightTile(title: "Pressure",
                             value: reading.pressureBalance.map { "\(Int(($0 * 100).rounded()))%" },
                             detail: balance)
                 InsightTile(title: "Cadence",
@@ -837,9 +805,6 @@ private struct LiveInsights: View {
                             detail: stabilityDetail,
                             accent: stabilityColor)
             }
-        }
-        .sheet(isPresented: $showingMath) {
-            LiveMathSheet(engine: engine, unit: unit)
         }
     }
 
@@ -853,7 +818,7 @@ private struct LiveInsights: View {
     }
 
     private var balance: String {
-        guard let gap = reading.loadAsymmetry else { return "Share of weight on the toes" }
+        guard let gap = reading.loadAsymmetry else { return "At the arch" }
         if abs(gap) < 0.04 { return "Even, left and right" }
         return "\(gap > 0 ? "Left" : "Right") +\(Int((abs(gap) * 100).rounded())) pts"
     }
@@ -879,31 +844,19 @@ private struct LiveInsights: View {
         }
     }
 
-    private func signed(_ value: Double, decimals: Int) -> String {
-        let text = String(format: "%.\(decimals)f", abs(value))
-        let zero = Double(text) == 0
-        return (zero ? "" : (value > 0 ? "+" : "−")) + text
-    }
 }
 
 private struct InsightTile: View {
     let title: String
-    /// Mathematical notation, set as written rather than in caps.
-    var notation: String?
     let value: String?
     var detail: String?
     var accent: Color = Thermyx.Site.text
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(title)
-                    .narrowLabel(ThermyxFont.zoneLabel, tracking: ThermyxTracking.zoneLabel, color: Thermyx.Site.textFaint)
-                if let notation {
-                    Text(notation).mathNotation()
-                }
-            }
-            .lineLimit(1)
+            Text(title)
+                .narrowLabel(ThermyxFont.zoneLabel, tracking: ThermyxTracking.zoneLabel, color: Thermyx.Site.textFaint)
+                .lineLimit(1)
             Text(value ?? "—")
                 .font(ThermyxFont.metricNumeral)
                 .tracking(ThermyxTracking.metricNumeral)
@@ -925,7 +878,7 @@ private struct InsightTile: View {
         .siteGlass(radius: Thermyx.Radius.compact)
         .animation(SiteMotion.settle, value: value)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(notation == nil ? title : "\(title), \(notation == "dT/dt" ? "rate of change" : "accumulated change")")
+        .accessibilityLabel(title)
         .accessibilityValue([value ?? "No reading", detail].compactMap { $0 }.joined(separator: ", "))
     }
 }
@@ -1000,7 +953,6 @@ private struct LearnedSoFar: View {
     let summaries: [CalibrationPhaseSummary]
     let samples: [String: [CalibrationSample]]
     let unit: TemperatureUnit
-    @State private var showing: CalibrationPhaseSummary?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Thermyx.Space.header) {
@@ -1008,7 +960,6 @@ private struct LearnedSoFar: View {
             VStack(spacing: 0) {
                 ForEach(Array(summaries.enumerated()), id: \.element.id) { offset, s in
                     if offset > 0 { Rectangle().fill(Thermyx.Site.hairline).frame(height: 1) }
-                    Button { showing = s } label: {
                     HStack(spacing: Thermyx.Space.m) {
                         Text("\(s.outdoor ? "Outside" : "Inside") · \(s.activity.label.lowercased())")
                             .font(ThermyxFont.body)
@@ -1018,57 +969,15 @@ private struct LearnedSoFar: View {
                             .font(ThermyxFont.rowNumeral)
                             .monospacedDigit()
                             .foregroundStyle(Thermyx.Site.text)
-                        Text(s.ratePerMinute.map { CalibrationNorms.rate($0, in: unit) } ?? "—")
-                            .font(ThermyxFont.captionSmall)
-                            .monospacedDigit()
-                            .foregroundStyle(Thermyx.Site.textFaint)
-                            .frame(minWidth: 76, alignment: .trailing)
-                        Image(systemName: "function")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Thermyx.Ink.ice)
                     }
                     .padding(.horizontal, Thermyx.Space.l)
                     .frame(minHeight: 48)
-                    .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressableStyle())
-                    .accessibilityHint("Shows the math for this step")
+                    .accessibilityElement(children: .combine)
                     .transition(.opacity)
                 }
             }
             .siteGlass(radius: Thermyx.Radius.compact)
         }
         .animation(SiteMotion.settle, value: summaries.count)
-        #if DEBUG
-        // `-ThermyxShowMath`: opens the first finished step's math.
-        .onAppear { if ProcessInfo.processInfo.arguments.contains("-ThermyxShowMath") { showing = summaries.first } }
-        #endif
-        .sheet(item: $showing) { s in
-            CalculusSheet(title: "\(s.outdoor ? "Outside" : "Inside") · \(s.activity.label.lowercased())",
-                          samples: samples[s.id] ?? [], unit: unit)
-        }
-    }
-}
-
-/// The math for the step in progress, updating as readings arrive.
-private struct LiveMathSheet: View {
-    @ObservedObject var engine: CalibrationEngine
-    let unit: TemperatureUnit
-
-    var body: some View {
-        CalculusSheet(title: engine.phase == .running
-                        ? "\(engine.step.outdoor ? "Outside" : "Inside") · \(engine.step.activity.label.lowercased()) · live"
-                        : "This step",
-                      samples: engine.current, unit: unit)
-    }
-}
-
-extension Text {
-    /// Calculus notation (dT/dt, ∫): an italic serif with the full math
-    /// glyph set, never uppercased.
-    func mathNotation(size: CGFloat = 13) -> some View {
-        self.font(.system(size: size, design: .serif).italic())
-            .foregroundStyle(Thermyx.Site.textMuted)
-            .textCase(nil)
     }
 }

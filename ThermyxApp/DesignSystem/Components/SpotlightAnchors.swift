@@ -10,7 +10,6 @@ enum SpotlightTarget: Hashable {
     case targetStepper
     case insightsSummary
     case learnLead
-    case simulatorControls
     case holdToCall
     case tabBar
 }

@@ -40,7 +40,6 @@ struct AdvancedView: View {
             legalRow
             if showsAdmin {
                 AdminPanel {
-                    DemoModeControl(viewModel: viewModel, ble: viewModel.ble)
                     BoardSettingsSection(board: viewModel.board, ble: viewModel.ble)
                     sensorLayout
                 }
@@ -69,7 +68,7 @@ struct AdvancedView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("Removes your history, personal baseline, and trusted contacts from this phone, disconnects the relay, and deletes what the relay holds about you, which also ends every watcher's access. Apple Health data stays in the Health app. This cannot be undone.")
+            Text("Removes your history, what Thermyx has learned about you, and your trusted contacts from this phone. It also deletes what our alert service holds about you, which stops anyone watching from seeing you, and deletes your account backup. Apple Health keeps its own copy. This can't be undone.")
         }
         .alert(deleteResult ?? "", isPresented: Binding(get: { deleteResult != nil }, set: { if !$0 { deleteResult = nil } })) {
             Button("OK", role: .cancel) {}
@@ -106,7 +105,7 @@ struct AdvancedView: View {
                                  deniedAction: ("Open Health", ThermyxPermissions.openHealth)) {}
             }
 
-            Text("Thermyx reads steps, walking steadiness, and workouts, and writes sessions as workouts. It never writes a body temperature — the insole measures contact temperature, not core temperature.")
+            Text("Reads steps and workouts. Writes workouts only, never a body temperature.")
                 .font(ThermyxFont.captionSmall)
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -198,13 +197,7 @@ struct AdvancedView: View {
     }
 
     private var layoutNote: String {
-        let base = "Each insole has one temperature sensor, one pressure sensor at the arch (GPIO34), and a motion sensor. The firmware also supports heel and forefoot pressure sensors."
-        guard let size = settings.soleSize else {
-            return base + " Set a shoe size to see the spacing in millimetres."
-        }
-        // Heel sensor to forefoot sensor, the span the wiring run has to cover.
-        let span = size.millimetres(SoleGeometry.SensorSite.forefoot.position.y - SoleGeometry.SensorSite.heel.position.y)
-        return base + String(format: " At %@, the heel-to-forefoot sensor span is %.0f mm.", settings.shoeSizeLabel ?? size.label, span)
+        "Each insole has a temperature sensor, a pressure sensor under the arch, and a motion sensor that counts your steps."
     }
 
     // MARK: - Legal
@@ -214,7 +207,6 @@ struct AdvancedView: View {
             Button { legalDocument = .privacy } label: {
                 ThermyxNavigationRow(
                     title: "Privacy & terms",
-                    detail: "How Thermyx handles your data",
                     systemImage: "doc.text",
                     iconTint: Thermyx.Ink.textMuted
                 )
@@ -226,39 +218,6 @@ struct AdvancedView: View {
                 .foregroundStyle(Thermyx.Ink.textFaint)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-}
-
-/// Admin: start or leave the demo. Simulated insoles and a month of made-up
-/// history, for showing Thermyx without hardware; the real history is kept
-/// aside and comes back on exit.
-struct DemoModeControl: View {
-    @ObservedObject var viewModel: ThermyxViewModel
-    @ObservedObject var ble: ThermyxBLEService
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: Thermyx.Space.header) {
-            SectionLabel("Demo mode") {
-                Text(ble.isDemoMode ? "Running" : "Off")
-                    .foregroundStyle(ble.isDemoMode ? Thermyx.Ink.ember : Thermyx.Ink.textMuted)
-            }
-            Text("Simulated insoles that respond to every control, with a month of made-up history behind Insights. Real insoles disconnect while it runs; your real history is set aside, never overwritten, and comes back when you exit.")
-                .font(ThermyxFont.caption)
-                .foregroundStyle(Thermyx.Ink.textMuted)
-                .fixedSize(horizontal: false, vertical: true)
-            if ble.isDemoMode {
-                Button("Exit demo") { viewModel.exitDemo() }
-                    .buttonStyle(ThermyxSecondaryButtonStyle(tint: Thermyx.Ink.ember, border: Thermyx.Tint.emberBorder))
-            } else {
-                Button {
-                    Task { await viewModel.startDemo() }
-                } label: {
-                    Label(viewModel.isStartingDemo ? "Starting…" : "Start demo", systemImage: "play.fill")
-                }
-                .buttonStyle(ThermyxPrimaryButtonStyle(fill: Thermyx.Ink.ember, foreground: Thermyx.Ink.onEmber))
-                .disabled(viewModel.isStartingDemo)
-            }
         }
     }
 }
