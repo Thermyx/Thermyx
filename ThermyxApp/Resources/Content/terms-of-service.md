@@ -2,7 +2,7 @@
 
 **Effective date:** 2026
 
-**Last updated:** October 15, 2026
+**Last updated:** October 20, 2026
 
 These Terms are a binding agreement between you and Thermyx Technologies
 ("Thermyx", "we", "us") covering the Thermyx iPhone application, the Thermyx
@@ -255,4 +255,4 @@ attempting to misuse the model.
 
 Thermyx Technologies
 
-aaronhanqin@gmail.com
+thermyx.contact@gmail.com

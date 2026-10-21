@@ -2,7 +2,7 @@
 
 **Effective date:** 2026
 
-**Last updated:** October 19, 2026
+**Last updated:** October 20, 2026
 
 Thermyx Technologies ("Thermyx", "we", "us") makes the Thermyx smart insole
 and the Thermyx iPhone application (together, the "Service"). This policy
@@ -410,7 +410,7 @@ change means you accept the updated policy.
 
 Thermyx Technologies
 
-aaronhanqin@gmail.com
+thermyx.contact@gmail.com
 
 ---
 
